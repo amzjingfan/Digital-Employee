@@ -1,0 +1,10 @@
+{
+  "skill_id": "joukir-creative-qc",
+  "version": "1.0.0",
+  "name": "创意质检",
+  "domain": "tiktok",
+  "execution_mode": "sop_specific",
+  "external_write": false,
+  "review_status": "approved_seed",
+  "license_policy": "local-methods-only"
+}

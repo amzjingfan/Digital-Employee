@@ -1,0 +1,10 @@
+{
+  "skill_id": "joukir-storyboard",
+  "version": "1.0.0",
+  "name": "短视频分镜",
+  "domain": "tiktok",
+  "execution_mode": "sop_specific",
+  "external_write": false,
+  "review_status": "approved_seed",
+  "license_policy": "local-methods-only"
+}

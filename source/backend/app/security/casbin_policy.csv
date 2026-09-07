@@ -1,0 +1,150 @@
+# Platform administrators manage every enterprise resource in their validated tenant.
+p, tenant_admin, *, /api/enterprise/*, (GET|POST|PUT|PATCH|DELETE), allow
+
+# Backward-compatible local members can inspect resources and operate their collaboration records.
+p, tenant_member, *, /api/enterprise/*, GET, allow
+p, tenant_member, *, /api/enterprise/teams, POST, allow
+p, tenant_member, *, /api/enterprise/teams/*, (POST|PUT|PATCH|DELETE), allow
+p, tenant_member, *, /api/enterprise/team-threads/*, (POST|PUT|PATCH|DELETE), allow
+p, tenant_member, *, /api/enterprise/scheduled-tasks, POST, allow
+p, tenant_member, *, /api/enterprise/scheduled-tasks/*, (POST|PUT|PATCH|DELETE), allow
+p, tenant_member, *, /api/enterprise/sessions/*, (POST|PUT|PATCH|DELETE), allow
+p, tenant_member, *, /api/enterprise/feedback/*, (POST|PUT|PATCH|DELETE), allow
+p, tenant_member, *, /api/enterprise/memories/*, (POST|PUT|PATCH|DELETE), allow
+p, tenant_member, *, /api/enterprise/authorization-decisions, GET, deny
+p, tenant_member, *, /api/enterprise/authorization-decisions/*, GET, deny
+p, tenant_member, *, /api/enterprise/identity-role-mappings, GET, deny
+
+# Operations supervisors review all operational resources and coordinate work, but cannot
+# change platform identity, model, channel, tool, or knowledge configuration.
+p, operations_supervisor, *, /api/enterprise/*, GET, allow
+p, operations_supervisor, *, /api/enterprise/teams, POST, allow
+p, operations_supervisor, *, /api/enterprise/teams/*, (POST|PUT|PATCH|DELETE), allow
+p, operations_supervisor, *, /api/enterprise/team-threads/*, (POST|PUT|PATCH|DELETE), allow
+p, operations_supervisor, *, /api/enterprise/scheduled-tasks, POST, allow
+p, operations_supervisor, *, /api/enterprise/scheduled-tasks/*, (POST|PUT|PATCH|DELETE), allow
+p, operations_supervisor, *, /api/enterprise/sessions/*, (POST|PUT|PATCH|DELETE), allow
+p, operations_supervisor, *, /api/enterprise/feedback/*, (POST|PUT|PATCH|DELETE), allow
+p, operations_supervisor, *, /api/enterprise/memories/*, (POST|PUT|PATCH|DELETE), allow
+p, operations_supervisor, *, /api/enterprise/business-resources*, (POST|PUT|PATCH|DELETE), allow
+p, operations_supervisor, *, /api/enterprise/business-action-requests*, POST, allow
+p, operations_supervisor, *, /api/enterprise/business-approvals*, POST, allow
+p, operations_supervisor, *, /api/enterprise/business-executions*, (GET|POST), allow
+p, operations_supervisor, *, /api/enterprise/operations-reports*, (GET|POST), allow
+p, operations_supervisor, *, /api/enterprise/work-tasks*, (GET|POST), allow
+p, operations_supervisor, *, /api/enterprise/work-tasks/advertising/automation-policies, PUT, allow
+p, operations_supervisor, *, /api/enterprise/authorization-decisions, GET, deny
+p, operations_supervisor, *, /api/enterprise/authorization-decisions/*, GET, deny
+p, operations_supervisor, *, /api/enterprise/identity-role-mappings, GET, deny
+
+# After-sales specialists work with customer cases, traces, feedback and team handoffs.
+p, after_sales_specialist, *, /api/enterprise/agents*, GET, allow
+p, after_sales_specialist, *, /api/enterprise/agent-scope*, GET, allow
+p, after_sales_specialist, *, /api/enterprise/sessions*, GET, allow
+p, after_sales_specialist, *, /api/enterprise/sessions/*, (POST|PUT|PATCH), allow
+p, after_sales_specialist, *, /api/enterprise/traces*, GET, allow
+p, after_sales_specialist, *, /api/enterprise/feedback*, GET, allow
+p, after_sales_specialist, *, /api/enterprise/feedback/*, POST, allow
+p, after_sales_specialist, *, /api/enterprise/knowledge*, GET, allow
+p, after_sales_specialist, *, /api/enterprise/tools*, GET, allow
+p, after_sales_specialist, *, /api/enterprise/teams*, GET, allow
+p, after_sales_specialist, *, /api/enterprise/teams/*, POST, allow
+p, after_sales_specialist, *, /api/enterprise/team-threads/*, (POST|PUT|PATCH), allow
+p, after_sales_specialist, *, /api/enterprise/business-resources*, GET, allow
+p, after_sales_specialist, *, /api/enterprise/business-action-requests*, (GET|POST), allow
+p, after_sales_specialist, *, /api/enterprise/business-executions*, GET, allow
+
+# Listing compliance specialists can curate compliance knowledge and SOP drafts.
+p, listing_compliance_specialist, *, /api/enterprise/agents*, GET, allow
+p, listing_compliance_specialist, *, /api/enterprise/agent-scope*, GET, allow
+p, listing_compliance_specialist, *, /api/enterprise/knowledge*, (GET|POST|PUT|PATCH), allow
+p, listing_compliance_specialist, *, /api/enterprise/knowledge-bases*, (GET|POST|PUT|PATCH), allow
+p, listing_compliance_specialist, *, /api/enterprise/skills*, GET, allow
+p, listing_compliance_specialist, *, /api/enterprise/general-skills*, GET, allow
+p, listing_compliance_specialist, *, /api/enterprise/tools*, GET, allow
+p, listing_compliance_specialist, *, /api/enterprise/traces*, GET, allow
+p, listing_compliance_specialist, *, /api/enterprise/teams*, GET, allow
+p, listing_compliance_specialist, *, /api/enterprise/teams/*, POST, allow
+p, listing_compliance_specialist, *, /api/enterprise/team-threads/*, (POST|PUT|PATCH), allow
+p, listing_compliance_specialist, *, /api/enterprise/business-resources*, GET, allow
+p, listing_compliance_specialist, *, /api/enterprise/business-action-requests*, (GET|POST), allow
+p, listing_compliance_specialist, *, /api/enterprise/business-executions*, GET, allow
+
+# Logistics exception specialists monitor fulfillment and schedule recurring checks.
+p, logistics_exception_specialist, *, /api/enterprise/agents*, GET, allow
+p, logistics_exception_specialist, *, /api/enterprise/agent-scope*, GET, allow
+p, logistics_exception_specialist, *, /api/enterprise/sessions*, GET, allow
+p, logistics_exception_specialist, *, /api/enterprise/traces*, GET, allow
+p, logistics_exception_specialist, *, /api/enterprise/tools*, GET, allow
+p, logistics_exception_specialist, *, /api/enterprise/knowledge*, GET, allow
+p, logistics_exception_specialist, *, /api/enterprise/scheduled-tasks*, (GET|POST|PUT|PATCH|DELETE), allow
+p, logistics_exception_specialist, *, /api/enterprise/teams*, GET, allow
+p, logistics_exception_specialist, *, /api/enterprise/teams/*, POST, allow
+p, logistics_exception_specialist, *, /api/enterprise/team-threads/*, (POST|PUT|PATCH), allow
+p, logistics_exception_specialist, *, /api/enterprise/business-resources*, GET, allow
+p, logistics_exception_specialist, *, /api/enterprise/business-action-requests*, (GET|POST), allow
+p, logistics_exception_specialist, *, /api/enterprise/business-executions*, GET, allow
+
+# Advertising inspection specialists analyze evidence and schedule inspection tasks.
+p, advertising_inspection_specialist, *, /api/enterprise/agents*, GET, allow
+p, advertising_inspection_specialist, *, /api/enterprise/agent-scope*, GET, allow
+p, advertising_inspection_specialist, *, /api/enterprise/sessions*, GET, allow
+p, advertising_inspection_specialist, *, /api/enterprise/traces*, GET, allow
+p, advertising_inspection_specialist, *, /api/enterprise/feedback*, GET, allow
+p, advertising_inspection_specialist, *, /api/enterprise/knowledge*, GET, allow
+p, advertising_inspection_specialist, *, /api/enterprise/tools*, GET, allow
+p, advertising_inspection_specialist, *, /api/enterprise/scheduled-tasks*, (GET|POST|PUT|PATCH|DELETE), allow
+p, advertising_inspection_specialist, *, /api/enterprise/teams*, GET, allow
+p, advertising_inspection_specialist, *, /api/enterprise/teams/*, POST, allow
+p, advertising_inspection_specialist, *, /api/enterprise/team-threads/*, (POST|PUT|PATCH), allow
+p, advertising_inspection_specialist, *, /api/enterprise/business-resources*, GET, allow
+p, advertising_inspection_specialist, *, /api/enterprise/business-action-requests*, (GET|POST), allow
+p, advertising_inspection_specialist, *, /api/enterprise/business-executions*, GET, allow
+
+# Designers curate visual knowledge assets and collaborate through team tasks.
+p, designer, *, /api/enterprise/agents*, GET, allow
+p, designer, *, /api/enterprise/agent-scope*, GET, allow
+p, designer, *, /api/enterprise/knowledge*, (GET|POST|PUT|PATCH), allow
+p, designer, *, /api/enterprise/knowledge-bases*, (GET|POST|PUT|PATCH), allow
+p, designer, *, /api/enterprise/skills*, GET, allow
+p, designer, *, /api/enterprise/general-skills*, GET, allow
+p, designer, *, /api/enterprise/sessions*, GET, allow
+p, designer, *, /api/enterprise/traces*, GET, allow
+p, designer, *, /api/enterprise/teams*, GET, allow
+p, designer, *, /api/enterprise/teams/*, POST, allow
+p, designer, *, /api/enterprise/team-threads/*, (POST|PUT|PATCH), allow
+p, designer, *, /api/enterprise/business-resources*, GET, allow
+p, designer, *, /api/enterprise/business-action-requests*, (GET|POST), allow
+p, designer, *, /api/enterprise/business-executions*, GET, allow
+
+# Procurement specialists consume supplier knowledge and coordinate procurement work.
+p, procurement_specialist, *, /api/enterprise/agents*, GET, allow
+p, procurement_specialist, *, /api/enterprise/agent-scope*, GET, allow
+p, procurement_specialist, *, /api/enterprise/knowledge*, GET, allow
+p, procurement_specialist, *, /api/enterprise/tools*, GET, allow
+p, procurement_specialist, *, /api/enterprise/sessions*, GET, allow
+p, procurement_specialist, *, /api/enterprise/traces*, GET, allow
+p, procurement_specialist, *, /api/enterprise/scheduled-tasks*, (GET|POST|PUT|PATCH|DELETE), allow
+p, procurement_specialist, *, /api/enterprise/teams*, GET, allow
+p, procurement_specialist, *, /api/enterprise/teams/*, POST, allow
+p, procurement_specialist, *, /api/enterprise/team-threads/*, (POST|PUT|PATCH), allow
+p, procurement_specialist, *, /api/enterprise/business-resources*, GET, allow
+p, procurement_specialist, *, /api/enterprise/business-action-requests*, (GET|POST), allow
+p, procurement_specialist, *, /api/enterprise/business-executions*, GET, allow
+
+# TikTok business-unit overview is read-only for the six production roles.
+p, tiktok_bd_specialist, *, /api/enterprise/tiktok*, GET, allow
+p, tiktok_content_specialist, *, /api/enterprise/tiktok*, GET, allow
+p, tiktok_shop_operator, *, /api/enterprise/tiktok*, GET, allow
+p, tiktok_media_buyer, *, /api/enterprise/tiktok*, GET, allow
+p, tiktok_tap_manager, *, /api/enterprise/tiktok*, GET, allow
+p, tiktok_live_operator, *, /api/enterprise/tiktok*, GET, allow
+p, operations_supervisor, *, /api/enterprise/tiktok*, (GET|POST), allow
+
+# Unified work-task queues: specialists are restricted to their own role queue by domain policy.
+p, after_sales_specialist, *, /api/enterprise/work-tasks*, (GET|POST), allow
+p, listing_compliance_specialist, *, /api/enterprise/work-tasks*, (GET|POST), allow
+p, logistics_exception_specialist, *, /api/enterprise/work-tasks*, (GET|POST), allow
+p, advertising_inspection_specialist, *, /api/enterprise/work-tasks*, (GET|POST), allow
+p, designer, *, /api/enterprise/work-tasks*, (GET|POST), allow
+p, procurement_specialist, *, /api/enterprise/work-tasks*, (GET|POST), allow

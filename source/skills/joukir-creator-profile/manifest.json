@@ -1,0 +1,10 @@
+{
+  "skill_id": "joukir-creator-profile",
+  "version": "1.0.0",
+  "name": "达人画像",
+  "domain": "tiktok",
+  "execution_mode": "sop_specific",
+  "external_write": false,
+  "review_status": "approved_seed",
+  "license_policy": "local-methods-only"
+}

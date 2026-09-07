@@ -1,0 +1,21 @@
+{
+  "pack_id": "joukir-tiktok-pack",
+  "version": "1.0.0",
+  "domain": "tiktok",
+  "review_status": "approved_seed",
+  "external_write": false,
+  "skills": [
+    {"skill_id": "joukir-tiktok-account-audit", "name": "账号审计", "path": "../joukir-tiktok-account-audit"},
+    {"skill_id": "joukir-product-truth", "name": "产品事实账本", "path": "../joukir-product-truth"},
+    {"skill_id": "joukir-content-angle", "name": "内容角度", "path": "../joukir-content-angle"},
+    {"skill_id": "joukir-short-video-script", "name": "短视频脚本", "path": "../joukir-short-video-script"},
+    {"skill_id": "joukir-storyboard", "name": "短视频分镜", "path": "../joukir-storyboard"},
+    {"skill_id": "joukir-creative-qc", "name": "创意质检", "path": "../joukir-creative-qc"},
+    {"skill_id": "joukir-shop-health", "name": "小店健康巡检", "path": "../joukir-shop-health"},
+    {"skill_id": "joukir-ad-inspection", "name": "广告账户巡检", "path": "../joukir-ad-inspection"},
+    {"skill_id": "joukir-creator-profile", "name": "达人画像", "path": "../joukir-creator-profile"},
+    {"skill_id": "joukir-creator-match", "name": "商达匹配", "path": "../joukir-creator-match"},
+    {"skill_id": "joukir-live-plan", "name": "直播计划", "path": "../joukir-live-plan"},
+    {"skill_id": "joukir-policy-check", "name": "政策检查", "path": "../joukir-policy-check"}
+  ]
+}

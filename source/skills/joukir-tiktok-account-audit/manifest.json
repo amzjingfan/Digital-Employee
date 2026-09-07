@@ -1,0 +1,10 @@
+{
+  "skill_id": "joukir-tiktok-account-audit",
+  "version": "1.0.0",
+  "name": "账号审计",
+  "domain": "tiktok",
+  "execution_mode": "sop_specific",
+  "external_write": false,
+  "review_status": "approved_seed",
+  "license_policy": "local-methods-only"
+}

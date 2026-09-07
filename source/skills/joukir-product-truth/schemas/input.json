@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["tenant_id", "task_scope"],
+  "properties": {
+    "tenant_id": {"type": "string", "minLength": 1},
+    "task_scope": {"type": "object"},
+    "market": {"type": "string"},
+    "resource_ids": {"type": "array", "items": {"type": "string"}},
+    "knowledge_base_version": {"type": "string"}
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["skill_id", "version", "degraded", "evidence", "recommendations"],
+  "properties": {
+    "skill_id": {"const": "joukir-policy-check"},
+    "version": {"const": "1.0.0"},
+    "degraded": {"type": "boolean"},
+    "evidence": {"type": "array"},
+    "risks": {"type": "array"},
+    "recommendations": {"type": "array"},
+    "handoff_tasks": {"type": "array"}
+  },
+  "additionalProperties": true
+}

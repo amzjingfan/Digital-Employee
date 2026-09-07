@@ -1,0 +1,10 @@
+{
+  "skill_id": "joukir-shop-health",
+  "version": "1.0.0",
+  "name": "小店健康巡检",
+  "domain": "tiktok",
+  "execution_mode": "sop_specific",
+  "external_write": false,
+  "review_status": "approved_seed",
+  "license_policy": "local-methods-only"
+}

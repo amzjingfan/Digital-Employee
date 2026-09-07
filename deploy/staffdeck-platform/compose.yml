@@ -1,0 +1,61 @@
+name: ${COMPOSE_PROJECT_NAME:-staffdeck-platform}
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg16-bookworm
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-55432}:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?run scripts/setup.ps1 first}
+      POSTGRES_DB: postgres
+      CASDOOR_DB_PASSWORD: ${CASDOOR_DB_PASSWORD:?run scripts/setup.ps1 first}
+      STAFFDECK_MIGRATOR_PASSWORD: ${STAFFDECK_MIGRATOR_PASSWORD:?run scripts/setup.ps1 first}
+      STAFFDECK_RUNTIME_PASSWORD: ${STAFFDECK_RUNTIME_PASSWORD:?run scripts/setup.ps1 first}
+      STAFFDECK_WORKER_PASSWORD: ${STAFFDECK_WORKER_PASSWORD:?run scripts/setup.ps1 first}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - identity_data
+
+  casdoor:
+    image: casbin/casdoor:3.161.1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${CASDOOR_PORT:-18000}:8000"
+    environment:
+      RUNNING_IN_DOCKER: "true"
+      driverName: postgres
+      dataSourceName: "user=casdoor password=${CASDOOR_DB_PASSWORD:?run scripts/setup.ps1 first} host=postgres port=5432 sslmode=disable dbname=casdoor"
+      dbName: casdoor
+      showSql: "false"
+      defaultLanguage: zh
+      origin: ${CASDOOR_ORIGIN:-http://localhost:18000}
+      originFrontend: ${CASDOOR_ORIGIN:-http://localhost:18000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - identity_data
+
+networks:
+  identity_data:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
