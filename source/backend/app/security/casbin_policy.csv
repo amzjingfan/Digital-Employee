@@ -27,6 +27,7 @@ p, operations_supervisor, *, /api/enterprise/sessions/*, (POST|PUT|PATCH|DELETE)
 p, operations_supervisor, *, /api/enterprise/feedback/*, (POST|PUT|PATCH|DELETE), allow
 p, operations_supervisor, *, /api/enterprise/memories/*, (POST|PUT|PATCH|DELETE), allow
 p, operations_supervisor, *, /api/enterprise/business-resources*, (POST|PUT|PATCH|DELETE), allow
+p, operations_supervisor, *, /api/enterprise/brands*, GET, allow
 p, operations_supervisor, *, /api/enterprise/business-action-requests*, POST, allow
 p, operations_supervisor, *, /api/enterprise/business-approvals*, POST, allow
 p, operations_supervisor, *, /api/enterprise/business-executions*, (GET|POST), allow
@@ -51,6 +52,7 @@ p, after_sales_specialist, *, /api/enterprise/teams*, GET, allow
 p, after_sales_specialist, *, /api/enterprise/teams/*, POST, allow
 p, after_sales_specialist, *, /api/enterprise/team-threads/*, (POST|PUT|PATCH), allow
 p, after_sales_specialist, *, /api/enterprise/business-resources*, GET, allow
+p, after_sales_specialist, *, /api/enterprise/brands*, GET, allow
 p, after_sales_specialist, *, /api/enterprise/business-action-requests*, (GET|POST), allow
 p, after_sales_specialist, *, /api/enterprise/business-executions*, GET, allow
 
@@ -67,6 +69,7 @@ p, listing_compliance_specialist, *, /api/enterprise/teams*, GET, allow
 p, listing_compliance_specialist, *, /api/enterprise/teams/*, POST, allow
 p, listing_compliance_specialist, *, /api/enterprise/team-threads/*, (POST|PUT|PATCH), allow
 p, listing_compliance_specialist, *, /api/enterprise/business-resources*, GET, allow
+p, listing_compliance_specialist, *, /api/enterprise/brands*, GET, allow
 p, listing_compliance_specialist, *, /api/enterprise/business-action-requests*, (GET|POST), allow
 p, listing_compliance_specialist, *, /api/enterprise/business-executions*, GET, allow
 
@@ -82,6 +85,7 @@ p, logistics_exception_specialist, *, /api/enterprise/teams*, GET, allow
 p, logistics_exception_specialist, *, /api/enterprise/teams/*, POST, allow
 p, logistics_exception_specialist, *, /api/enterprise/team-threads/*, (POST|PUT|PATCH), allow
 p, logistics_exception_specialist, *, /api/enterprise/business-resources*, GET, allow
+p, logistics_exception_specialist, *, /api/enterprise/brands*, GET, allow
 p, logistics_exception_specialist, *, /api/enterprise/business-action-requests*, (GET|POST), allow
 p, logistics_exception_specialist, *, /api/enterprise/business-executions*, GET, allow
 
@@ -98,6 +102,7 @@ p, advertising_inspection_specialist, *, /api/enterprise/teams*, GET, allow
 p, advertising_inspection_specialist, *, /api/enterprise/teams/*, POST, allow
 p, advertising_inspection_specialist, *, /api/enterprise/team-threads/*, (POST|PUT|PATCH), allow
 p, advertising_inspection_specialist, *, /api/enterprise/business-resources*, GET, allow
+p, advertising_inspection_specialist, *, /api/enterprise/brands*, GET, allow
 p, advertising_inspection_specialist, *, /api/enterprise/business-action-requests*, (GET|POST), allow
 p, advertising_inspection_specialist, *, /api/enterprise/business-executions*, GET, allow
 
@@ -114,6 +119,7 @@ p, designer, *, /api/enterprise/teams*, GET, allow
 p, designer, *, /api/enterprise/teams/*, POST, allow
 p, designer, *, /api/enterprise/team-threads/*, (POST|PUT|PATCH), allow
 p, designer, *, /api/enterprise/business-resources*, GET, allow
+p, designer, *, /api/enterprise/brands*, GET, allow
 p, designer, *, /api/enterprise/business-action-requests*, (GET|POST), allow
 p, designer, *, /api/enterprise/business-executions*, GET, allow
 
@@ -129,6 +135,7 @@ p, procurement_specialist, *, /api/enterprise/teams*, GET, allow
 p, procurement_specialist, *, /api/enterprise/teams/*, POST, allow
 p, procurement_specialist, *, /api/enterprise/team-threads/*, (POST|PUT|PATCH), allow
 p, procurement_specialist, *, /api/enterprise/business-resources*, GET, allow
+p, procurement_specialist, *, /api/enterprise/brands*, GET, allow
 p, procurement_specialist, *, /api/enterprise/business-action-requests*, (GET|POST), allow
 p, procurement_specialist, *, /api/enterprise/business-executions*, GET, allow
 
@@ -139,6 +146,12 @@ p, tiktok_shop_operator, *, /api/enterprise/tiktok*, GET, allow
 p, tiktok_media_buyer, *, /api/enterprise/tiktok*, GET, allow
 p, tiktok_tap_manager, *, /api/enterprise/tiktok*, GET, allow
 p, tiktok_live_operator, *, /api/enterprise/tiktok*, GET, allow
+p, tiktok_bd_specialist, *, /api/enterprise/brands*, GET, allow
+p, tiktok_content_specialist, *, /api/enterprise/brands*, GET, allow
+p, tiktok_shop_operator, *, /api/enterprise/brands*, GET, allow
+p, tiktok_media_buyer, *, /api/enterprise/brands*, GET, allow
+p, tiktok_tap_manager, *, /api/enterprise/brands*, GET, allow
+p, tiktok_live_operator, *, /api/enterprise/brands*, GET, allow
 p, operations_supervisor, *, /api/enterprise/tiktok*, (GET|POST), allow
 
 # Unified work-task queues: specialists are restricted to their own role queue by domain policy.
