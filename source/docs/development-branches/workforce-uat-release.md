@@ -20,3 +20,12 @@
 - 全量回归：后端为 2131 passed、22 failed、11 skipped；失败集中于既有广告执行禁用/配置、Windows symlink/process/timing、Bash/POSIX、harness/MCP/Markdown/runtime-lock 类别，未命中本次变更文件或 TikTok 测试。全量 Ruff 有 2168 个既有问题，变更范围 Ruff 为 clean。
 - 外部/环境门禁：i18n 检查因 87 个既有未翻译中文字符串失败；配置检查因净化快照缺少 `frontend-enterprise/.env.example` 失败；`npm ci` 报告 13 个既有依赖漏洞（1 low、3 moderate、9 high）。这些结果不由本切片绕过，且仍不构成真实 OAuth、MFA/TLS/密钥轮换、完整 14 个自然日影子运行、恢复演练或业务/产品/安全签字的替代证据。
 - 发布结论：本切片只提供“当前提交的可审计 TikTok 代码与 Skill 表面不含 Live 写入”的确定性证据；以上外部与组织验收完成前，P3-A 仍不可宣称生产放行。
+
+## 2026-09-08 · UAT 前置整改与验收状态
+
+- 已完成仓库内整改：前端 i18n 补齐至 4113 条英文翻译；新增 `frontend-enterprise/.env.example` 并通过 Vite 配置检查；按 npm audit 可用修复更新前端锁文件，审计结果为 0 vulnerabilities。
+- 已完成回归：前端 63 个测试文件、266 个测试通过，TypeScript/Vite production build 通过；TikTok 门禁与 33 个 TikTok 测试在合并后的 `main` 上复核通过。
+- 真实 OAuth / MFA / TLS / 密钥轮换：未宣称完成。当前快照没有 Partner Center 审核应用凭据、真实回调域名、MFA 测试账号、证书链/轮换窗口或密钥管理器接入；必须由授权的 UAT 运维与安全负责人在隔离环境执行并留存脱敏证据。
+- 14 天影子运行：未宣称完成。代码支持 14 天结束时间与周期心跳，但当前没有配置真实租户、生产级 PostgreSQL runtime URL、连续 14 个自然日的心跳/观察记录，因此不能用模拟或缩短时长替代。
+- 备份/恢复演练：未宣称完成。`verify_sqlite_postgres_migration.py` 已具备只读核验，但当前环境缺少 `STAFFDECK_POSTGRES_MIGRATOR_URL`、`STAFFDECK_POSTGRES_RESTORE_URL` 和 PostgreSQL 客户端；需在隔离数据库完成行数、校验和、RLS、迁移标记及应用启动证据。
+- 业务、产品、安全签字：未完成，需在上述证据包评审后由对应责任人签署；代码提交不能代替组织审批。
