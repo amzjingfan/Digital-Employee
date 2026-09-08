@@ -1,0 +1,23 @@
+# workforce/platform-governance 开发日志
+
+## 2026-09-08 · 人工接管恢复线程租户上下文门禁（开始）
+
+- 基线：`365e5d43c08cb159aa0e2f7100eabae040200a5b`；分支：`workforce/platform-governance`；开始时工作树干净。
+- 已核实现状：聊天流式 Worker、事件中继、异常收尾和标题摘要已通过 `_tenant_session(tenant_id)` 为独立数据库 Session 绑定 PostgreSQL RLS 租户上下文；人工接管异步恢复仍只传 `handoff_id`，恢复和失败记录均直接创建无租户上下文的 `Session(engine)`。
+- 选定切片：将已授权回复路径中的可信 `tenant_id` 固定传入人工接管恢复线程，并在读取接管单、会话、写入开始/失败审计以及恢复 AgentLoop 前绑定租户上下文；增加跨租户与上下文绑定回归。
+- 业务意义：在 PostgreSQL `FORCE RLS` 下保证人工答复可恢复原 SOP，同时避免后台线程以无上下文或错误租户查询接管、会话和审计记录。
+- 非目标：不改变人工接管分派策略、SOP 业务语义、七岗位流程、TikTok、连接器、生产凭据或外部写操作；不尝试用平台级旁路身份反查租户。
+- 风险：线程参数签名会影响现有单元测试和内部调用；异常处理必须仍在同一租户上下文内记录失败，且不得因错误 tenant 值回退到非 RLS 查询。
+- 验证计划：先运行人工接管与聊天绑定基线测试；实现后运行聚焦 Pytest、相关聊天/团队会话回归、Ruff/compileall，并按仓库可用性运行更广后端回归；本切片不改前端，仍执行前端 Vitest、TypeScript/Vite build、i18n 和配置检查确认无跨层回归。
+
+## 2026-09-08 · 人工接管恢复线程租户上下文门禁（完成）
+
+- 改动：`backend/app/api/chat.py` 将授权回复路径已验证的 `tenant_id` 与 `handoff_id` 一并传入异步线程；恢复主路径与异常审计路径均复用 `_tenant_session` 设置 PostgreSQL 事务级租户上下文，并在 SQLite 兼容路径显式拒绝接管单或会话租户不一致。
+- 回归：`backend/tests/test_human_handoff_policy.py` 验证回复调度固定租户、成功恢复前上下文绑定、错误租户无 AgentLoop/无审计副作用、恢复异常仍在同租户上下文记录；`backend/tests/test_feishu_handoff.py` 隔离来源字段测试的后台线程，避免误连默认测试库。
+- 环境 QA：系统 Python 3.11 缺少 FastAPI，首次基线在收集阶段失败；随后用 `uv sync --extra dev --frozen` 建立忽略的本地 `.venv`（Python 3.14.7）后，修改前人工接管/聊天基线为 `48 passed`。前端使用 `npm ci --ignore-scripts` 安装忽略的依赖目录；安装审计报告 13 个既有依赖漏洞（1 low、3 moderate、9 high），本切片未改依赖锁文件。
+- 聚焦验证：`uv run --frozen pytest tests/test_human_handoff_policy.py tests/test_chat_agent_binding.py tests/test_teams_conversations.py tests/test_feishu_handoff.py -q` -> `100 passed`；`uv run --frozen ruff check --select I,E9,F app/api/chat.py tests/test_human_handoff_policy.py tests/test_feishu_handoff.py` -> 通过；相关 `compileall` -> 通过。
+- 治理回归：身份、OIDC、租户、Casbin、RLS、统一任务、审批、审计、个人记忆、人工接管与聊天相关套件 -> `180 passed, 7 skipped`；7 项均为未设置 `STAFFDECK_RUN_POSTGRES_ACCEPTANCE=1` 且未提供隔离 PostgreSQL 验收库，因此不是本地 PostgreSQL 实库证明。
+- 全量后端：直接运行因既有 `tests/test_tiktok_production_bootstrap.py` 无法导入 `scripts` 在收集阶段停止；明确排除该文件后为 `2117 passed, 25 failed, 11 skipped`。25 项失败均不在本次人工接管/聊天租户上下文文件，集中于既有广告执行配置、Windows 符号链接/`SIGALRM`/`fcntl`、子进程时序、MCP 编码、Harness 路径与运行锁环境差异。
+- 前端验证：Vitest `63 files / 266 tests passed`；TypeScript/Vite 生产构建通过（仅有既有大 chunk 警告）。`npm run i18n:check` 因 87 个既有中文直写项失败；`npm run config:check` 因脱敏备份缺少 `frontend-enterprise/.env.example` 失败；本切片无前端改动。
+- 安全边界：未加入密钥、Token、Cookie、真实外部载荷或外部写路径；未调用真实退款、发布、调价、广告、下单、付款或生产部署。
+- 剩余风险与门禁：需要在隔离 PostgreSQL 运行账号环境启用 7 项 RLS 验收，证明线程事务的 `SET LOCAL app.tenant_id` 行为；正式 Casdoor MFA/TLS/密钥轮换、真实连接器故障演练和业务/安全签字仍为外部门禁。全量既有失败、i18n/config 门禁及 npm 依赖漏洞应由对应责任域另行处理。
