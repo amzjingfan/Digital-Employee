@@ -3164,6 +3164,12 @@ class PdcaSearchTermRun(SQLModel, table=True):
         UniqueConstraint(
             "tenant_id", "idempotency_key", name="uq_pdca_search_term_run_idempotency"
         ),
+        UniqueConstraint(
+            "tenant_id",
+            "input_digest",
+            "attempt",
+            name="uq_pdca_search_term_run_snapshot_attempt",
+        ),
         CheckConstraint("mode = 'rules_only'", name="pdca_search_term_runs_mode_check"),
         CheckConstraint("state = 'succeeded'", name="pdca_search_term_runs_state_check"),
         CheckConstraint(
@@ -3182,6 +3188,7 @@ class PdcaSearchTermRun(SQLModel, table=True):
             "target_acos > 0 AND target_acos <= 1",
             name="pdca_search_term_runs_target_check",
         ),
+        CheckConstraint("attempt > 0", name="pdca_search_term_runs_attempt_check"),
         Index(
             "ix_pdca_search_term_runs_account_time",
             "tenant_id",
@@ -3199,6 +3206,7 @@ class PdcaSearchTermRun(SQLModel, table=True):
     source_label: str = Field(default="local source file")
     source_sha256: str = Field(index=True)
     input_digest: str = Field(index=True)
+    attempt: int = Field(default=1)
     mapping_version: str = Field(index=True)
     rule_version: str = Field(index=True)
     metric_definition_version: str = Field(index=True)

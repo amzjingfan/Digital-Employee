@@ -192,6 +192,7 @@ class PdcaSearchTermRunRead(BaseModel):
     source_label: Literal["local source file"]
     source_sha256: str
     input_digest: str
+    attempt: int
     mapping_version: str
     rule_version: str
     metric_definition_version: str

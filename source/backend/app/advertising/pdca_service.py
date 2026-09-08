@@ -11,6 +11,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.advertising.schema import PdcaSearchTermActionRead, PdcaSearchTermRunRead
@@ -67,6 +68,7 @@ def create_pdca_search_term_run(
     data: bytes,
     target_acos: Decimal,
     currency: str,
+    explicit_rerun: bool = False,
     user: User,
 ) -> PdcaSearchTermRunRead:
     """Parse, aggregate and persist one rules-only Amazon search-term diagnosis.
@@ -128,6 +130,18 @@ def create_pdca_search_term_run(
             )
         return _run_read(db, existing)
 
+    latest_snapshot = db.exec(
+        select(PdcaSearchTermRun)
+        .where(
+            PdcaSearchTermRun.tenant_id == tenant_id,
+            PdcaSearchTermRun.input_digest == input_digest,
+        )
+        .order_by(PdcaSearchTermRun.attempt.desc())
+    ).first()
+    if latest_snapshot and not explicit_rerun:
+        return _run_read(db, latest_snapshot)
+    attempt = (latest_snapshot.attempt + 1) if latest_snapshot else 1
+
     aggregates = _aggregate_rows(rows)
     summary = _account_summary(aggregates)
     warnings = [
@@ -143,6 +157,7 @@ def create_pdca_search_term_run(
         store_resource_id=store_resource_id,
         source_sha256=source_sha256,
         input_digest=input_digest,
+        attempt=attempt,
         mapping_version=MAPPING_VERSION,
         rule_version=RULE_VERSION,
         metric_definition_version=METRIC_DEFINITION_VERSION,
@@ -159,12 +174,10 @@ def create_pdca_search_term_run(
         created_by_user_id=user.id,
     )
     db.add(run)
-    db.flush()
     total_spend = sum((item["spend"] for item in aggregates), start=_ZERO)
     for aggregate in aggregates:
         fact = _fact_row(run, aggregate)
         db.add(fact)
-        db.flush()
         db.add(_action_row(run, fact, aggregate, total_spend, normalized_target))
     db.add(
         CommerceGovernanceEvent(
@@ -177,6 +190,7 @@ def create_pdca_search_term_run(
             detail_json={
                 "source_sha256": source_sha256,
                 "input_digest": input_digest,
+                "attempt": attempt,
                 "mapping_version": MAPPING_VERSION,
                 "rule_version": RULE_VERSION,
                 "source_row_count": len(rows),
@@ -186,19 +200,64 @@ def create_pdca_search_term_run(
             },
         )
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        winner = db.exec(
+            select(PdcaSearchTermRun).where(
+                PdcaSearchTermRun.tenant_id == tenant_id,
+                PdcaSearchTermRun.idempotency_key == normalized_key,
+            )
+        ).first()
+        if winner:
+            if winner.input_digest != input_digest:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Idempotency-Key was already used for a different PDCA input snapshot",
+                )
+            return _run_read(db, winner)
+        winner = db.exec(
+            select(PdcaSearchTermRun).where(
+                PdcaSearchTermRun.tenant_id == tenant_id,
+                PdcaSearchTermRun.input_digest == input_digest,
+                PdcaSearchTermRun.attempt == attempt,
+            )
+        ).first()
+        if winner:
+            return _run_read(db, winner)
+        raise
     db.refresh(run)
     return _run_read(db, run)
 
 
 def list_pdca_search_term_runs(
-    db: Session, *, tenant_id: str, user: User
+    db: Session,
+    *,
+    tenant_id: str,
+    ad_account_resource_id: str,
+    store_resource_id: str | None,
+    user: User,
 ) -> list[PdcaSearchTermRunRead]:
-    authorize_advertising_scope(db, tenant_id=tenant_id, user=user)
+    authorize_advertising_scope(
+        db,
+        tenant_id=tenant_id,
+        ad_account_resource_id=ad_account_resource_id,
+        store_resource_id=store_resource_id,
+        user=user,
+    )
+    filters = [
+        PdcaSearchTermRun.tenant_id == tenant_id,
+        PdcaSearchTermRun.ad_account_resource_id == ad_account_resource_id,
+    ]
+    if store_resource_id:
+        filters.append(PdcaSearchTermRun.store_resource_id == store_resource_id)
+    else:
+        filters.append(PdcaSearchTermRun.store_resource_id.is_(None))
     rows = db.exec(
         select(PdcaSearchTermRun)
-        .where(PdcaSearchTermRun.tenant_id == tenant_id)
-        .order_by(PdcaSearchTermRun.created_at.desc())
+        .where(*filters)
+        .order_by(PdcaSearchTermRun.created_at.desc(), PdcaSearchTermRun.attempt.desc())
         .limit(100)
     ).all()
     return [_run_read(db, row) for row in rows]
@@ -260,7 +319,6 @@ def _resolve_mapping(fieldnames: list[str]) -> dict[str, str]:
         candidates: list[str] = []
         for alias in aliases:
             candidates.extend(normalized.get(_normalize_header(alias), []))
-        candidates = list(dict.fromkeys(candidates))
         if not candidates:
             missing.append(canonical)
         elif len(candidates) > 1:
@@ -330,9 +388,7 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for row in rows:
         key = (
             row["campaign_id"],
-            row["campaign_name"],
             row["ad_group_id"],
-            row["ad_group_name"],
             row["targeting"],
             row["match_type"],
             row["search_term_norm"],
@@ -381,9 +437,7 @@ def _fact_row(run: PdcaSearchTermRun, aggregate: dict[str, Any]) -> PdcaFactSear
     grain_key = _digest(
         [
             aggregate["campaign_id"],
-            aggregate["campaign_name"],
             aggregate["ad_group_id"],
-            aggregate["ad_group_name"],
             aggregate["targeting"],
             aggregate["match_type"],
             aggregate["search_term_norm"],
@@ -564,6 +618,7 @@ def _run_read(db: Session, row: PdcaSearchTermRun) -> PdcaSearchTermRunRead:
         source_label="local source file",
         source_sha256=row.source_sha256,
         input_digest=row.input_digest,
+        attempt=row.attempt,
         mapping_version=row.mapping_version,
         rule_version=row.rule_version,
         metric_definition_version=row.metric_definition_version,

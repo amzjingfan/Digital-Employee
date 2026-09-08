@@ -3995,6 +3995,8 @@
   "上传并生成建议": "Upload and Generate Advice",
   "规则运行": "Rules Run",
   "· 质量分": "· Quality Score",
+  "· 第": "· attempt",
+  "次 · 质量分": "· quality score",
   "源行": "Source Rows",
   "聚合事实": "Aggregated Facts",
   "建议": "Advice",

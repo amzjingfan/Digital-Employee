@@ -133,6 +133,7 @@ async def post_pdca_search_term_run(
     target_acos: Annotated[Decimal, Query(gt=0, le=1)] = Decimal("0.30"),
     currency: Annotated[str, Query(min_length=3, max_length=3)] = "USD",
     store_resource_id: Annotated[str | None, Query(max_length=128)] = None,
+    explicit_rerun: Annotated[bool, Query()] = False,
     file: UploadFile = File(...),  # noqa: B008 - FastAPI binds multipart input.
 ) -> PdcaSearchTermRunRead:
     max_bytes = get_settings().pdca_upload_max_bytes
@@ -148,6 +149,7 @@ async def post_pdca_search_term_run(
         data=data,
         target_acos=target_acos,
         currency=currency,
+        explicit_rerun=explicit_rerun,
         user=current_user,
     )
 
@@ -157,5 +159,13 @@ def get_pdca_search_term_runs(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_session)],
     tenant_id: Annotated[str, Query(min_length=1, max_length=128)],
+    ad_account_resource_id: Annotated[str, Query(min_length=1, max_length=128)],
+    store_resource_id: Annotated[str | None, Query(max_length=128)] = None,
 ) -> list[PdcaSearchTermRunRead]:
-    return list_pdca_search_term_runs(db, tenant_id=tenant_id, user=current_user)
+    return list_pdca_search_term_runs(
+        db,
+        tenant_id=tenant_id,
+        ad_account_resource_id=ad_account_resource_id,
+        store_resource_id=store_resource_id,
+        user=current_user,
+    )

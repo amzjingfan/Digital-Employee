@@ -167,6 +167,22 @@ def _search_term_csv(*, extra_spend: str = "0") -> bytes:
     ).encode()
 
 
+def _renamed_grain_csv() -> bytes:
+    return (
+        "Date,Campaign Name,Campaign ID,Ad Group Name,Ad Group ID,Targeting,Match Type,"
+        "Customer Search Term,Impressions,Clicks,Spend,Sales,Orders\n"
+        "2026-09-01,Old Name,CAMPAIGN-1,Old Group,ADGROUP-1,synthetic target,Broad,"
+        "synthetic query,10,1,1,0,0\n"
+        "2026-09-02,New Name,CAMPAIGN-1,New Group,ADGROUP-1,synthetic target,Broad,"
+        "synthetic query,20,2,2,0,0\n"
+    ).encode()
+
+
+def _duplicate_orders_header_csv() -> bytes:
+    lines = _search_term_csv().decode().splitlines()
+    return ("\n".join([f"{lines[0]},Orders", *(f"{line},999" for line in lines[1:])])).encode()
+
+
 def test_ad_inspection_blocks_inventory_and_routes_cross_role_tasks(setup) -> None:
     _, db, users, resources = setup
     recommendation = create_advertising_recommendation(
@@ -454,6 +470,7 @@ def test_pdca_csv_aggregates_decimal_facts_and_creates_advice_only_actions(setup
     )
 
     assert result.mode == "rules_only"
+    assert result.attempt == 1
     assert result.external_execution_allowed is False
     assert result.source_label == "local source file"
     assert result.source_row_count == 3
@@ -497,8 +514,15 @@ def test_pdca_idempotency_replays_same_snapshot_and_rejects_collision(setup) -> 
     }
     first = create_pdca_search_term_run(db, data=_search_term_csv(), **request)
     replay = create_pdca_search_term_run(db, data=_search_term_csv(), **request)
+    replay_with_new_key = create_pdca_search_term_run(
+        db,
+        data=_search_term_csv(),
+        **{**request, "idempotency_key": "pdca-contract-new-key"},
+    )
 
     assert replay.id == first.id
+    assert replay_with_new_key.id == first.id
+    assert first.attempt == 1
     assert len(db.exec(select(PdcaSearchTermRun)).all()) == 1
     assert len(db.exec(select(PdcaFactSearchTerm)).all()) == 2
     assert len(db.exec(select(PdcaAction)).all()) == 2
@@ -507,6 +531,19 @@ def test_pdca_idempotency_replays_same_snapshot_and_rejects_collision(setup) -> 
         create_pdca_search_term_run(db, data=_search_term_csv(extra_spend="1"), **request)
     assert collision.value.status_code == 409
     assert len(db.exec(select(PdcaSearchTermRun)).all()) == 1
+
+    rerun = create_pdca_search_term_run(
+        db,
+        data=_search_term_csv(),
+        **{
+            **request,
+            "idempotency_key": "pdca-contract-attempt-2",
+            "explicit_rerun": True,
+        },
+    )
+    assert rerun.id != first.id
+    assert rerun.attempt == 2
+    assert len(db.exec(select(PdcaSearchTermRun)).all()) == 2
 
 
 def test_pdca_missing_mapping_and_cross_tenant_are_rejected(setup) -> None:
@@ -531,9 +568,85 @@ def test_pdca_missing_mapping_and_cross_tenant_are_rejected(setup) -> None:
     assert mapping_error.value.status_code == 422
     assert "missing required fields: orders" in str(mapping_error.value.detail)
 
+    with pytest.raises(HTTPException) as ambiguous_error:
+        create_pdca_search_term_run(
+            db,
+            tenant_id="tenant_demo",
+            ad_account_resource_id=resources["account"],
+            store_resource_id=resources["store"],
+            idempotency_key="pdca-contract-ambiguous",
+            filename="synthetic-search-terms.csv",
+            content_type="text/csv",
+            data=_duplicate_orders_header_csv(),
+            target_acos=Decimal("0.30"),
+            currency="USD",
+            user=users["advertising"],
+        )
+    assert ambiguous_error.value.status_code == 422
+    assert "ambiguous fields: orders" in str(ambiguous_error.value.detail)
+
     with pytest.raises(HTTPException) as other_tenant:
-        list_pdca_search_term_runs(db, tenant_id="tenant_demo", user=users["other"])
+        list_pdca_search_term_runs(
+            db,
+            tenant_id="tenant_demo",
+            ad_account_resource_id=resources["account"],
+            store_resource_id=resources["store"],
+            user=users["other"],
+        )
     assert other_tenant.value.status_code == 403
+
+
+def test_pdca_uses_stable_ids_for_grain_and_filters_history_by_resource(setup) -> None:
+    _, db, users, resources = setup
+    first = create_pdca_search_term_run(
+        db,
+        tenant_id="tenant_demo",
+        ad_account_resource_id=resources["account"],
+        store_resource_id=resources["store"],
+        idempotency_key="pdca-stable-grain-001",
+        filename="synthetic-search-terms.csv",
+        content_type="text/csv",
+        data=_renamed_grain_csv(),
+        target_acos=Decimal("0.30"),
+        currency="USD",
+        user=users["advertising"],
+    )
+    assert first.fact_count == 1
+    fact = db.exec(select(PdcaFactSearchTerm)).one()
+    assert fact.clicks == 3
+    assert fact.spend == Decimal("3.000000")
+
+    second_account = create_resource(
+        db,
+        request=BusinessResourceCreate(
+            tenant_id="tenant_demo",
+            resource_type="ad_account",
+            code="ADS-EU",
+            name="Amazon Ads EU",
+        ),
+        user=users["supervisor"],
+    )
+    create_pdca_search_term_run(
+        db,
+        tenant_id="tenant_demo",
+        ad_account_resource_id=second_account.id,
+        store_resource_id=resources["store"],
+        idempotency_key="pdca-second-account-001",
+        filename="synthetic-search-terms.csv",
+        content_type="text/csv",
+        data=_search_term_csv(),
+        target_acos=Decimal("0.30"),
+        currency="USD",
+        user=users["advertising"],
+    )
+    listed = list_pdca_search_term_runs(
+        db,
+        tenant_id="tenant_demo",
+        ad_account_resource_id=resources["account"],
+        store_resource_id=resources["store"],
+        user=users["advertising"],
+    )
+    assert [item.id for item in listed] == [first.id]
 
 
 def test_pdca_multipart_api_contract_requires_idempotency_and_returns_rules_only(setup) -> None:
@@ -574,12 +687,16 @@ def test_pdca_multipart_api_contract_requires_idempotency_and_returns_rules_only
     assert created.status_code == 200
     payload = created.json()
     assert payload["mode"] == "rules_only"
+    assert payload["attempt"] == 1
     assert payload["source_label"] == "local source file"
     assert payload["external_execution_allowed"] is False
     assert payload["mapping"]["search_term"] == "Customer Search Term"
     assert all(item["status"] == "suggested" for item in payload["top_actions"])
 
-    listed = client.get(path, params={"tenant_id": "tenant_demo"}, headers=auth)
+    missing_scope = client.get(path, params={"tenant_id": "tenant_demo"}, headers=auth)
+    assert missing_scope.status_code == 422
+
+    listed = client.get(path, params=params, headers=auth)
     assert listed.status_code == 200
     assert [item["id"] for item in listed.json()] == [payload["id"]]
 

@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS public.pdca_search_term_runs (
   source_label varchar NOT NULL DEFAULT 'local source file',
   source_sha256 varchar NOT NULL,
   input_digest varchar NOT NULL,
+  attempt integer NOT NULL DEFAULT 1,
   mapping_version varchar NOT NULL,
   rule_version varchar NOT NULL,
   metric_definition_version varchar NOT NULL,
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS public.pdca_search_term_runs (
   created_at timestamp without time zone NOT NULL,
   CONSTRAINT uq_pdca_search_term_run_tenant_id UNIQUE (tenant_id, id),
   CONSTRAINT uq_pdca_search_term_run_idempotency UNIQUE (tenant_id, idempotency_key),
+  CONSTRAINT uq_pdca_search_term_run_snapshot_attempt UNIQUE (tenant_id, input_digest, attempt),
   CONSTRAINT pdca_search_term_runs_mode_check CHECK (mode = 'rules_only'),
   CONSTRAINT pdca_search_term_runs_state_check CHECK (state = 'succeeded'),
   CONSTRAINT pdca_search_term_runs_no_execution_check CHECK (external_execution_allowed = false),
@@ -37,6 +39,7 @@ CREATE TABLE IF NOT EXISTS public.pdca_search_term_runs (
     source_row_count > 0 AND fact_count > 0 AND action_count >= 0
   ),
   CONSTRAINT pdca_search_term_runs_target_check CHECK (target_acos > 0 AND target_acos <= 1),
+  CONSTRAINT pdca_search_term_runs_attempt_check CHECK (attempt > 0),
   CONSTRAINT pdca_search_term_runs_currency_check CHECK (currency ~ '^[A-Z]{3}$')
 );
 CREATE INDEX IF NOT EXISTS ix_pdca_search_term_runs_tenant_id

@@ -89,6 +89,7 @@ type PdcaAction = {
 };
 type PdcaRun = {
   id: string;
+  attempt: number;
   mode: 'rules_only';
   state: 'succeeded';
   target_acos: string;
@@ -189,7 +190,6 @@ export default function AdvertisingGovernancePage({ currentUser, onLogout }: Pro
       Promise<EffectFollowUp[]>,
       Promise<Policy[]>,
       Promise<Usage[]>,
-      Promise<PdcaRun[]>,
     ] = [
       api.get(`${BASE}/overview?tenant_id=${tenant}`),
       api.get(`/api/enterprise/business-resources?tenant_id=${tenant}`),
@@ -197,7 +197,6 @@ export default function AdvertisingGovernancePage({ currentUser, onLogout }: Pro
       api.get(`${BASE}/effect-follow-ups?tenant_id=${tenant}`),
       api.get(`${BASE}/automation-policies?tenant_id=${tenant}`),
       manager ? api.get(`${BASE}/automation-usage?tenant_id=${tenant}`) : Promise.resolve([]),
-      canInspect ? api.get(`${BASE}/pdca/search-term-runs?tenant_id=${tenant}`) : Promise.resolve([]),
     ];
     const [
       nextOverview,
@@ -206,10 +205,21 @@ export default function AdvertisingGovernancePage({ currentUser, onLogout }: Pro
       nextEffects,
       nextPolicies,
       nextUsage,
-      nextPdcaRuns,
     ] = await Promise.all(calls);
+    const scopedResources = nextResources.filter((item) =>
+      ['store', 'ad_account'].includes(item.resource_type),
+    );
+    const nextAdAccount = scopedResources.find((item) => item.resource_type === 'ad_account');
+    const nextStore = scopedResources.find((item) => item.resource_type === 'store');
+    const scope = new URLSearchParams({ tenant_id: tenantId });
+    if (nextAdAccount) scope.set('ad_account_resource_id', nextAdAccount.id);
+    if (nextStore) scope.set('store_resource_id', nextStore.id);
+    const nextPdcaRuns: PdcaRun[] =
+      canInspect && nextAdAccount
+        ? await api.get(`${BASE}/pdca/search-term-runs?${scope}`)
+        : [];
     setOverview(nextOverview);
-    setResources(nextResources.filter((item) => ['store', 'ad_account'].includes(item.resource_type)));
+    setResources(scopedResources);
     setRecommendations(nextRecommendations);
     setEffects(nextEffects);
     setPolicies(nextPolicies);
@@ -476,7 +486,7 @@ export default function AdvertisingGovernancePage({ currentUser, onLogout }: Pro
                     <div>
                       <strong className="text-[13px]">规则运行 {run.id}</strong>
                       <p className="mt-1 text-[10px] text-[#858b9c]">
-                        {run.mapping_version} · {run.rule_version} · 质量分 {run.quality_score}
+                        {run.mapping_version} · {run.rule_version} · 第 {run.attempt} 次 · 质量分 {run.quality_score}
                       </p>
                     </div>
                     <Pill value={run.state} />
