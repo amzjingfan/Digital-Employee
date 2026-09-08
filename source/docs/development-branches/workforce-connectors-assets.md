@@ -22,3 +22,11 @@
 - 安全检查：最终 diff 无前端、迁移、配置或密钥文件；测试只使用显式虚构的 `secret://` 引用和不可逆占位指纹；未调用真实外部接口或任何写操作。
 - 剩余风险与外部门禁：真实 TikTok Service ID/授权、非 Seller 官方只读适配器、授权远端撤销、14 天影子运行、PostgreSQL 正式环境复测、依赖漏洞处置和独立安全/业务审批仍未完成。本提交只能证明本地 Connector 调用前门禁，不能作为生产放行。
 - 建议后续顺序：先合并本门禁，再由 UAT/发布分支在 PostgreSQL 受限运行账号下重放五授权域反例；之后才接入逐授权域官方只读适配器和远端撤销演练。
+
+## 2026-09-08 · 配置与模式门禁
+
+- 改动：新增 `tiktok_connector_mode` 配置，类型限定为 `mock`、`replay`、`live`，默认安全值为 `mock`。Mock 读取只允许 `mock`；已实现的官方 Seller 读取只允许 `live`；`replay` 在尚无连接器回放后端前保持 fail-closed。
+- 门禁：模式不匹配时在构造官方客户端或写入成功 `ConnectorSyncState` 前返回稳定错误码 `tiktok_connector_unavailable`；原有过期、授权域/资产类型、scope 与官方能力门禁保持不变。
+- 回归：新增 Mock 在 live/replay 模式拒绝、官方 Seller 在 mock 模式拒绝且不构造客户端的测试；官方成功摘要测试显式使用 live 模式，避免依赖环境默认值。
+- 验证：聚焦 Connector/OAuth `18 passed`；TikTok 专项（排除脱敏备份基线中需从仓库根导入 `scripts` 的既有 bootstrap 收集问题）`34 passed`；变更文件 Ruff 通过；后端 `compileall` 通过。
+- 风险/边界：本切片没有实现 replay 连接器，也没有启用真实 TikTok 凭据或外部写操作；`live` 仅解除模式门禁，真实官方配置、权限、令牌有效性仍由官方客户端与发布审批负责。

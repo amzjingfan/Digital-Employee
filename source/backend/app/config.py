@@ -1,5 +1,6 @@
 import os as _os
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -43,6 +44,10 @@ class Settings(BaseSettings):
     casdoor_management_timeout_seconds: float = 10.0
     casdoor_management_sync_interval_seconds: float = 15 * 60
     tiktok_official_enabled: bool = False
+    # Connector execution is explicit: mock is the safe local default, live
+    # is required for official API calls, and replay remains fail-closed until
+    # a connector-backed replay implementation is available.
+    tiktok_connector_mode: Literal["mock", "replay", "live"] = "mock"
     tiktok_app_key: str = ""
     tiktok_app_secret: str = ""
     tiktok_service_id: str = ""

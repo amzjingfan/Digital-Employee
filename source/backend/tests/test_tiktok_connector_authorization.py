@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from app.config import Settings
 from app.db.models import (
     BusinessResource,
     ConnectorSyncState,
@@ -200,6 +201,74 @@ def test_mock_read_connector_accepts_only_compatible_authorization_asset_pairs(
         assert result.resource_id == resource.id
         assert result.data["read_only"] is True
         assert len(db.exec(select(ConnectorSyncState)).all()) == 1
+
+
+@pytest.mark.parametrize("mode", ["live", "replay"])
+def test_mock_read_connector_requires_mock_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    monkeypatch.setattr(
+        "app.tiktok.connector.get_settings",
+        lambda: Settings(_env_file=None, tiktok_connector_mode=mode),
+    )
+    with _session() as db:
+        resource = _resource(db, resource_type="store", resource_id=f"shop-{mode}")
+        _authorization(
+            db,
+            authorization_type="seller",
+            resource_id=resource.id,
+            scope="shop.read",
+            expires_at=utc_now() + timedelta(hours=1),
+        )
+
+        with pytest.raises(HTTPException) as error:
+            read_tiktok_resource(
+                db,
+                user=db.get(User, "admin"),
+                authorization_type="seller",
+                resource_id=resource.id,
+            )
+
+        assert error.value.status_code == 503
+        assert error.value.detail == "tiktok_connector_unavailable"
+        _assert_no_successful_sync(db)
+
+
+def test_official_seller_read_requires_live_mode_before_constructing_external_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.tiktok.connector.get_settings",
+        lambda: Settings(_env_file=None, tiktok_connector_mode="mock"),
+    )
+
+    def unexpected_client():
+        raise AssertionError("official connector must not construct a client in mock mode")
+
+    monkeypatch.setattr("app.tiktok.connector.TikTokOfficialClient", unexpected_client)
+    with _session() as db:
+        resource = _resource(db, resource_type="store", resource_id="seller-official-mock-mode")
+        _authorization(
+            db,
+            authorization_type="seller",
+            resource_id=resource.id,
+            scope="shop.read",
+            expires_at=utc_now() + timedelta(hours=1),
+            flow="official",
+        )
+
+        with pytest.raises(HTTPException) as error:
+            read_tiktok_resource(
+                db,
+                user=db.get(User, "admin"),
+                authorization_type="seller",
+                resource_id=resource.id,
+            )
+
+        assert error.value.status_code == 503
+        assert error.value.detail == "tiktok_connector_unavailable"
+        _assert_no_successful_sync(db)
 
 
 def test_official_non_seller_read_fails_before_constructing_external_client(

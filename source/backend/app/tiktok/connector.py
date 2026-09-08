@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
+from app.config import get_settings
 from app.db.models import (
     BusinessResource,
     BusinessResourceScope,
@@ -130,8 +131,11 @@ def read_tiktok_resource(
         ):
             raise HTTPException(status_code=403, detail="TikTok authorization scope is insufficient")
 
-    if authorization.metadata_json.get("authorization_flow") == "official":
+    authorization_flow = authorization.metadata_json.get("authorization_flow")
+    if authorization_flow == "official":
         if authorization_type not in OFFICIAL_READ_AUTHORIZATION_TYPES:
+            raise HTTPException(status_code=503, detail="tiktok_connector_unavailable")
+        if get_settings().tiktok_connector_mode != "live":
             raise HTTPException(status_code=503, detail="tiktok_connector_unavailable")
         try:
             permissions = TikTokOfficialClient().get_seller_permissions(
@@ -153,6 +157,8 @@ def read_tiktok_resource(
             else 0,
         }
     else:
+        if get_settings().tiktok_connector_mode != "mock":
+            raise HTTPException(status_code=503, detail="tiktok_connector_unavailable")
         connector_type = f"tiktok.mock.{authorization_type}"
         data = {
             "resource_code": resource.code,
@@ -185,6 +191,6 @@ def read_tiktok_resource(
         authorization_id=authorization.id,
         resource_id=resource.id,
         fetched_at=now,
-        source="official" if authorization.metadata_json.get("authorization_flow") == "official" else "mock",
+        source="official" if authorization_flow == "official" else "mock",
         data=data,
     )
