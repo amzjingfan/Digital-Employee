@@ -38,6 +38,7 @@ from app.db.models import (
 )
 from app.security.business_roles import BUSINESS_ROLE_BY_KEY, BusinessRoleDefinition
 from app.security.permissions import ensure_tenant_admin, is_admin_user
+from app.tiktok.release_gate import verify_tiktok_live_write_disabled
 from app.tiktok.schema import (
     OrganizationUnitRead,
     TikTokAgentReleasePreflight,
@@ -508,12 +509,20 @@ def get_tiktok_production_readiness(
         )
     )
 
+    live_write_audit = verify_tiktok_live_write_disabled()
+    live_write_issues = list(live_write_audit["issues"])
     gates.append(
         TikTokProductionGateRead(
             key="external_writes",
             label="外部写入安全门禁",
-            status="passed",
-            detail="P3-A 未注册 TikTok Live 外部写入工具",
+            status="passed" if live_write_audit["ok"] else "blocked",
+            detail=(
+                "P3-A Live 写入表面审计通过："
+                f"{live_write_audit['route_count']} 条冻结路由、"
+                f"{live_write_audit['skill_count']} 个只读 Skill"
+                if live_write_audit["ok"]
+                else "P3-A Live 写入表面审计阻断：" + "; ".join(live_write_issues[:3])
+            ),
         )
     )
     return TikTokProductionReadiness(

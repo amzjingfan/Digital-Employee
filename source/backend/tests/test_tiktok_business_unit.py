@@ -159,3 +159,30 @@ def test_tiktok_production_readiness_does_not_count_mock_authorization(
     assert "官方 App" in gates["tiktok_official_authorization"].detail
     assert gates["agent_releases"].status == "waiting"
     assert gates["shadow_run"].status == "waiting"
+    assert gates["external_writes"].status == "passed"
+    assert "21 条冻结路由" in gates["external_writes"].detail
+
+
+def test_tiktok_production_readiness_blocks_when_live_write_audit_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.tiktok.service.verify_tiktok_live_write_disabled",
+        lambda: {
+            "ok": False,
+            "route_count": 22,
+            "skill_count": 12,
+            "issues": ["unreviewed_tiktok_route:POST /ads/budget"],
+        },
+    )
+
+    with _session() as db:
+        admin = _user("admin", "tenant_admin", account_role="admin")
+        db.add(admin)
+        db.commit()
+        readiness = get_tiktok_production_readiness(db, admin)
+
+    gates = {gate.key: gate for gate in readiness.gates}
+    assert readiness.ready is False
+    assert gates["external_writes"].status == "blocked"
+    assert "unreviewed_tiktok_route:POST /ads/budget" in gates["external_writes"].detail
