@@ -47,6 +47,7 @@ from app.db.models import (
     Tenant,
     User,
     WorkTask,
+    WorkTaskEvidence,
     utc_now,
 )
 
@@ -180,7 +181,7 @@ def _query_case(db: Session, case, user: User, *, dependency_status=None):
                     title="US delivery exception policy",
                     version="3.0",
                     scope="tenant_demo/store:STORE-US",
-                    excerpt="Escalate stalled parcels before the platform deadline.",
+                    excerpt="RAW_POLICY_EXCERPT_MUST_NOT_PERSIST",
                     retrieved_at=utc_now(),
                 )
             ],
@@ -206,6 +207,15 @@ def test_after_sales_full_chain_links_query_citations_approval_tasks_and_trace(
     assert queried.status == "queried"
     assert queried.order_snapshot["history"][0].get("customer_email") is None
     assert queried.citations[0]["version"] == "3.0"
+    query_evidence = db.exec(
+        select(WorkTaskEvidence).where(WorkTaskEvidence.task_id == case.task_id)
+    ).all()
+    assert [(item.source_type, item.source_id) for item in query_evidence] == [
+        ("knowledge_citation", "kb_after_sales_policy_v3@3.0")
+    ]
+    assert query_evidence[0].source_route.endswith(f"case_id={case.id}")
+    assert query_evidence[0].summary == "适用范围：tenant_demo/store:STORE-US"
+    assert "RAW_POLICY_EXCERPT_MUST_NOT_PERSIST" not in query_evidence[0].summary
 
     classified = classify_after_sales_case(
         db,
@@ -263,6 +273,13 @@ def test_after_sales_full_chain_links_query_citations_approval_tasks_and_trace(
     assert db.get(WorkTask, closed.follow_up_task_ids[0]).owner_business_role == (
         "listing_compliance_specialist"
     )
+    for task_id in closed.follow_up_task_ids:
+        evidence = db.exec(
+            select(WorkTaskEvidence).where(WorkTaskEvidence.task_id == task_id)
+        ).one()
+        assert evidence.source_type == "after_sales_case"
+        assert evidence.source_id == case.id
+        assert evidence.source_route.endswith(f"case_id={case.id}")
     assert [event.event_type for event in closed.events] == [
         "intake_created",
         "order_context_queried",
@@ -401,6 +418,12 @@ def test_logistics_detection_deduplicates_clusters_escalates_and_resolves(
     assert anomaly.status == "clustered"
     assert anomaly.severity == "critical"
     assert anomaly.cluster_key.startswith("cluster:")
+    anomaly_task_evidence = db.exec(
+        select(WorkTaskEvidence).where(WorkTaskEvidence.task_id == anomaly.task_id)
+    ).one()
+    assert anomaly_task_evidence.source_type == "logistics_event"
+    assert anomaly_task_evidence.source_id == "UPS-EVENT-77"
+    assert anomaly_task_evidence.source_route.endswith(f"anomaly_id={anomaly.id}")
 
     duplicate = ingest_logistics_anomalies(
         db,
@@ -441,6 +464,13 @@ def test_logistics_detection_deduplicates_clusters_escalates_and_resolves(
         "procurement_specialist",
         "operations_supervisor",
     }
+    for task_id in escalated.follow_up_task_ids:
+        evidence = db.exec(
+            select(WorkTaskEvidence).where(WorkTaskEvidence.task_id == task_id)
+        ).one()
+        assert evidence.source_type == "logistics_anomaly"
+        assert evidence.source_id == anomaly.id
+        assert evidence.source_route.endswith(f"anomaly_id={anomaly.id}")
     assert len(
         list_logistics_anomalies(
             db, tenant_id="tenant_demo", user=workforce["after_sales"]

@@ -80,6 +80,7 @@ from app.security.authorization import authorize_business_resource
 from app.security.permissions import is_admin_user
 from app.session.attachment_store import read_staged_attachment_manifest, stage_chat_attachment
 from app.session.attachments import parse_chat_attachment
+from app.work_tasks.schema import WorkTaskEvidenceReference
 from app.work_tasks.service import create_linked_task
 
 _RULE_ROLES = {"listing_compliance_specialist", "operations_supervisor"}
@@ -1585,6 +1586,7 @@ def evaluate_product_launch_gate(
             "evidence_digest": row.evidence_digest,
             "supplier_lead_time_confirmed": request.supplier_lead_time_confirmed,
         },
+        evidence=_launch_task_evidence(db, request=request, gate_id=row.id),
     )
     row.task_id = task.id
     db.add(row)
@@ -2032,6 +2034,77 @@ def _launch_evidence(db: Session, request: ProductLaunchGateCreate) -> dict[str,
         "blockers": blockers,
     }
     return {"blockers": blockers, "snapshot": snapshot}
+
+
+def _launch_task_evidence(
+    db: Session, *, request: ProductLaunchGateCreate, gate_id: str
+) -> list[WorkTaskEvidenceReference]:
+    """Build safe references to the immutable inputs used by a launch gate."""
+
+    route = f"/enterprise/product-lifecycle?tab=launch&launch_gate_id={gate_id}"
+    check = _one(db, ListingComplianceCheck, request.tenant_id, request.listing_check_id, "Listing check")
+    rule = _one(db, ListingRuleSet, request.tenant_id, check.rule_set_id, "Rule set")
+    recommendation = _one(
+        db,
+        ProcurementRecommendation,
+        request.tenant_id,
+        request.procurement_recommendation_id,
+        "Procurement recommendation",
+    )
+    references = [
+        WorkTaskEvidenceReference(
+            source_type="listing_compliance_check",
+            source_id=check.id,
+            severity="high" if check.gate_status == "block" else "info",
+            label=f"Listing 合规检查 · {check.sku}",
+            summary=(
+                f"规则版本 {check.rule_version}，门禁状态 {check.gate_status}，"
+                f"事实版本 {check.sku_fact_version}。"
+            ),
+            source_route=route,
+            occurred_at=check.created_at,
+        ),
+        WorkTaskEvidenceReference(
+            source_type="listing_rule_set",
+            source_id=rule.id,
+            severity="info",
+            label=f"Listing 规则 · {rule.platform}/{rule.marketplace}",
+            summary=f"{rule.category} 规则版本 {rule.version}，状态 {rule.status}。",
+            source_route=route,
+            occurred_at=rule.created_at,
+        ),
+        WorkTaskEvidenceReference(
+            source_type="procurement_recommendation",
+            source_id=recommendation.id,
+            severity=recommendation.risk_level,
+            label=f"采购建议 · {recommendation.sku}",
+            summary=(
+                f"状态 {recommendation.status}，建议数量 {recommendation.recommended_quantity}，"
+                f"交期 {recommendation.lead_time_days} 天，风险 {recommendation.risk_level}。"
+            ),
+            source_route=route,
+            occurred_at=recommendation.created_at,
+        ),
+    ]
+    assets = db.exec(
+        select(CreativeAssetVersion).where(
+            CreativeAssetVersion.tenant_id == request.tenant_id,
+            CreativeAssetVersion.id.in_(sorted(set(request.asset_version_ids))),
+        )
+    ).all()
+    references.extend(
+        WorkTaskEvidenceReference(
+            source_type="creative_asset_version",
+            source_id=asset.id,
+            severity="info" if asset.status == "approved" else "high",
+            label=f"素材版本 · {asset.product_key}",
+            summary=f"素材状态 {asset.status}，文件摘要 {asset.file_digest[:16]}。",
+            source_route=route,
+            occurred_at=asset.created_at,
+        )
+        for asset in assets
+    )
+    return references
 
 
 def _revalidate_launch(db: Session, row: ProductLaunchGate) -> list[dict[str, Any]]:

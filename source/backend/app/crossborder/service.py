@@ -48,7 +48,8 @@ from app.db.models import (
 )
 from app.security.authorization import authorize_business_resource
 from app.security.permissions import is_admin_user
-from app.work_tasks.service import create_linked_task
+from app.work_tasks.schema import WorkTaskEvidenceReference
+from app.work_tasks.service import append_task_evidence, create_linked_task
 
 _AFTERSALES_ROLES = {"after_sales_specialist", "operations_supervisor"}
 _LOGISTICS_MUTATION_ROLES = {"logistics_exception_specialist", "operations_supervisor"}
@@ -216,6 +217,28 @@ def record_after_sales_query(
     previous = case.status
     case.order_snapshot_json = safe_snapshot
     case.citations_json = citations
+    task = db.get(WorkTask, case.task_id)
+    if task is None:
+        raise HTTPException(status_code=409, detail="Linked work task is unavailable")
+    evidence_created = append_task_evidence(
+        db,
+        task=task,
+        evidence=[
+            WorkTaskEvidenceReference(
+                source_type="knowledge_citation",
+                source_id=f"{citation.source_id}@{citation.version}",
+                severity="info",
+                label=f"{citation.title} · v{citation.version}"[:320],
+                summary=f"适用范围：{citation.scope}",
+                source_route=f"/enterprise/crossborder-operations?case_id={case.id}",
+                occurred_at=citation.retrieved_at,
+            )
+            for citation in request.citations
+        ],
+        actor_type="human",
+        actor_id=user.id,
+        actor_business_role=user.business_role,
+    )
     case.needs_human = bool(dependency_failures)
     case.human_reason = (
         f"dependency_unavailable:{','.join(dependency_failures)}" if dependency_failures else None
@@ -242,6 +265,7 @@ def record_after_sales_query(
         detail={
             "snapshot_fields": sorted(safe_snapshot),
             "citation_ids": [item["source_id"] for item in citations],
+            "work_task_evidence_created": evidence_created,
             "dependency_failures": dependency_failures,
             "observed_at": request.observed_at.isoformat(),
         },
@@ -460,6 +484,20 @@ def close_after_sales_case(
             risk_level=case.risk_level,
             scope={"store_resource_id": case.store_resource_id, "case_id": case.id},
             input_data={"root_cause": request.root_cause, "parent_task_id": case.task_id},
+            evidence=[
+                WorkTaskEvidenceReference(
+                    source_type="after_sales_case",
+                    source_id=case.id,
+                    severity=case.risk_level,
+                    label=f"售后案例根因 · {case.category or 'other'}",
+                    summary=(
+                        f"工单 {case.order_reference_masked} 已完成人工复核，"
+                        f"需 {followup.owner_business_role} 跟进。"
+                    ),
+                    source_route=f"/enterprise/crossborder-operations?case_id={case.id}",
+                    occurred_at=now,
+                )
+            ],
         )
         task_ids.append(task.id)
     case.status = "closed"
@@ -629,6 +667,22 @@ def ingest_logistics_anomalies(
                 "cluster_key": cluster_key,
             },
             input_data={"anomaly_id": row.id, "read_only_patrol": True},
+            evidence=[
+                WorkTaskEvidenceReference(
+                    source_type="logistics_event",
+                    source_id=item.status_event_id.strip(),
+                    severity=severity,
+                    label=f"{carrier.code} · {item.anomaly_type}",
+                    summary=(
+                        f"订单 {row.order_reference_masked} 的物流状态为 "
+                        f"{row.shipment_status}，客户影响 {row.customer_impact}。"
+                    ),
+                    source_route=(
+                        f"/enterprise/crossborder-operations?anomaly_id={row.id}"
+                    ),
+                    occurred_at=item.observed_at,
+                )
+            ],
         )
         row.task_id = task.id
         db.add(row)
@@ -736,6 +790,22 @@ def escalate_logistics_anomaly(
                 "cluster_key": row.cluster_key,
             },
             input_data={"anomaly_id": row.id, "parent_task_id": row.task_id},
+            evidence=[
+                WorkTaskEvidenceReference(
+                    source_type="logistics_anomaly",
+                    source_id=row.id,
+                    severity=row.severity,
+                    label=f"物流异常 · {row.anomaly_type}",
+                    summary=(
+                        f"订单 {row.order_reference_masked} 的异常已升级，"
+                        f"承运商 {row.carrier_code}，影响等级 {row.customer_impact}。"
+                    ),
+                    source_route=(
+                        f"/enterprise/crossborder-operations?anomaly_id={row.id}"
+                    ),
+                    occurred_at=row.last_observed_at,
+                )
+            ],
         )
         if task.id not in task_ids:
             task_ids.append(task.id)
