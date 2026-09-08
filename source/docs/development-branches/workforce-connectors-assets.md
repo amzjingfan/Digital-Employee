@@ -43,3 +43,11 @@
 - 回归：新增官方配置与 active 官方授权存在、但模式为 `mock` 时 readiness 仍阻塞的测试；同时确认官方授权 gate 本身仍可正确显示通过，避免模式问题被配置问题掩盖。
 - 验证：TikTok 专项（排除既有 bootstrap 导入路径问题）`35 passed`；相关 BusinessResource/Crossborder 回归 `11 passed`；变更范围 Ruff 与 compileall 通过；PostgreSQL acceptance 因未设置 `STAFFDECK_RUN_POSTGRES_ACCEPTANCE=1` 按设计 `7 skipped`，本机未使用任何数据库凭据或修改外部数据。
 - 剩余门禁：需要 UAT/发布环境提供隔离 PostgreSQL runtime URL 与受限账号后，才能完成真实 PostgreSQL RLS/权限回放；在此之前不宣称生产放行。
+
+## 2026-09-08 · UAT PostgreSQL RLS/权限回放（完成）
+
+- 环境：使用本机隔离 StaffDeck 部署的 `staffdeck_app`，以 `staffdeck_runtime` 受限角色连接；连接参数来自部署 `.env`，密码未输出、未写入仓库或日志。
+- PostgreSQL acceptance：`tests/test_postgres_acceptance.py` 在 `STAFFDECK_RUN_POSTGRES_ACCEPTANCE=1` 下 `7 passed`，覆盖 runtime 角色无 DDL/RLS bypass、连接池租户上下文不串租户、不可变证据、跨境聚合/商品生命周期/广告治理 RLS 与权限。
+- 生产门禁：`verify_postgres_production_gate.py` 返回 `ok=true`，required tables、RLS/forced RLS 与角色均无缺失或 bypass。
+- TikTok 五授权域反例：在 `tenant_demo` 受限会话中临时构造 Seller/Creator/Partner/Ads/Social 与错误资产类型组合；五项均在 connector 外部调用前返回 `403 tiktok_authorization_type_mismatch`，未写入成功 SyncState；每项事务回滚，随后确认临时资源与授权残留均为 `0`。
+- 结论：本地隔离 PostgreSQL 的 RLS、受限角色权限和五授权域连接器前置门禁已得到真实数据库证据；这不替代真实 TikTok OAuth、远端权限撤销、14 天影子运行或业务/安全发布签字。
