@@ -1,5 +1,15 @@
 # workforce/platform-governance 开发日志
 
+## 2026-09-08 · 异步反馈分析租户上下文门禁（开始）
+
+- 基线：`8f6e155`；分支：`workforce/platform-governance`；开始时工作树干净。
+- 已核实现状：`feedback.analyze` 的内部排队、旧版异步执行入口和持久化 Job Handler 都可在独立 `Session(engine)` 中运行；旧版入口未设置租户上下文，服务按反馈主键读取，SQLite 兼容路径还可能在租户校验前分析到其他租户反馈。
+- 选定切片：为反馈排队与执行路径绑定可信 `tenant_id`，让分析服务支持带租户读取并在进入模型分析前拒绝租户不一致记录；新增成功上下文和跨租户拒绝回归。
+- 业务意义：保证反馈内容、会话消息、执行轨迹和分析结果始终留在发起反馈的租户边界内，并让 PostgreSQL `FORCE RLS` 在后台分析事务中生效。
+- 非目标：不改变反馈分类提示词、模型重试策略、公开 Job 状态机、前端、外部通知或生产凭据。
+- 风险：持久化 Job Handler 由公共 Job 执行器调用，必须在按 Job 租户绑定上下文后再分析；旧版入口与内部排队入口需保持 API 兼容。
+- 验证计划：先运行反馈分析基线；实现后运行反馈/公共 Job 相关回归、Ruff、compileall，并更新本分支开发日志记录结果。
+
 ## 2026-09-08 · 异步个人记忆采集租户上下文门禁（开始）
 
 - 基线：`70b0c023e429a7d4f9ddda044631a1762ae5635d`；分支：`workforce/platform-governance`；开始时工作树干净。
@@ -39,3 +49,11 @@
 - 聚焦验证：`.venv\\Scripts\\python.exe -m pytest tests/test_memory_service.py tests/test_async_jobs.py -q` -> `19 passed`；扩展 Memory Review 回归（加 `tests/test_memory_reviews.py`）-> `23 passed`；Ruff `--select I,E9,F`（Memory Worker 与测试）通过；相关 `compileall` 通过。
 - 安全边界：未改变记忆抽取提示词、对话边界、队列调度、前端或外部系统；未加入密钥、Token、真实外部载荷或生产写路径。
 - 剩余风险与门禁：仍需在隔离 PostgreSQL 账号环境运行 RLS 验收，证明后台线程事务级 `SET LOCAL app.tenant_id` 的真实数据库行为；其他未绑定上下文的历史后台 Worker 不在本切片范围，需后续按 P0 清单逐项收敛。
+
+## 2026-09-08 · 异步反馈分析租户上下文门禁（完成）
+
+- 改动：`backend/app/feedback/jobs.py` 的内部排队、旧异步入口和持久化 Job Handler 均在数据库操作前绑定租户上下文；Handler 只信任 `APIJob.tenant_id`，载荷租户不一致时直接拒绝。`backend/app/feedback/service.py` 的分析读取支持可选租户过滤，避免在 SQLite 兼容路径下先分析后校验。
+- 回归：`backend/tests/test_feedback_analysis.py` 新增反馈租户过滤、旧入口上下文、Handler 上下文和载荷篡改拒绝测试。
+- 聚焦验证：`.venv\\Scripts\\python.exe -m pytest tests/test_feedback_analysis.py tests/test_public_api_v1.py -q` -> `24 passed`（1 个既有 Starlette 弃用警告）；Ruff `--select I,E9,F`（Feedback Worker/Service 与测试）通过；相关 `compileall` 通过。
+- 安全边界：未改变反馈分类提示词、模型重试策略、公共 Job 状态机、前端或外部通知；未加入密钥、Token、真实外部载荷或生产写路径。
+- 剩余风险与门禁：公共 Job 执行器在 claim 阶段仍是跨租户扫描入口，需后续单独设计“按 job 租户绑定后执行”的通用治理方案；隔离 PostgreSQL 账号下的真实 RLS 验收仍待环境支持。

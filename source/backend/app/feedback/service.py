@@ -6,11 +6,18 @@ from typing import Any
 
 from sqlmodel import Session, select
 
-from app.db.models import AgentEvent, ChatSession, Message, MessageFeedback, ModelConfig, User, utc_now
+from app.db.models import (
+    AgentEvent,
+    ChatSession,
+    Message,
+    MessageFeedback,
+    ModelConfig,
+    User,
+    utc_now,
+)
 from app.llm import LLMClient, LLMError
 from app.llm.model_config_resolver import resolve_model_config_for_runtime
 from app.observability.spans import llm_operation
-
 
 FEEDBACK_BUCKET_LABELS: dict[str, str] = {
     "model_issue": "模型问题",
@@ -68,8 +75,13 @@ class FeedbackAnalysisService:
     def __init__(self, db: Session):
         self.db = db
 
-    def analyze_feedback(self, feedback_id: str) -> MessageFeedback | None:
-        feedback = self.db.get(MessageFeedback, feedback_id)
+    def analyze_feedback(
+        self, feedback_id: str, *, tenant_id: str | None = None
+    ) -> MessageFeedback | None:
+        statement = select(MessageFeedback).where(MessageFeedback.id == feedback_id)
+        if tenant_id:
+            statement = statement.where(MessageFeedback.tenant_id == tenant_id)
+        feedback = self.db.exec(statement).first()
         if not feedback:
             return None
         model_config = self._default_model_config(feedback.tenant_id)
