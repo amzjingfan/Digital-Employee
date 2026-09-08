@@ -26,3 +26,12 @@
 - 依赖观察：`npm ci` 报告现有依赖树 13 个漏洞（1 low / 3 moderate / 9 high）；未修改 lockfile 或依赖版本。
 - 外部门禁：未执行真实承运商/平台写入、客户消息、退款、广告调整或生产部署；连接器凭据、生产数据库迁移、真实业务 UAT 和依赖漏洞处置仍需独立门禁。
 - 合并建议：若平台治理分支同时修改统一任务服务，先合并并解决其共享文件冲突，再合入本切片；随后可接连接器/资产分支，最后进入 UAT/发布门禁。
+
+## 2026-09-08 · WF-002 新品上线证据化门禁（完成）
+
+- 已核实缺口：新品发布门禁会校验 Listing 检查、规则、素材和采购建议的版本/状态，但运营主管门禁任务此前只保存摘要 JSON，无法从统一任务中心逐项回链上游依据。
+- 实现：复用 `WorkTaskEvidenceReference`，为每个门禁任务写入 Listing 检查、规则版本、采购建议和请求中存在的素材版本 Evidence；引用以租户隔离的内部业务 ID 和新品门禁页导航。
+- 隐私边界：Evidence 摘要仅保存门禁/规则/审核状态、事实版本、数量、交期、风险及文件摘要前缀；不复制 SKU facts、Listing 文案、品牌快照、BOM 原文或凭据。
+- 阻断语义：认证缺失、交期未确认等阻断状态同样保留上游 Evidence，便于运营主管定位原因；不会创建发布审批或外部写动作。
+- 测试：先添加通过/阻断两条 Evidence 断言（均先失败），实现后 `tests/test_product_lifecycle.py tests/test_crossborder_casework.py tests/test_work_tasks.py tests/test_operations_reports.py` 共 `29 passed`；Ruff、compileall 通过。跨境全量 Ruff 仍仅报告既有 `SIM102`/`FLY002` 建议项。
+- 当前状态：WF-002 代码和测试尚未创建第二个提交，等待后续统一审阅/提交授权；此前 WF-001 提交 `0a156e3f2722d2008bb828e1fccedbac75fdd516` 不变。
