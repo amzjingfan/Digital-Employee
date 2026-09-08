@@ -69,14 +69,18 @@ class WorkTaskTransition(BaseModel):
     note: str = Field(default="", max_length=1000)
 
 
-class ReportEvidenceReference(BaseModel):
-    source_type: str
-    source_id: str
-    severity: str = "info"
-    label: str
-    summary: str
-    source_route: str
+class WorkTaskEvidenceReference(BaseModel):
+    source_type: str = Field(min_length=1, max_length=80)
+    source_id: str = Field(min_length=1, max_length=320)
+    severity: str = Field(default="info", min_length=1, max_length=32)
+    label: str = Field(min_length=1, max_length=320)
+    summary: str = Field(min_length=1, max_length=2000)
+    source_route: str = Field(min_length=1, max_length=1000)
     occurred_at: datetime
+
+
+class ReportEvidenceReference(WorkTaskEvidenceReference):
+    """Backward-compatible report-specific name for a unified task evidence reference."""
 
 
 class ReportFollowUpCommand(BaseModel):
