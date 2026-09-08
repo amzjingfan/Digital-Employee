@@ -219,6 +219,10 @@ def test_official_connector_reads_only_sanitized_permission_summary(monkeypatch)
             return {"permissions": [{"name": "seller.shop.info"}], "access_token": "must-not-leak"}
 
     monkeypatch.setattr("app.tiktok.connector.TikTokOfficialClient", FakeOfficialClient)
+    monkeypatch.setattr(
+        "app.tiktok.connector.get_settings",
+        lambda: Settings(_env_file=None, tiktok_connector_mode="live"),
+    )
     with _session() as db:
         admin = db.get(User, "admin")
         assert admin is not None
