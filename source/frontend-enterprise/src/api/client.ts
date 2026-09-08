@@ -34,13 +34,13 @@ export function isAuthError(error: unknown): boolean {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
+    ...options,
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...authHeader(),
       ...(options.headers || {}),
     },
-    ...options,
   });
   if (!response.ok) {
     const text = await response.text();
@@ -77,6 +77,8 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) }),
+  postWithHeaders: <T>(path: string, body: unknown, headers: Record<string, string>) =>
+    request<T>(path, { method: 'POST', headers, body: JSON.stringify(body) }),
   postWithSignal: <T>(path: string, body: unknown, signal?: AbortSignal) =>
     request<T>(path, { method: 'POST', body: JSON.stringify(body), signal }),
   postKeepalive: <T>(path: string, body?: unknown) => keepalivePost<T>(path, body),

@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { notify } from '@/components/ui/app-toast';
 import { cn } from '@/lib/utils';
+import OffsiteChannelAssetsPanel from '@/pages/offsite/OffsiteChannelAssetsPanel';
 
 type TraceEvent = {
   id: string;
@@ -123,7 +124,7 @@ type BusinessResource = {
 };
 
 type Props = { currentUser: EnterpriseAuthUser; onLogout: () => void };
-type Tab = 'after-sales' | 'logistics' | 'health';
+type Tab = 'after-sales' | 'logistics' | 'health' | 'offsite';
 
 const CASE_STATUS: Record<string, string> = {
   intake: '待查询', queried: '待分类', classified: '待拟稿', drafted: '待结案',
@@ -173,7 +174,12 @@ export default function CrossborderOperationsPage({ currentUser, onLogout }: Pro
   const canAfterSales = manager || currentUser.business_role === 'after_sales_specialist';
   const canMutateLogistics = manager || currentUser.business_role === 'logistics_exception_specialist';
   const canViewLogistics = canMutateLogistics || ['after_sales_specialist', 'procurement_specialist'].includes(currentUser.business_role || '');
-  const initialTab: Tab = currentUser.business_role === 'logistics_exception_specialist' ? 'logistics' : canAfterSales ? 'after-sales' : 'health';
+  const canOffsite = manager || ['tiktok_bd_specialist', 'tiktok_tap_manager'].includes(currentUser.business_role || '');
+  const initialTab: Tab = canOffsite && !manager
+    ? 'offsite'
+    : currentUser.business_role === 'logistics_exception_specialist'
+      ? 'logistics'
+      : canAfterSales ? 'after-sales' : 'health';
   const [tab, setTab] = useState<Tab>(initialTab);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [cases, setCases] = useState<AfterSalesCase[]>([]);
@@ -384,7 +390,7 @@ export default function CrossborderOperationsPage({ currentUser, onLogout }: Pro
   ], [overview]);
 
   return <div className="min-h-full px-6 pb-12 pt-8 lg:px-12">
-    <AppHeader title="跨境业务闭环" description="售后工单、物流异常、审批、跨岗位任务与依赖降级统一留痕；演示环境不发送客户消息，也不直接执行退款。" userName={currentUser.display_name || currentUser.username} onLogout={onLogout} />
+    <AppHeader title="跨境业务闭环" description="售后、物流与站外渠道资产统一留痕；证据不足、过期或未经审批时不允许外部执行。" userName={currentUser.display_name || currentUser.username} onLogout={onLogout} />
 
     <div className="mt-6 grid gap-4 md:grid-cols-3">
       {cards.map(([label, value, note]) => <div key={String(label)} className="rounded-[18px] border border-[#e6e8ee] bg-white p-5">
@@ -399,6 +405,7 @@ export default function CrossborderOperationsPage({ currentUser, onLogout }: Pro
     <div className="mt-5 flex flex-wrap gap-2">
       {canAfterSales && <Button variant={tab === 'after-sales' ? 'default' : 'outline'} onClick={() => setTab('after-sales')}>售后工单</Button>}
       {canViewLogistics && <Button variant={tab === 'logistics' ? 'default' : 'outline'} onClick={() => setTab('logistics')}>物流异常</Button>}
+      {canOffsite && <Button variant={tab === 'offsite' ? 'default' : 'outline'} onClick={() => setTab('offsite')}>站外渠道资产</Button>}
       <Button variant={tab === 'health' ? 'default' : 'outline'} onClick={() => setTab('health')}>依赖与降级</Button>
     </div>
 
@@ -446,6 +453,8 @@ export default function CrossborderOperationsPage({ currentUser, onLogout }: Pro
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{health.map((item) => <div key={item.id} className="rounded-[14px] border border-[#eceef2] p-4"><div className="flex items-center justify-between"><strong className="text-[13px]">{item.display_name}</strong><Pill status={item.effective_status}>{item.effective_status}</Pill></div><p className="mt-2 text-[11px] text-[#858b9c]">{item.domain} · {item.dependency_key} · v{item.version}</p>{item.message && <p className="mt-3 text-[12px] text-[#505668]">{item.message}</p>}{item.recovery_hint && <p className="mt-2 rounded-[9px] bg-[#f7f8fa] p-2 text-[11px] text-[#667085]">恢复：{item.recovery_hint}</p>}<p className="mt-2 text-[10px] text-[#858b9c]">观测 {formatTime(item.observed_at)} · TTL {item.stale_after_seconds}s</p></div>)}</div>
       {health.length === 0 && <p className="py-12 text-center text-[13px] text-[#858b9c]">尚无健康度上报；生产接入时应为每个订单、支付、物流、知识库和审批依赖建立探针。</p>}
     </div>}
+
+    {!loading && tab === 'offsite' && canOffsite && <OffsiteChannelAssetsPanel currentUser={currentUser} stores={stores} />}
 
     <Dialog open={dialog === 'case'} onOpenChange={(open) => !open && setDialog(null)}><DialogContent><DialogTitle>新建售后工单</DialogTitle><label className="text-[12px]">店铺<select className="mt-1 h-10 w-full rounded-md border px-3" value={String(form.store_resource_id || '')} onChange={(event) => setForm({ ...form, store_resource_id: event.target.value })}>{stores.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.code}</option>)}</select></label><Input value={String(form.case_key || '')} onChange={(event) => setForm({ ...form, case_key: event.target.value })} placeholder="工单业务键"/><div className="grid grid-cols-3 gap-2"><Input value={String(form.platform || '')} onChange={(event) => setForm({ ...form, platform: event.target.value })} placeholder="平台"/><Input value={String(form.country || '')} onChange={(event) => setForm({ ...form, country: event.target.value })} placeholder="国家"/><Input value={String(form.language || '')} onChange={(event) => setForm({ ...form, language: event.target.value })} placeholder="语言"/></div><Input value={String(form.order_reference || '')} onChange={(event) => setForm({ ...form, order_reference: event.target.value })} placeholder="订单号（仅摘要与掩码落库）"/><Textarea value={String(form.summary || '')} onChange={(event) => setForm({ ...form, summary: event.target.value })} placeholder="客户问题摘要（不要录入姓名、电话、地址）"/><DialogFooter><Button variant="outline" onClick={() => setDialog(null)}>取消</Button><Button disabled={busy || stores.length === 0} onClick={() => void createCase()}>进入售后队列</Button></DialogFooter></DialogContent></Dialog>
 

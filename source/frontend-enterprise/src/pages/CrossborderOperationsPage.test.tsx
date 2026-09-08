@@ -18,6 +18,13 @@ const supervisor: EnterpriseAuthUser = {
   enterprise_permissions: { work_tasks: ['view', 'create'] },
 };
 
+const offsiteSpecialist: EnterpriseAuthUser = {
+  ...supervisor,
+  id: 'bd-id',
+  username: 'BD',
+  business_role: 'tiktok_bd_specialist',
+};
+
 const afterSalesCase = {
   id: 'case-1', case_key: 'CASE-US-001', store_resource_id: 'store-1', store_code: 'AMZ-US',
   platform: 'Amazon', marketplace_country: 'US', language: 'en-US', order_reference_masked: 'AM***2222',
@@ -83,5 +90,24 @@ describe('CrossborderOperationsPage', () => {
     await user.click(screen.getByRole('button', { name: '依赖与降级' }));
     expect(await screen.findByText('Amazon Orders API')).toBeTruthy();
     expect(screen.getByText('Requests are throttled.')).toBeTruthy();
+  });
+
+  it('opens the offsite workspace for a scoped BD role without loading restricted case queues', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/crossborder/overview')) return Promise.resolve(response({ after_sales_open: 0, after_sales_needs_human: 0, logistics_open: 0, logistics_high_risk: 0, degraded_dependencies: 0, generated_at: '2026-09-08T01:00:00Z' }));
+      if (url.includes('/crossborder/integration-health')) return Promise.resolve(response([]));
+      if (url.includes('/api/enterprise/business-resources')) return Promise.resolve(response([{ id: 'store-1', resource_type: 'store', code: 'AMZ-US', name: 'Amazon US', status: 'active' }]));
+      if (url.includes('/api/v1/offsite/channels')) return Promise.resolve(response([]));
+      return Promise.resolve(new Response('{}', { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<I18nProvider><CrossborderOperationsPage currentUser={offsiteSpecialist} onLogout={vi.fn()} /></I18nProvider>);
+
+    expect(await screen.findByText('暂无渠道资产')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '站外渠道资产' })).toBeTruthy();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/crossborder/after-sales'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/crossborder/logistics'))).toBe(false);
   });
 });

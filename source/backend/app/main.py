@@ -31,6 +31,7 @@ from app.api import (
     memories,
     mock,
     model_configs,
+    offsite_channels,
     oidc,
     operations_reports,
     persona,
@@ -205,6 +206,7 @@ app.include_router(tiktok.router, dependencies=enterprise_permissions)
 app.include_router(business_executions.router, dependencies=enterprise_permissions)
 app.include_router(operations_reports.router, dependencies=enterprise_permissions)
 app.include_router(crossborder_operations.router, dependencies=enterprise_permissions)
+app.include_router(offsite_channels.router, dependencies=enterprise_permissions)
 app.include_router(product_lifecycle.router, dependencies=enterprise_permissions)
 app.include_router(work_tasks.router, dependencies=enterprise_permissions)
 app.include_router(crossborder_tools.router)
