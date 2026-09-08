@@ -3226,6 +3226,31 @@ class PdcaSearchTermRun(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now, index=True)
 
 
+class PdcaIdempotencyKey(SQLModel, table=True):
+    """Append-only binding from every accepted request key to its frozen run."""
+
+    __tablename__ = "pdca_idempotency_keys"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id"],
+            ["pdca_search_term_runs.tenant_id", "pdca_search_term_runs.id"],
+            ondelete="RESTRICT",
+            name="fk_pdca_idempotency_key_run_tenant",
+        ),
+        UniqueConstraint(
+            "tenant_id", "idempotency_key", name="uq_pdca_idempotency_key_tenant_key"
+        ),
+        Index("ix_pdca_idempotency_keys_run", "tenant_id", "run_id"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("pdca_key"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    idempotency_key: str = Field(index=True)
+    run_id: str = Field(index=True)
+    input_digest: str = Field(index=True)
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
 class PdcaFactSearchTerm(SQLModel, table=True):
     """Frozen Amazon account facts aggregated at the documented search-term grain."""
 

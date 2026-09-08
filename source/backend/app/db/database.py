@@ -129,6 +129,7 @@ def init_db() -> None:
                 "commerce_governance_events",
                 "advertising_recommendations",
                 "pdca_search_term_runs",
+                "pdca_idempotency_keys",
                 "pdca_fact_search_terms",
                 "pdca_actions",
                 "advertising_effect_follow_ups",

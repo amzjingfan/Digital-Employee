@@ -43,6 +43,7 @@ from app.db.models import (
     HighRiskActionRequest,
     PdcaAction,
     PdcaFactSearchTerm,
+    PdcaIdempotencyKey,
     PdcaSearchTermRun,
     Tenant,
     User,
@@ -169,18 +170,18 @@ def _search_term_csv(*, extra_spend: str = "0") -> bytes:
 
 def _renamed_grain_csv() -> bytes:
     return (
-        "Date,Campaign Name,Campaign ID,Ad Group Name,Ad Group ID,Targeting,Match Type,"
-        "Customer Search Term,Impressions,Clicks,Spend,Sales,Orders\n"
-        "2026-09-01,Old Name,CAMPAIGN-1,Old Group,ADGROUP-1,synthetic target,Broad,"
-        "synthetic query,10,1,1,0,0\n"
-        "2026-09-02,New Name,CAMPAIGN-1,New Group,ADGROUP-1,synthetic target,Broad,"
-        "synthetic query,20,2,2,0,0\n"
-    ).encode()
+        b"Date,Campaign Name,Campaign ID,Ad Group Name,Ad Group ID,Targeting,Match Type,"
+        b"Customer Search Term,Impressions,Clicks,Spend,Sales,Orders\n"
+        b"2026-09-01,Old Name,CAMPAIGN-1,Old Group,ADGROUP-1,synthetic target,Broad,"
+        b"synthetic query,10,1,1,0,0\n"
+        b"2026-09-02,New Name,CAMPAIGN-1,New Group,ADGROUP-1,synthetic target,Broad,"
+        b"synthetic query,20,2,2,0,0\n"
+    )
 
 
 def _duplicate_orders_header_csv() -> bytes:
     lines = _search_term_csv().decode().splitlines()
-    return ("\n".join([f"{lines[0]},Orders", *(f"{line},999" for line in lines[1:])])).encode()
+    return "\n".join([f"{lines[0]},Orders", *(f"{line},999" for line in lines[1:])]).encode()
 
 
 def test_ad_inspection_blocks_inventory_and_routes_cross_role_tasks(setup) -> None:
@@ -527,6 +528,14 @@ def test_pdca_idempotency_replays_same_snapshot_and_rejects_collision(setup) -> 
     assert len(db.exec(select(PdcaFactSearchTerm)).all()) == 2
     assert len(db.exec(select(PdcaAction)).all()) == 2
 
+    with pytest.raises(HTTPException) as replay_key_collision:
+        create_pdca_search_term_run(
+            db,
+            data=_search_term_csv(extra_spend="1"),
+            **{**request, "idempotency_key": "pdca-contract-new-key"},
+        )
+    assert replay_key_collision.value.status_code == 409
+
     with pytest.raises(HTTPException) as collision:
         create_pdca_search_term_run(db, data=_search_term_csv(extra_spend="1"), **request)
     assert collision.value.status_code == 409
@@ -544,6 +553,12 @@ def test_pdca_idempotency_replays_same_snapshot_and_rejects_collision(setup) -> 
     assert rerun.id != first.id
     assert rerun.attempt == 2
     assert len(db.exec(select(PdcaSearchTermRun)).all()) == 2
+    bindings = db.exec(select(PdcaIdempotencyKey)).all()
+    assert {(item.idempotency_key, item.run_id) for item in bindings} == {
+        ("pdca-contract-replay", first.id),
+        ("pdca-contract-new-key", first.id),
+        ("pdca-contract-attempt-2", rerun.id),
+    }
 
 
 def test_pdca_missing_mapping_and_cross_tenant_are_rejected(setup) -> None:
@@ -729,7 +744,12 @@ def test_pdca_database_and_postgres_migration_forbid_execution(setup) -> None:
         / "migrations"
         / "20260908_pdca_search_term_rules_v1.sql"
     ).read_text(encoding="utf-8")
-    for table in ("pdca_search_term_runs", "pdca_fact_search_terms", "pdca_actions"):
+    for table in (
+        "pdca_search_term_runs",
+        "pdca_idempotency_keys",
+        "pdca_fact_search_terms",
+        "pdca_actions",
+    ):
         assert f"CREATE TABLE IF NOT EXISTS public.{table}" in migration
         assert f"'{table}'" in migration
     assert "ENABLE ROW LEVEL SECURITY" in migration

@@ -2,6 +2,7 @@ BEGIN;
 
 DROP TABLE IF EXISTS public.pdca_actions;
 DROP TABLE IF EXISTS public.pdca_fact_search_terms;
+DROP TABLE IF EXISTS public.pdca_idempotency_keys;
 DROP TABLE IF EXISTS public.pdca_search_term_runs;
 DROP FUNCTION IF EXISTS app.reject_pdca_evidence_mutation();
 

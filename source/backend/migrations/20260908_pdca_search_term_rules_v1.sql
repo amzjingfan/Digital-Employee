@@ -49,6 +49,22 @@ CREATE INDEX IF NOT EXISTS ix_pdca_search_term_runs_account_time
 CREATE INDEX IF NOT EXISTS ix_pdca_search_term_runs_source_sha256
   ON public.pdca_search_term_runs (tenant_id, source_sha256);
 
+CREATE TABLE IF NOT EXISTS public.pdca_idempotency_keys (
+  id varchar PRIMARY KEY,
+  tenant_id varchar NOT NULL REFERENCES public.tenants(id) ON DELETE RESTRICT,
+  idempotency_key varchar NOT NULL,
+  run_id varchar NOT NULL,
+  input_digest varchar NOT NULL,
+  created_at timestamp without time zone NOT NULL,
+  CONSTRAINT uq_pdca_idempotency_key_tenant_key UNIQUE (tenant_id, idempotency_key),
+  CONSTRAINT fk_pdca_idempotency_key_run_tenant FOREIGN KEY (tenant_id, run_id)
+    REFERENCES public.pdca_search_term_runs(tenant_id, id) ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS ix_pdca_idempotency_keys_tenant_id
+  ON public.pdca_idempotency_keys (tenant_id);
+CREATE INDEX IF NOT EXISTS ix_pdca_idempotency_keys_run
+  ON public.pdca_idempotency_keys (tenant_id, run_id);
+
 CREATE TABLE IF NOT EXISTS public.pdca_fact_search_terms (
   id varchar PRIMARY KEY,
   tenant_id varchar NOT NULL REFERENCES public.tenants(id) ON DELETE RESTRICT,
@@ -142,6 +158,7 @@ DECLARE table_name text;
 BEGIN
   FOREACH table_name IN ARRAY ARRAY[
     'pdca_search_term_runs',
+    'pdca_idempotency_keys',
     'pdca_fact_search_terms',
     'pdca_actions'
   ] LOOP
@@ -178,7 +195,7 @@ $$;
 INSERT INTO public.staffdeck_schema_migrations (
   migration_id, applied_at, source_kind, source_table_count, source_row_count
 )
-VALUES ('20260908_pdca_search_term_rules_v1', now(), 'postgresql', 3, 0)
+VALUES ('20260908_pdca_search_term_rules_v1', now(), 'postgresql', 4, 0)
 ON CONFLICT (migration_id) DO NOTHING;
 
 COMMIT;

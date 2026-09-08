@@ -21,6 +21,7 @@ from app.db.models import (
     CommerceGovernanceEvent,
     PdcaAction,
     PdcaFactSearchTerm,
+    PdcaIdempotencyKey,
     PdcaSearchTermRun,
     User,
 )
@@ -116,18 +117,14 @@ def create_pdca_search_term_run(
             "metric_definition_version": METRIC_DEFINITION_VERSION,
         }
     )
-    existing = db.exec(
-        select(PdcaSearchTermRun).where(
-            PdcaSearchTermRun.tenant_id == tenant_id,
-            PdcaSearchTermRun.idempotency_key == normalized_key,
-        )
-    ).first()
+    existing = _run_for_idempotency_key(
+        db,
+        tenant_id=tenant_id,
+        idempotency_key=normalized_key,
+        input_digest=input_digest,
+    )
     if existing:
-        if existing.input_digest != input_digest:
-            raise HTTPException(
-                status_code=409,
-                detail="Idempotency-Key was already used for a different PDCA input snapshot",
-            )
+        db.commit()
         return _run_read(db, existing)
 
     latest_snapshot = db.exec(
@@ -139,7 +136,14 @@ def create_pdca_search_term_run(
         .order_by(PdcaSearchTermRun.attempt.desc())
     ).first()
     if latest_snapshot and not explicit_rerun:
-        return _run_read(db, latest_snapshot)
+        bound = _bind_idempotency_key(
+            db,
+            tenant_id=tenant_id,
+            idempotency_key=normalized_key,
+            input_digest=input_digest,
+            run=latest_snapshot,
+        )
+        return _run_read(db, bound)
     attempt = (latest_snapshot.attempt + 1) if latest_snapshot else 1
 
     aggregates = _aggregate_rows(rows)
@@ -174,6 +178,14 @@ def create_pdca_search_term_run(
         created_by_user_id=user.id,
     )
     db.add(run)
+    db.add(
+        PdcaIdempotencyKey(
+            tenant_id=tenant_id,
+            idempotency_key=normalized_key,
+            run_id=run.id,
+            input_digest=input_digest,
+        )
+    )
     total_spend = sum((item["spend"] for item in aggregates), start=_ZERO)
     for aggregate in aggregates:
         fact = _fact_row(run, aggregate)
@@ -204,18 +216,13 @@ def create_pdca_search_term_run(
         db.commit()
     except IntegrityError:
         db.rollback()
-        winner = db.exec(
-            select(PdcaSearchTermRun).where(
-                PdcaSearchTermRun.tenant_id == tenant_id,
-                PdcaSearchTermRun.idempotency_key == normalized_key,
-            )
-        ).first()
+        winner = _run_for_idempotency_key(
+            db,
+            tenant_id=tenant_id,
+            idempotency_key=normalized_key,
+            input_digest=input_digest,
+        )
         if winner:
-            if winner.input_digest != input_digest:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Idempotency-Key was already used for a different PDCA input snapshot",
-                )
             return _run_read(db, winner)
         winner = db.exec(
             select(PdcaSearchTermRun).where(
@@ -225,10 +232,85 @@ def create_pdca_search_term_run(
             )
         ).first()
         if winner:
-            return _run_read(db, winner)
+            bound = _bind_idempotency_key(
+                db,
+                tenant_id=tenant_id,
+                idempotency_key=normalized_key,
+                input_digest=input_digest,
+                run=winner,
+            )
+            return _run_read(db, bound)
         raise
     db.refresh(run)
     return _run_read(db, run)
+
+
+def _run_for_idempotency_key(
+    db: Session,
+    *,
+    tenant_id: str,
+    idempotency_key: str,
+    input_digest: str,
+) -> PdcaSearchTermRun | None:
+    binding = db.exec(
+        select(PdcaIdempotencyKey).where(
+            PdcaIdempotencyKey.tenant_id == tenant_id,
+            PdcaIdempotencyKey.idempotency_key == idempotency_key,
+        )
+    ).first()
+    if not binding:
+        return None
+    if binding.input_digest != input_digest:
+        raise HTTPException(
+            status_code=409,
+            detail="Idempotency-Key was already used for a different PDCA input snapshot",
+        )
+    return db.exec(
+        select(PdcaSearchTermRun).where(
+            PdcaSearchTermRun.tenant_id == tenant_id,
+            PdcaSearchTermRun.id == binding.run_id,
+        )
+    ).one()
+
+
+def _bind_idempotency_key(
+    db: Session,
+    *,
+    tenant_id: str,
+    idempotency_key: str,
+    input_digest: str,
+    run: PdcaSearchTermRun,
+) -> PdcaSearchTermRun:
+    existing = _run_for_idempotency_key(
+        db,
+        tenant_id=tenant_id,
+        idempotency_key=idempotency_key,
+        input_digest=input_digest,
+    )
+    if existing:
+        return existing
+    db.add(
+        PdcaIdempotencyKey(
+            tenant_id=tenant_id,
+            idempotency_key=idempotency_key,
+            run_id=run.id,
+            input_digest=input_digest,
+        )
+    )
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        winner = _run_for_idempotency_key(
+            db,
+            tenant_id=tenant_id,
+            idempotency_key=idempotency_key,
+            input_digest=input_digest,
+        )
+        if winner:
+            return winner
+        raise
+    return run
 
 
 def list_pdca_search_term_runs(
