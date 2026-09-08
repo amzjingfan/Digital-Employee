@@ -1,5 +1,6 @@
 # Platform administrators manage every enterprise resource in their validated tenant.
 p, tenant_admin, *, /api/enterprise/*, (GET|POST|PUT|PATCH|DELETE), allow
+p, tenant_admin, *, /api/v1/social*, (GET|POST|PUT|PATCH|DELETE), allow
 
 # Backward-compatible local members can inspect resources and operate their collaboration records.
 p, tenant_member, *, /api/enterprise/*, GET, allow
@@ -33,6 +34,7 @@ p, operations_supervisor, *, /api/enterprise/business-executions*, (GET|POST), a
 p, operations_supervisor, *, /api/enterprise/operations-reports*, (GET|POST), allow
 p, operations_supervisor, *, /api/enterprise/work-tasks*, (GET|POST), allow
 p, operations_supervisor, *, /api/enterprise/work-tasks/advertising/automation-policies, PUT, allow
+p, operations_supervisor, *, /api/v1/social*, (GET|POST), allow
 p, operations_supervisor, *, /api/enterprise/authorization-decisions, GET, deny
 p, operations_supervisor, *, /api/enterprise/authorization-decisions/*, GET, deny
 p, operations_supervisor, *, /api/enterprise/identity-role-mappings, GET, deny
@@ -140,6 +142,11 @@ p, tiktok_media_buyer, *, /api/enterprise/tiktok*, GET, allow
 p, tiktok_tap_manager, *, /api/enterprise/tiktok*, GET, allow
 p, tiktok_live_operator, *, /api/enterprise/tiktok*, GET, allow
 p, operations_supervisor, *, /api/enterprise/tiktok*, (GET|POST), allow
+
+# Creator evidence is curated by BD; TAP can read creators and freeze brand-scoped audiences.
+p, tiktok_bd_specialist, *, /api/v1/social*, (GET|POST), allow
+p, tiktok_tap_manager, *, /api/v1/social/creators*, GET, allow
+p, tiktok_tap_manager, *, /api/v1/social/audiences*, (GET|POST), allow
 
 # Unified work-task queues: specialists are restricted to their own role queue by domain policy.
 p, after_sales_specialist, *, /api/enterprise/work-tasks*, (GET|POST), allow
