@@ -159,3 +159,46 @@ def test_tiktok_production_readiness_does_not_count_mock_authorization(
     assert "官方 App" in gates["tiktok_official_authorization"].detail
     assert gates["agent_releases"].status == "waiting"
     assert gates["shadow_run"].status == "waiting"
+
+
+def test_tiktok_production_readiness_blocks_non_live_connector_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        _env_file=None,
+        casdoor_management_enabled=True,
+        casdoor_management_endpoint="http://casdoor",
+        casdoor_management_client_id="management-client",
+        casdoor_management_client_secret="management-secret",
+        tiktok_official_enabled=True,
+        tiktok_connector_mode="mock",
+        tiktok_app_key="app-key",
+        tiktok_app_secret="app-secret",
+        tiktok_service_id="service-id",
+        tiktok_redirect_uri="http://localhost/callback",
+        tiktok_token_store_file="/var/run/tiktok/tokens.json",
+    )
+    monkeypatch.setattr("app.tiktok.service.get_settings", lambda: settings)
+
+    with _session() as db:
+        admin = _user("admin", "tenant_admin", account_role="admin")
+        db.add(admin)
+        db.add(
+            ExternalAuthorization(
+                tenant_id="tenant_demo",
+                provider="tiktok",
+                authorization_type="seller",
+                subject_id="official-seller",
+                status="active",
+                metadata_json={"authorization_flow": "official"},
+            )
+        )
+        db.commit()
+
+        readiness = get_tiktok_production_readiness(db, admin)
+
+    gates = {gate.key: gate for gate in readiness.gates}
+    assert readiness.ready is False
+    assert gates["tiktok_connector_mode"].status == "blocked"
+    assert "live" in gates["tiktok_connector_mode"].detail
+    assert gates["tiktok_official_authorization"].status == "passed"

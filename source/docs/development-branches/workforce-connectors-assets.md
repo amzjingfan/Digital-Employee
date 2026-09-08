@@ -30,3 +30,16 @@
 - 回归：新增 Mock 在 live/replay 模式拒绝、官方 Seller 在 mock 模式拒绝且不构造客户端的测试；官方成功摘要测试显式使用 live 模式，避免依赖环境默认值。
 - 验证：聚焦 Connector/OAuth `18 passed`；TikTok 专项（排除脱敏备份基线中需从仓库根导入 `scripts` 的既有 bootstrap 收集问题）`34 passed`；变更文件 Ruff 通过；后端 `compileall` 通过。
 - 风险/边界：本切片没有实现 replay 连接器，也没有启用真实 TikTok 凭据或外部写操作；`live` 仅解除模式门禁，真实官方配置、权限、令牌有效性仍由官方客户端与发布审批负责。
+
+## 2026-09-08 · 生产就绪卡联动（开始）
+
+- 目标：让生产就绪卡反映连接器实际执行模式，避免官方配置与授权已就绪但运行时仍处于 `mock`/`replay` 时误报通过。
+- 范围：新增独立 `tiktok_connector_mode` readiness gate；只有 `live` 为通过，其他模式保持阻塞；不改变连接器调用门禁、不接真实凭据、不执行外部写操作。
+- 验证计划：先验证“官方授权配置通过但模式为 mock 时 readiness 仍阻塞”，再跑 TikTok 及相关资源回归、Ruff、compileall。
+
+## 2026-09-08 · 生产就绪卡联动（完成）
+
+- 实现：`get_tiktok_production_readiness()` 新增 `tiktok_connector_mode` gate；只有 `live` 通过，`mock`/`replay` 均阻塞，并明确提示仅适用于本地或回放验证。
+- 回归：新增官方配置与 active 官方授权存在、但模式为 `mock` 时 readiness 仍阻塞的测试；同时确认官方授权 gate 本身仍可正确显示通过，避免模式问题被配置问题掩盖。
+- 验证：TikTok 专项（排除既有 bootstrap 导入路径问题）`35 passed`；相关 BusinessResource/Crossborder 回归 `11 passed`；变更范围 Ruff 与 compileall 通过；PostgreSQL acceptance 因未设置 `STAFFDECK_RUN_POSTGRES_ACCEPTANCE=1` 按设计 `7 skipped`，本机未使用任何数据库凭据或修改外部数据。
+- 剩余门禁：需要 UAT/发布环境提供隔离 PostgreSQL runtime URL 与受限账号后，才能完成真实 PostgreSQL RLS/权限回放；在此之前不宣称生产放行。

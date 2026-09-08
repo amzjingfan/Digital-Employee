@@ -421,6 +421,20 @@ def get_tiktok_production_readiness(
         )
     )
 
+    connector_mode_ready = settings.tiktok_connector_mode == "live"
+    gates.append(
+        TikTokProductionGateRead(
+            key="tiktok_connector_mode",
+            label="TikTok 连接器执行模式",
+            status="passed" if connector_mode_ready else "blocked",
+            detail=(
+                "官方只读连接器已显式启用 live 模式"
+                if connector_mode_ready
+                else "生产就绪要求 tiktok_connector_mode=live；mock/replay 仅可用于本地或回放验证"
+            ),
+        )
+    )
+
     official_configured = bool(
         settings.tiktok_official_enabled
         and settings.tiktok_app_key.strip()
