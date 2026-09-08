@@ -4,7 +4,9 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.api.memories import clear_my_memories, list_memories
+from app.db.database import set_tenant_context as bind_tenant_context
 from app.db.models import (
+    AgentEvent,
     AgentProfile,
     ChatSession,
     MemoryRecord,
@@ -14,6 +16,7 @@ from app.db.models import (
     User,
 )
 from app.llm.client import LLMClient
+from app.memory import jobs as memory_jobs
 from app.memory.jobs import _conversation_messages_for_turn
 from app.memory.service import MemoryService, memory_rows_for_read
 from app.session.session_schema import ChatTurnRequest, StepAgentResult
@@ -254,6 +257,161 @@ def test_memory_job_keeps_strictly_older_history_before_target_turn() -> None:
         {"role": "user", "content": "当前问题"},
         {"role": "assistant", "content": "当前回答"},
     ]
+
+
+def test_memory_capture_job_binds_request_tenant_before_access(monkeypatch) -> None:
+    tenant_contexts: list[str] = []
+    captured: dict[str, object] = {}
+
+    def record_tenant_context(db: Session, tenant_id: str) -> None:
+        tenant_contexts.append(tenant_id)
+        bind_tenant_context(db, tenant_id)
+
+    def fake_capture(
+        self, request, session, step_result, tool_result, model_config, conversation_messages
+    ):
+        captured.update(
+            {
+                "session_tenant_context": self.db.info.get("staffdeck_tenant_id"),
+                "request_tenant": request.tenant_id,
+                "session_tenant": session.tenant_id,
+                "model_config_tenant": model_config.tenant_id,
+                "conversation_messages": conversation_messages,
+            }
+        )
+        return []
+
+    monkeypatch.setattr(memory_jobs, "set_tenant_context", record_tenant_context)
+    monkeypatch.setattr(memory_jobs.MemoryService, "capture_turn", fake_capture)
+
+    with _test_session() as db:
+        monkeypatch.setattr(memory_jobs, "engine", db.get_bind())
+        request = ChatTurnRequest(
+            tenant_id="tenant_demo",
+            user_id="user_demo",
+            message="当前问题",
+            client_turn_id="client-turn-capture",
+        )
+        db.add_all(
+            [
+                ChatSession(id="session_capture", tenant_id="tenant_demo", user_id="user_demo"),
+                ModelConfig(
+                    id="model_capture",
+                    tenant_id="tenant_demo",
+                    name="demo",
+                    api_key_encrypted="",
+                    model="demo",
+                ),
+                AgentEvent(
+                    tenant_id="tenant_demo",
+                    session_id="session_capture",
+                    event_type="user_message_received",
+                    payload_json={
+                        "turn_id": "msg_user_capture",
+                        "client_turn_id": "client-turn-capture",
+                    },
+                ),
+                Message(
+                    id="msg_user_capture",
+                    tenant_id="tenant_demo",
+                    session_id="session_capture",
+                    role="user",
+                    content="当前问题",
+                ),
+                Message(
+                    id="msg_assistant_capture",
+                    tenant_id="tenant_demo",
+                    session_id="session_capture",
+                    role="assistant",
+                    content="当前回答",
+                    metadata_json={"turn_id": "msg_user_capture"},
+                ),
+            ]
+        )
+        db.commit()
+
+        memory_jobs.run_memory_capture_job(
+            {
+                "request": request.model_dump(mode="json"),
+                "session_id": "session_capture",
+                "step_result": StepAgentResult().model_dump(mode="json"),
+                "tool_result": None,
+                "model_config_id": "model_capture",
+            }
+        )
+
+    assert tenant_contexts == ["tenant_demo"]
+    assert captured == {
+        "session_tenant_context": "tenant_demo",
+        "request_tenant": "tenant_demo",
+        "session_tenant": "tenant_demo",
+        "model_config_tenant": "tenant_demo",
+        "conversation_messages": [
+            {"role": "user", "content": "当前问题"},
+            {"role": "assistant", "content": "当前回答"},
+        ],
+    }
+
+
+def test_memory_capture_job_rejects_cross_tenant_session_and_model(monkeypatch) -> None:
+    tenant_contexts: list[str] = []
+    capture_called = False
+
+    def record_tenant_context(db: Session, tenant_id: str) -> None:
+        tenant_contexts.append(tenant_id)
+        bind_tenant_context(db, tenant_id)
+
+    def fail_capture(*args, **kwargs):
+        nonlocal capture_called
+        capture_called = True
+        raise AssertionError("cross-tenant records must not reach MemoryService")
+
+    monkeypatch.setattr(memory_jobs, "set_tenant_context", record_tenant_context)
+    monkeypatch.setattr(memory_jobs.MemoryService, "capture_turn", fail_capture)
+
+    with _test_session() as db:
+        monkeypatch.setattr(memory_jobs, "engine", db.get_bind())
+        db.add_all(
+            [
+                ChatSession(id="session_other_tenant", tenant_id="tenant_other", user_id="user_other"),
+                ModelConfig(
+                    id="model_other_tenant",
+                    tenant_id="tenant_other",
+                    name="other",
+                    api_key_encrypted="",
+                    model="other",
+                ),
+            ]
+        )
+        db.commit()
+
+        memory_jobs.run_memory_capture_job(
+            {
+                "request": ChatTurnRequest(
+                    tenant_id="tenant_demo",
+                    user_id="user_demo",
+                    message="不应读取其他租户",
+                ).model_dump(mode="json"),
+                "session_id": "session_other_tenant",
+                "step_result": StepAgentResult().model_dump(mode="json"),
+                "tool_result": None,
+                "model_config_id": "model_other_tenant",
+            }
+        )
+
+        errors = db.exec(
+            select(AgentEvent).where(
+                AgentEvent.tenant_id == "tenant_demo",
+                AgentEvent.session_id == "session_other_tenant",
+                AgentEvent.event_type == "memory_error",
+            )
+        ).all()
+
+    assert tenant_contexts == ["tenant_demo"]
+    assert capture_called is False
+    assert len(errors) == 1
+    assert errors[0].payload_json["session_tenant_mismatch"] is True
+    assert errors[0].payload_json["model_config_tenant_mismatch"] is True
 
 
 def test_memory_recall_excludes_summary_history() -> None:

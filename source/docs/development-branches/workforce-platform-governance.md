@@ -1,5 +1,15 @@
 # workforce/platform-governance 开发日志
 
+## 2026-09-08 · 异步个人记忆采集租户上下文门禁（开始）
+
+- 基线：`70b0c023e429a7d4f9ddda044631a1762ae5635d`；分支：`workforce/platform-governance`；开始时工作树干净。
+- 已核实现状：`memory.capture_turn` 任务元数据携带 `tenant_id`，但 Worker 直接创建 `Session(engine)` 后未绑定 PostgreSQL RLS 租户上下文；任务内的 session、model config、消息历史和记忆写入因此缺少事务级租户门禁。
+- 选定切片：在异步 Memory Worker 解析并校验 `ChatTurnRequest` 后，立即为独立数据库 Session 设置可信 `tenant_id`；增加上下文绑定回归，覆盖任务执行使用入队请求的租户且不扩大跨租户查询范围。
+- 业务意义：保证后台个人记忆采集在 PostgreSQL `FORCE RLS` 下只能读取和写入所属租户数据，不因脱离请求线程而退化为无上下文访问。
+- 非目标：不改变记忆抽取提示词、去重策略、对话边界、队列调度、前端、TikTok、连接器、生产凭据或外部写操作。
+- 风险：Session 上下文必须在首次查询前绑定；测试使用 SQLite 时仍需保持调用契约，不能引入仅 PostgreSQL 可运行的分支。
+- 验证计划：先运行 Memory/Async Job 基线；实现后运行同套件、Ruff、compileall，并更新本分支开发日志记录结果。
+
 ## 2026-09-08 · 人工接管恢复线程租户上下文门禁（开始）
 
 - 基线：`365e5d43c08cb159aa0e2f7100eabae040200a5b`；分支：`workforce/platform-governance`；开始时工作树干净。
@@ -21,3 +31,11 @@
 - 前端验证：Vitest `63 files / 266 tests passed`；TypeScript/Vite 生产构建通过（仅有既有大 chunk 警告）。`npm run i18n:check` 因 87 个既有中文直写项失败；`npm run config:check` 因脱敏备份缺少 `frontend-enterprise/.env.example` 失败；本切片无前端改动。
 - 安全边界：未加入密钥、Token、Cookie、真实外部载荷或外部写路径；未调用真实退款、发布、调价、广告、下单、付款或生产部署。
 - 剩余风险与门禁：需要在隔离 PostgreSQL 运行账号环境启用 7 项 RLS 验收，证明线程事务的 `SET LOCAL app.tenant_id` 行为；正式 Casdoor MFA/TLS/密钥轮换、真实连接器故障演练和业务/安全签字仍为外部门禁。全量既有失败、i18n/config 门禁及 npm 依赖漏洞应由对应责任域另行处理。
+
+## 2026-09-08 · 异步个人记忆采集租户上下文门禁（完成）
+
+- 改动：`backend/app/memory/jobs.py` 在后台任务首次查询前调用 `set_tenant_context(db, request.tenant_id)`，使 PostgreSQL 事务继承 `SET LOCAL app.tenant_id`；同时对 `ChatSession` 与 `ModelConfig` 做租户一致性校验，SQLite 兼容路径遇到跨租户任务只记录 `memory_error` 并拒绝进入 MemoryService。
+- 回归：`backend/tests/test_memory_service.py` 新增后台任务上下文绑定与跨租户 session/model 拒绝测试，验证 MemoryService 只在请求租户一致且 Session 已绑定时执行。
+- 聚焦验证：`.venv\\Scripts\\python.exe -m pytest tests/test_memory_service.py tests/test_async_jobs.py -q` -> `19 passed`；扩展 Memory Review 回归（加 `tests/test_memory_reviews.py`）-> `23 passed`；Ruff `--select I,E9,F`（Memory Worker 与测试）通过；相关 `compileall` 通过。
+- 安全边界：未改变记忆抽取提示词、对话边界、队列调度、前端或外部系统；未加入密钥、Token、真实外部载荷或生产写路径。
+- 剩余风险与门禁：仍需在隔离 PostgreSQL 账号环境运行 RLS 验收，证明后台线程事务级 `SET LOCAL app.tenant_id` 的真实数据库行为；其他未绑定上下文的历史后台 Worker 不在本切片范围，需后续按 P0 清单逐项收敛。
