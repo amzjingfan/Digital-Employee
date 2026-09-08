@@ -16,6 +16,8 @@ from app.db import set_tenant_context
 from app.db.models import (
     AgentProfile,
     AuthorizationDecision,
+    BiDailyMetric,
+    BiIngestionBatch,
     BusinessActionExecution,
     HighRiskActionRequest,
     OperationsReport,
@@ -117,6 +119,7 @@ def generate_report(
         period_end=period_end,
         scope=scope,
         report_type=request.report_type,
+        report_timezone=request.timezone,
     )
     now = utc_now()
     row = OperationsReport(
@@ -272,6 +275,7 @@ def _build_snapshot(
     period_end: datetime,
     scope: dict[str, str],
     report_type: str,
+    report_timezone: str,
 ) -> dict[str, Any]:
     now = utc_now()
     approvals = db.exec(
@@ -325,6 +329,42 @@ def _build_snapshot(
         item.id: item.name
         for item in db.exec(select(AgentProfile).where(AgentProfile.tenant_id == tenant_id)).all()
     }
+
+    timezone = ZoneInfo(report_timezone)
+    metric_start_date = period_start.replace(tzinfo=UTC).astimezone(timezone).date()
+    metric_end_date = period_end.replace(tzinfo=UTC).astimezone(timezone).date()
+    metric_statement = select(BiDailyMetric).where(
+        BiDailyMetric.tenant_id == tenant_id,
+        BiDailyMetric.business_date >= metric_start_date,
+        BiDailyMetric.business_date < metric_end_date,
+        BiDailyMetric.is_current.is_(True),
+    )
+    store_id = scope.get("store_id") or scope.get("site")
+    brand_id = scope.get("brand_id") or scope.get("brand")
+    platform = scope.get("platform")
+    if store_id:
+        metric_statement = metric_statement.where(
+            BiDailyMetric.entity_type == "store",
+            BiDailyMetric.store_id == store_id,
+        )
+    elif brand_id or platform:
+        metric_statement = metric_statement.where(BiDailyMetric.entity_type == "store")
+    else:
+        metric_statement = metric_statement.where(BiDailyMetric.entity_type == "tenant")
+    if brand_id:
+        metric_statement = metric_statement.where(BiDailyMetric.brand_id == brand_id)
+    if platform:
+        metric_statement = metric_statement.where(BiDailyMetric.platform == platform)
+    bi_metrics = db.exec(
+        metric_statement.order_by(BiDailyMetric.business_date, BiDailyMetric.metric_code).limit(500)
+    ).all()
+    bi_batches = db.exec(
+        select(BiIngestionBatch).where(
+            BiIngestionBatch.tenant_id == tenant_id,
+            BiIngestionBatch.completed_at >= period_start.replace(tzinfo=UTC),
+            BiIngestionBatch.completed_at < period_end.replace(tzinfo=UTC),
+        )
+    ).all()
 
     resource_id = scope.get("resource_id")
     role = scope.get("business_role")
@@ -443,6 +483,42 @@ def _build_snapshot(
             source_route="/enterprise/operations-reports",
             occurred_at=item.occurred_at,
         )
+    for item in bi_batches:
+        if item.quality_status != "failed":
+            continue
+        add_source(
+            source_type="bi_ingestion_batch",
+            source_id=item.id,
+            business_key=f"bi_batch:{item.source_key}:{item.input_digest}",
+            severity="high",
+            label="BI 数据质量失败",
+            summary=f"{item.source_key} · {item.row_count} 行 · 未发布",
+            source_route=f"/enterprise/bi/ingestion-batches/{item.id}",
+            occurred_at=_naive_utc(item.completed_at or item.created_at),
+        )
+    for item in bi_metrics:
+        rendered_value = str(item.value) if item.value is not None else item.null_reason or "unknown"
+        add_source(
+            source_type="bi_daily_metric",
+            source_id=item.id,
+            business_key=(
+                f"bi_metric:{item.source_key}:{item.business_date.isoformat()}:"
+                f"{item.entity_type}:{item.entity_id}:{item.metric_code}"
+            ),
+            severity="medium" if item.freshness_status == "stale" else "info",
+            label=f"BI 指标 · {item.metric_code.upper()}",
+            summary=(
+                f"{item.business_date.isoformat()} · {rendered_value} · "
+                f"口径 {item.metric_definition_version}"
+            ),
+            source_route=(
+                "/enterprise/bi/metrics/daily"
+                f"?start_date={item.business_date.isoformat()}"
+                f"&end_date={item.business_date.isoformat()}"
+                f"&metric_code={item.metric_code}"
+            ),
+            occurred_at=_naive_utc(item.latest_source_observed_at or item.created_at),
+        )
 
     run_activity: dict[str, Counter[str]] = defaultdict(Counter)
     for item in runs:
@@ -459,6 +535,14 @@ def _build_snapshot(
         data_warnings.append("报告周期内没有审批或外部执行数据")
     if not denied:
         data_warnings.append("报告周期内没有授权拒绝事件；该项表示无记录，不代表未发生风险")
+    if not bi_metrics:
+        data_warnings.append("报告周期内没有已通过质量门禁的 BI 经营指标")
+    stale_metric_count = sum(item.freshness_status == "stale" for item in bi_metrics)
+    if stale_metric_count:
+        data_warnings.append(f"{stale_metric_count} 个 BI 指标快照在生成时已标记为陈旧")
+    rejected_batch_count = sum(item.quality_status == "failed" for item in bi_batches)
+    if rejected_batch_count:
+        data_warnings.append(f"报告周期内有 {rejected_batch_count} 个 BI 批次未通过质量门禁")
 
     metrics = {
         "pending_approvals": len(pending),
@@ -491,6 +575,29 @@ def _build_snapshot(
         },
         "role_activity": role_activity,
         "data_quality": data_warnings,
+        "commerce_kpis": [
+            {
+                "metric_id": item.id,
+                "metric_code": item.metric_code,
+                "metric_definition_version": item.metric_definition_version,
+                "business_date": item.business_date.isoformat(),
+                "source_key": item.source_key,
+                "entity_type": item.entity_type,
+                "entity_id": item.entity_id,
+                "value": str(item.value) if item.value is not None else None,
+                "null_reason": item.null_reason,
+                "currency": item.currency or None,
+                "freshness_status": item.freshness_status,
+                "latest_source_observed_at": (
+                    item.latest_source_observed_at.isoformat()
+                    if item.latest_source_observed_at
+                    else None
+                ),
+                "batch_id": item.batch_id,
+                "evidence": dict(item.evidence_json or {}),
+            }
+            for item in bi_metrics
+        ],
         "business_impact": {
             "high_risk_actions_waiting": len(pending),
             "external_actions_at_risk": len(failed_executions),
@@ -623,13 +730,28 @@ def _require_manager(user: User, tenant_id: str) -> None:
 
 
 def _normalized_scope(scope: dict[str, str]) -> dict[str, str]:
-    allowed = {"resource_id", "business_role", "brand", "platform", "site", "sku"}
+    allowed = {
+        "resource_id",
+        "business_role",
+        "brand",
+        "brand_id",
+        "platform",
+        "site",
+        "store_id",
+        "sku",
+    }
     normalized = {
         key: str(value).strip()[:160]
         for key, value in scope.items()
         if key in allowed and str(value).strip()
     }
     return dict(sorted(normalized.items()))
+
+
+def _naive_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 def _period_bounds(
