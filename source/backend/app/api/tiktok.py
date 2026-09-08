@@ -46,6 +46,8 @@ from app.tiktok.schema import (
     TikTokOfficialAuthorizationStart,
     TikTokOverview,
     TikTokProductionReadiness,
+    TikTokShadowEvaluationCreate,
+    TikTokShadowEvaluationRead,
     TikTokShadowRunRead,
 )
 from app.tiktok.service import (
@@ -61,8 +63,10 @@ from app.tiktok.service import (
 )
 from app.tiktok.shadow import (
     TikTokShadowError,
+    get_shadow_quality,
     get_shadow_run,
     heartbeat_shadow_run,
+    record_shadow_evaluation,
     start_shadow_run,
 )
 
@@ -205,7 +209,7 @@ def shadow_start(
         run = start_shadow_run(db, current_user)
     except TikTokShadowError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
-    return _shadow_read(run)
+    return _shadow_read(db, run)
 
 
 @router.get("/shadow/status", response_model=TikTokShadowRunRead | None)
@@ -213,7 +217,7 @@ def shadow_status(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_session)],
 ) -> TikTokShadowRunRead | None:
-    return _shadow_read(get_shadow_run(db, current_user.tenant_id))
+    return _shadow_read(db, get_shadow_run(db, current_user.tenant_id))
 
 
 @router.post("/shadow/heartbeat", response_model=TikTokShadowRunRead | None)
@@ -221,7 +225,20 @@ def shadow_heartbeat(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_session)],
 ) -> TikTokShadowRunRead | None:
-    return _shadow_read(heartbeat_shadow_run(db, current_user.tenant_id))
+    return _shadow_read(db, heartbeat_shadow_run(db, current_user.tenant_id))
+
+
+@router.post("/shadow/evaluations", response_model=TikTokShadowEvaluationRead)
+def shadow_evaluate(
+    request: TikTokShadowEvaluationCreate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> TikTokShadowEvaluationRead:
+    try:
+        return record_shadow_evaluation(db, current_user, request)
+    except TikTokShadowError as exc:
+        status_code = 403 if current_user.role != "admin" else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
 
 @router.post("/authorizations/start", response_model=TikTokAuthorizationStartResponse)
@@ -259,11 +276,11 @@ def official_authorization_callback(
         if state_row:
             db.delete(state_row)
             db.commit()
-        return RedirectResponse(_with_query(return_to, {"official_authorized": "0"}), status_code=302)
-    try:
-        authorizations = exchange_official_authorization(
-            db, current_user, state=state, code=code
+        return RedirectResponse(
+            _with_query(return_to, {"official_authorized": "0"}), status_code=302
         )
+    try:
+        authorizations = exchange_official_authorization(db, current_user, state=state, code=code)
     except TikTokOfficialError as exc:
         raise HTTPException(status_code=502, detail=exc.code) from exc
     return RedirectResponse(
@@ -282,7 +299,11 @@ def mock_authorize(
     state: str = Query(..., min_length=20, max_length=200),
 ) -> RedirectResponse:
     state_row = db.get(TikTokOAuthState, state_hash(state))
-    if not state_row or state_row.user_id != current_user.id or state_row.tenant_id != current_user.tenant_id:
+    if (
+        not state_row
+        or state_row.user_id != current_user.id
+        or state_row.tenant_id != current_user.tenant_id
+    ):
         raise HTTPException(status_code=400, detail="TikTok OAuth state is invalid or expired")
     code = approve_mock_authorization(db, state)
     parsed = urlsplit(state_row.return_to)
@@ -315,7 +336,9 @@ def authorization_callback(
     if not state_row:
         raise HTTPException(status_code=400, detail="TikTok OAuth state is invalid or expired")
     if state_row.user_id != current_user.id or state_row.tenant_id != current_user.tenant_id:
-        raise HTTPException(status_code=403, detail="TikTok OAuth state does not belong to this user")
+        raise HTTPException(
+            status_code=403, detail="TikTok OAuth state does not belong to this user"
+        )
     exchange_mock_authorization(db, state, code, code_verifier)
     return RedirectResponse(f"{state_row.return_to}?authorized=1", status_code=302)
 
@@ -326,7 +349,7 @@ def _with_query(path: str, values: dict[str, str]) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, query, parsed.fragment))
 
 
-def _shadow_read(row) -> TikTokShadowRunRead | None:
+def _shadow_read(db: Session, row) -> TikTokShadowRunRead | None:
     if row is None:
         return None
     return TikTokShadowRunRead(
@@ -338,6 +361,7 @@ def _shadow_read(row) -> TikTokShadowRunRead | None:
         observation_count=row.observation_count,
         error_count=row.error_count,
         baseline=dict(row.baseline_json or {}),
+        quality=get_shadow_quality(db, row),
     )
 
 
@@ -351,7 +375,9 @@ def authorization_exchange(
     if not state_row:
         raise HTTPException(status_code=400, detail="TikTok OAuth state is invalid or expired")
     if state_row.user_id != current_user.id or state_row.tenant_id != current_user.tenant_id:
-        raise HTTPException(status_code=403, detail="TikTok OAuth state does not belong to this user")
+        raise HTTPException(
+            status_code=403, detail="TikTok OAuth state does not belong to this user"
+        )
     authorization = exchange_mock_authorization(
         db, request.state, request.code, request.code_verifier
     )
