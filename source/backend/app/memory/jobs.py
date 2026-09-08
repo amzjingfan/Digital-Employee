@@ -5,7 +5,7 @@ from typing import Any
 from sqlmodel import Session, select
 
 from app.async_jobs import AsyncJob, enqueue_async_job
-from app.db import engine
+from app.db import engine, set_tenant_context
 from app.db.models import AgentEvent, ChatSession, Message, ModelConfig
 from app.memory.service import MemoryService, memory_read
 from app.observability import EventLog
@@ -47,10 +47,19 @@ def run_memory_capture_job(payload: dict[str, Any]) -> None:
     step_result = StepAgentResult.model_validate(payload["step_result"])
     tool_result = ToolResult.model_validate(payload["tool_result"]) if payload.get("tool_result") else None
     with Session(engine) as db:
+        # Background workers run outside the request Session; bind the trusted
+        # tenant before any lookup so PostgreSQL FORCE RLS applies to the whole
+        # capture transaction.
+        set_tenant_context(db, request.tenant_id)
         events = EventLog(db)
         chat_session = db.get(ChatSession, session_id)
         model_config = db.get(ModelConfig, model_config_id)
-        if not chat_session or not model_config:
+        if (
+            not chat_session
+            or not model_config
+            or chat_session.tenant_id != request.tenant_id
+            or model_config.tenant_id != request.tenant_id
+        ):
             events.record(
                 request.tenant_id,
                 session_id,
@@ -59,6 +68,12 @@ def run_memory_capture_job(payload: dict[str, Any]) -> None:
                     "message": "后台 Memory 任务缺少 session 或 model_config。",
                     "missing_session": not bool(chat_session),
                     "missing_model_config": not bool(model_config),
+                    "session_tenant_mismatch": bool(
+                        chat_session and chat_session.tenant_id != request.tenant_id
+                    ),
+                    "model_config_tenant_mismatch": bool(
+                        model_config and model_config.tenant_id != request.tenant_id
+                    ),
                 },
             )
             db.commit()

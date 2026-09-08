@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlmodel import Session
 
-from app.db import engine
+from app.db import engine, set_tenant_context
 from app.db.models import APIJob
 from app.feedback.service import FeedbackAnalysisService
 from app.observability import EventLog
@@ -13,6 +13,7 @@ from app.public_api.jobs import create_internal_job, register_job_handler
 
 def enqueue_feedback_analysis(tenant_id: str, feedback_id: str, session_id: str | None = None) -> APIJob:
     with Session(engine) as db:
+        set_tenant_context(db, tenant_id)
         return create_internal_job(
             db,
             tenant_id=tenant_id,
@@ -30,8 +31,9 @@ def run_feedback_analysis_job(payload: dict[str, Any]) -> None:
     feedback_id = str(payload.get("feedback_id") or "")
     session_id = str(payload.get("session_id") or "")
     with Session(engine) as db:
+        set_tenant_context(db, tenant_id)
         events = EventLog(db)
-        row = FeedbackAnalysisService(db).analyze_feedback(feedback_id)
+        row = FeedbackAnalysisService(db).analyze_feedback(feedback_id, tenant_id=tenant_id)
         if row:
             events.record(
                 row.tenant_id,
@@ -61,11 +63,15 @@ def run_feedback_analysis_job(payload: dict[str, Any]) -> None:
 @register_job_handler("feedback.analyze")
 def handle_feedback_analysis_job(db: Session, job: APIJob) -> dict[str, Any]:
     payload = dict(job.request_json or {})
-    tenant_id = str(payload.get("tenant_id") or job.tenant_id)
+    payload_tenant_id = str(payload.get("tenant_id") or "")
+    tenant_id = job.tenant_id
+    if payload_tenant_id and payload_tenant_id != tenant_id:
+        raise LookupError("Feedback job tenant mismatch")
     feedback_id = str(payload.get("feedback_id") or "")
     session_id = str(payload.get("session_id") or "")
+    set_tenant_context(db, tenant_id)
     events = EventLog(db)
-    row = FeedbackAnalysisService(db).analyze_feedback(feedback_id)
+    row = FeedbackAnalysisService(db).analyze_feedback(feedback_id, tenant_id=tenant_id)
     if not row or row.tenant_id != tenant_id:
         if tenant_id and session_id:
             events.record(

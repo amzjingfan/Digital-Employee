@@ -471,8 +471,12 @@ def test_handoff_list_filters_by_status_and_user_then_reply_restores_session(mon
         user_all_rows = chat_api.list_human_handoffs("tenant_demo", "all", current_user=user, db=db)
         assert {row.id for row in user_all_rows} == {"handoff_assigned", "handoff_requested", "handoff_answered"}
 
-        resumed: list[str] = []
-        monkeypatch.setattr(chat_api, "_resume_human_handoff_async", resumed.append)
+        resumed: list[tuple[str, str]] = []
+        monkeypatch.setattr(
+            chat_api,
+            "_resume_human_handoff_async",
+            lambda tenant_id, handoff_id: resumed.append((tenant_id, handoff_id)),
+        )
         with pytest.raises(HTTPException) as forbidden:
             chat_api.reply_human_handoff(
                 "handoff_requested",
@@ -502,7 +506,7 @@ def test_handoff_list_filters_by_status_and_user_then_reply_restores_session(mon
         events = db.exec(select(AgentEvent).where(AgentEvent.event_type == "human_handoff_answered")).all()
         assert len(events) == 1
         assert events[0].payload_json["handoff_id"] == "handoff_assigned"
-        assert resumed == ["handoff_assigned"]
+        assert resumed == [("tenant_demo", "handoff_assigned")]
 
 
 def test_handoff_list_hides_pilotdeck_sessions_but_keeps_the_records() -> None:
@@ -629,8 +633,12 @@ def test_reply_human_handoff_restores_session_and_schedules_resume(monkeypatch):
             (ChatSession, "session_handoff"): session,
         }
     )
-    resumed: list[str] = []
-    monkeypatch.setattr(chat_api, "_resume_human_handoff_async", resumed.append)
+    resumed: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        chat_api,
+        "_resume_human_handoff_async",
+        lambda tenant_id, handoff_id: resumed.append((tenant_id, handoff_id)),
+    )
 
     result = chat_api.reply_human_handoff(
         "handoff_reply",
@@ -655,7 +663,7 @@ def test_reply_human_handoff_restores_session_and_schedules_resume(monkeypatch):
     assert session.summary == "最近回复：人工确认通过，继续执行"
     assert any(isinstance(row, AgentEvent) and row.event_type == "human_handoff_answered" for row in db.added)
     assert db.commits == 1
-    assert resumed == ["handoff_reply"]
+    assert resumed == [("tenant_demo", "handoff_reply")]
 
 
 def test_reply_human_handoff_rejects_non_pending_request(monkeypatch):
@@ -667,7 +675,11 @@ def test_reply_human_handoff_rejects_non_pending_request(monkeypatch):
         human_reply="已处理",
     )
     db = FakeDb(get_rows={(HumanHandoffRequest, "handoff_done"): handoff})
-    monkeypatch.setattr(chat_api, "_resume_human_handoff_async", lambda _handoff_id: None)
+    monkeypatch.setattr(
+        chat_api,
+        "_resume_human_handoff_async",
+        lambda _tenant_id, _handoff_id: None,
+    )
 
     with pytest.raises(HTTPException) as exc:
         chat_api.reply_human_handoff(
@@ -697,8 +709,12 @@ def test_reply_human_handoff_rejects_missing_original_session(monkeypatch):
         pending_question="请人工确认",
     )
     db = FakeDb(get_rows={(HumanHandoffRequest, "handoff_missing_session"): handoff})
-    resumed: list[str] = []
-    monkeypatch.setattr(chat_api, "_resume_human_handoff_async", resumed.append)
+    resumed: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        chat_api,
+        "_resume_human_handoff_async",
+        lambda tenant_id, handoff_id: resumed.append((tenant_id, handoff_id)),
+    )
 
     with pytest.raises(HTTPException) as exc:
         chat_api.reply_human_handoff(
@@ -724,15 +740,22 @@ def test_reply_human_handoff_rejects_missing_original_session(monkeypatch):
 def test_handoff_resume_worker_continues_original_session_once(monkeypatch):
     engine = _test_engine()
     handled_requests: list[ChatTurnRequest] = []
+    tenant_contexts: list[str] = []
+
+    def record_tenant_context(db: Session, tenant_id: str) -> None:
+        tenant_contexts.append(tenant_id)
+        db.info["staffdeck_tenant_id"] = tenant_id
 
     class FakeAgentLoop:
         def __init__(self, db: Session) -> None:
             self.db = db
 
         def handle_turn(self, request: ChatTurnRequest) -> None:
+            assert self.db.info["staffdeck_tenant_id"] == request.tenant_id
             handled_requests.append(request)
 
     monkeypatch.setattr(chat_api, "engine", engine)
+    monkeypatch.setattr(chat_api, "set_tenant_context", record_tenant_context)
     monkeypatch.setattr(chat_api, "AgentLoop", FakeAgentLoop)
     with Session(engine) as db:
         _admin, user, _other = _seed_handoff_users(db)
@@ -762,8 +785,8 @@ def test_handoff_resume_worker_continues_original_session_once(monkeypatch):
         )
         db.commit()
 
-    chat_api._resume_human_handoff_worker("handoff_worker")
-    chat_api._resume_human_handoff_worker("handoff_worker")
+    chat_api._resume_human_handoff_worker("tenant_demo", "handoff_worker")
+    chat_api._resume_human_handoff_worker("tenant_demo", "handoff_worker")
 
     assert len(handled_requests) == 1
     request = handled_requests[0]
@@ -773,6 +796,7 @@ def test_handoff_resume_worker_continues_original_session_once(monkeypatch):
     assert request.user_id == "user_demo"
     assert request.message == "人工答复：继续执行后续流程"
     assert request.channel == "human_handoff_resume"
+    assert tenant_contexts == ["tenant_demo", "tenant_demo"]
 
     with Session(engine) as db:
         handoff = db.get(HumanHandoffRequest, "handoff_worker")
@@ -785,6 +809,64 @@ def test_handoff_resume_worker_continues_original_session_once(monkeypatch):
         events = db.exec(select(AgentEvent).where(AgentEvent.event_type == "human_handoff_resume_started")).all()
         assert len(events) == 1
         assert events[0].payload_json["handoff_id"] == "handoff_worker"
+
+
+def test_handoff_resume_worker_rejects_cross_tenant_lookup(monkeypatch):
+    engine = _test_engine()
+    handled_requests: list[ChatTurnRequest] = []
+    tenant_contexts: list[str] = []
+
+    def record_tenant_context(db: Session, tenant_id: str) -> None:
+        tenant_contexts.append(tenant_id)
+        db.info["staffdeck_tenant_id"] = tenant_id
+
+    class FakeAgentLoop:
+        def __init__(self, db: Session) -> None:
+            self.db = db
+
+        def handle_turn(self, request: ChatTurnRequest) -> None:
+            handled_requests.append(request)
+
+    monkeypatch.setattr(chat_api, "engine", engine)
+    monkeypatch.setattr(chat_api, "set_tenant_context", record_tenant_context)
+    monkeypatch.setattr(chat_api, "AgentLoop", FakeAgentLoop)
+    with Session(engine) as db:
+        _admin, user, _other = _seed_handoff_users(db)
+        db.add(Tenant(id="tenant_other", name="Other"))
+        db.add(
+            ChatSession(
+                id="session_cross_tenant",
+                tenant_id="tenant_demo",
+                user_id=user.id,
+                agent_id="agent_demo",
+                status="active",
+            )
+        )
+        db.add(
+            HumanHandoffRequest(
+                id="handoff_cross_tenant",
+                tenant_id="tenant_demo",
+                session_id="session_cross_tenant",
+                agent_id="agent_demo",
+                requester_user_id=user.id,
+                status="answered",
+                human_reply="不得跨租户恢复",
+            )
+        )
+        db.commit()
+
+    chat_api._resume_human_handoff_worker("tenant_other", "handoff_cross_tenant")
+
+    assert tenant_contexts == ["tenant_other"]
+    assert handled_requests == []
+    with Session(engine) as db:
+        handoff = db.get(HumanHandoffRequest, "handoff_cross_tenant")
+        assert handoff is not None
+        assert not (handoff.metadata_json or {}).get("resume_started_at")
+        events = db.exec(
+            select(AgentEvent).where(AgentEvent.session_id == "session_cross_tenant")
+        ).all()
+        assert events == []
 
 
 def test_handoff_resume_worker_prefers_session_user_after_rebind(monkeypatch):
@@ -834,7 +916,7 @@ def test_handoff_resume_worker_prefers_session_user_after_rebind(monkeypatch):
         )
         db.commit()
 
-    chat_api._resume_human_handoff_worker("handoff_rebind")
+    chat_api._resume_human_handoff_worker("tenant_demo", "handoff_rebind")
 
     assert len(handled_requests) == 1
     assert handled_requests[0].user_id == "admin_user"
@@ -842,6 +924,11 @@ def test_handoff_resume_worker_prefers_session_user_after_rebind(monkeypatch):
 
 def test_handoff_resume_worker_persists_failed_resume(monkeypatch):
     engine = _test_engine()
+    tenant_contexts: list[str] = []
+
+    def record_tenant_context(db: Session, tenant_id: str) -> None:
+        tenant_contexts.append(tenant_id)
+        db.info["staffdeck_tenant_id"] = tenant_id
 
     class FailingAgentLoop:
         def __init__(self, db: Session) -> None:
@@ -851,6 +938,7 @@ def test_handoff_resume_worker_persists_failed_resume(monkeypatch):
             raise RuntimeError(f"resume failed for {request.session_id}")
 
     monkeypatch.setattr(chat_api, "engine", engine)
+    monkeypatch.setattr(chat_api, "set_tenant_context", record_tenant_context)
     monkeypatch.setattr(chat_api, "AgentLoop", FailingAgentLoop)
     with Session(engine) as db:
         _admin, user, _other = _seed_handoff_users(db)
@@ -878,7 +966,9 @@ def test_handoff_resume_worker_persists_failed_resume(monkeypatch):
         )
         db.commit()
 
-    chat_api._resume_human_handoff_worker("handoff_worker_failed")
+    chat_api._resume_human_handoff_worker("tenant_demo", "handoff_worker_failed")
+
+    assert tenant_contexts == ["tenant_demo", "tenant_demo"]
 
     with Session(engine) as db:
         handoff = db.get(HumanHandoffRequest, "handoff_worker_failed")

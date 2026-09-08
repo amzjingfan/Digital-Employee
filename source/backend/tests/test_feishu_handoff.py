@@ -2038,10 +2038,12 @@ def test_run_handoff_reply_command_matches_by_parent_id(monkeypatch) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_apply_handoff_reply_records_source_feishu() -> None:
+def test_apply_handoff_reply_records_source_feishu(monkeypatch) -> None:
+    from app.api import chat as chat_api
     from app.api.chat import _apply_handoff_reply
     from app.db.models import AgentEvent
 
+    monkeypatch.setattr(chat_api, "_resume_human_handoff_async", lambda *_args: None)
     engine = _test_engine()
     with Session(engine) as db:
         _seed_tenant(db)
@@ -2068,10 +2070,12 @@ def test_apply_handoff_reply_records_source_feishu() -> None:
         assert events[0].payload_json["source"] == "feishu"
 
 
-def test_apply_handoff_reply_records_source_web_by_default() -> None:
+def test_apply_handoff_reply_records_source_web_by_default(monkeypatch) -> None:
+    from app.api import chat as chat_api
     from app.api.chat import _apply_handoff_reply
     from app.db.models import AgentEvent
 
+    monkeypatch.setattr(chat_api, "_resume_human_handoff_async", lambda *_args: None)
     engine = _test_engine()
     with Session(engine) as db:
         _seed_tenant(db)
