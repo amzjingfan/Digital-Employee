@@ -28,6 +28,7 @@ def stage_chat_attachment(
     *,
     tenant_id: str,
     user_id: str,
+    extra_metadata: dict[str, Any] | None = None,
 ) -> ChatAttachmentRead:
     """Persist upload bytes outside TaskFrame workspaces without exposing the host path."""
 
@@ -50,6 +51,10 @@ def stage_chat_attachment(
         "size": len(data),
         "sha256": digest,
     }
+    # Media decoders may add verified, non-sensitive facts such as dimensions;
+    # keeping them beside the payload makes later QC independent of the browser.
+    if extra_metadata:
+        metadata["extra"] = dict(extra_metadata)
     _atomic_write(
         directory / "metadata.json",
         json.dumps(metadata, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
@@ -98,6 +103,45 @@ def read_staged_chat_attachment(
     return data
 
 
+def read_staged_attachment_manifest(
+    *,
+    attachment_id: str,
+    tenant_id: str,
+    user_id: str,
+) -> dict[str, Any] | None:
+    """Return a verified upload manifest without exposing its host path.
+
+    Creative asset registration uses this as the trust boundary: the browser
+    may send a reference and a digest, but the server accepts them only when
+    the tenant/user-scoped staged payload still matches its metadata and its
+    freshly calculated SHA-256 value.
+    """
+    directory = _attachment_directory(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        attachment_id=attachment_id,
+    )
+    payload_path = directory / "payload"
+    metadata_path = directory / "metadata.json"
+    try:
+        if directory.is_symlink() or payload_path.is_symlink() or metadata_path.is_symlink():
+            return None
+        metadata: dict[str, Any] = json.loads(metadata_path.read_text(encoding="utf-8"))
+        data = payload_path.read_bytes()
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+    digest = hashlib.sha256(data).hexdigest()
+    if (
+        metadata.get("tenant_id") != tenant_id
+        or metadata.get("user_id") != user_id
+        or metadata.get("attachment_id") != attachment_id
+        or int(metadata.get("size") or -1) != len(data)
+        or str(metadata.get("sha256") or "").lower() != digest
+    ):
+        return None
+    return {**metadata, "sha256": digest}
+
+
 def _attachment_directory(*, tenant_id: str, user_id: str, attachment_id: str) -> Path:
     data_root = paths.user_data_dir().resolve()
     root = (data_root / "harness_uploads").resolve()
@@ -137,6 +181,7 @@ def _atomic_write(path: Path, data: bytes) -> None:
 
 
 __all__ = [
+    "read_staged_attachment_manifest",
     "read_staged_chat_attachment",
     "sandbox_attachment_path",
     "stage_chat_attachment",

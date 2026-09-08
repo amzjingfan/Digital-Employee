@@ -625,6 +625,50 @@ def test_chat_turn_and_stream_reject_non_tl_team_sessions() -> None:
             assert exc_info.value.status_code == 403
 
 
+def test_chat_turn_and_stream_reject_work_task_execution_sessions() -> None:
+    """Worker execution sessions are read-only even without a team_id."""
+    with _test_session() as db:
+        _seed_team(db)  # Also creates the tenant fixture required by the chat API.
+        session = _make_session(
+            db,
+            session_id="sess_work_task_read_only",
+            team_id=None,
+            agent_id="agent_worker",
+            title="统一任务：优化广告素材 CTR",
+            created_at=datetime(2026, 1, 1, 12, 0, 0),
+        )
+        session.channel = "work_task"
+        db.commit()
+
+        with pytest.raises(HTTPException) as exc_info:
+            chat_api.chat_turn(
+                ChatTurnRequest(
+                    tenant_id="tenant_demo",
+                    session_id=session.id,
+                    client_turn_id="ct_work_task_read_only",
+                    message="插一句话",
+                ),
+                _admin_user(),
+                db,
+            )
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail["code"] == "CHAT_SESSION_READ_ONLY"
+
+        with pytest.raises(HTTPException) as exc_info:
+            chat_api.chat_stream(
+                ChatTurnRequest(
+                    tenant_id="tenant_demo",
+                    session_id=session.id,
+                    client_turn_id="cs_work_task_read_only",
+                    message="插一句话",
+                ),
+                _admin_user(),
+                db,
+            )
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail["code"] == "CHAT_SESSION_READ_ONLY"
+
+
 def test_tl_chat_rejects_session_from_other_team_with_shared_tl() -> None:
     """共享 TL 场景:不能把 A 团队的 TL 会话传给 B 团队的 /tl/chat。"""
     with _test_session() as db:

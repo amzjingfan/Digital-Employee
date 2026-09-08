@@ -82,6 +82,7 @@ import type {
   MCPAppsMode,
   MCPTransport,
   MCPDiscoveredTool,
+  DesignKitCliStatusRead,
 } from '../types';
 
 type ToolPageProps = {
@@ -1481,6 +1482,7 @@ type DiscoveredRow = MCPDiscoverResponse['tools'][number] & { selected: boolean 
 function McpServerEditorPage({ mode, currentUser, onLogout }: { mode: 'new' | 'edit' } & ToolPageProps) {
   const [values, setValues] = useState<McpFormValues>({ ...MCP_FORM_INITIAL_VALUES });
   const [server, setServer] = useState<MCPServerRead | null>(null);
+  const [designKitStatus, setDesignKitStatus] = useState<DesignKitCliStatusRead | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [discovering, setDiscovering] = useState(false);
@@ -1492,6 +1494,13 @@ function McpServerEditorPage({ mode, currentUser, onLogout }: { mode: 'new' | 'e
 
   const setField = <K extends keyof McpFormValues>(name: K, value: McpFormValues[K]) =>
     setValues((prev) => ({ ...prev, [name]: value }));
+
+  useEffect(() => {
+    api
+      .get<DesignKitCliStatusRead>(`/api/enterprise/designkit-cli/status?tenant_id=${TENANT_ID}`)
+      .then(setDesignKitStatus)
+      .catch(() => setDesignKitStatus(null));
+  }, []);
 
   useEffect(() => {
     if (!isEdit) {
@@ -1736,6 +1745,31 @@ function McpServerEditorPage({ mode, currentUser, onLogout }: { mode: 'new' | 'e
         title={isEdit ? '编辑 MCP 服务器' : '新建工具'}
         description="配置 MCP Server 连接后，可发现其提供的工具并同步为工具集。"
       />
+      {designKitStatus && (
+        <div className="mt-[20px] rounded-[14px] border border-[#dce8f5] bg-[#f6faff] px-[16px] py-[14px]">
+          <div className="flex flex-wrap items-center justify-between gap-[10px]">
+            <div>
+              <div className="flex flex-wrap items-center gap-[8px]">
+                <strong className="text-[13px] text-[#2f3442]">美图设计室 AI 设计 CLI</strong>
+                <StatusBadge tone={designKitStatus.version_supported ? 'green' : 'orange'}>
+                  {designKitStatus.installed
+                    ? (designKitStatus.version_supported ? `已安装 ${designKitStatus.version || ''}` : '版本不满足')
+                    : '未安装'}
+                </StatusBadge>
+              </div>
+              <p className="mt-[6px] text-[12px] leading-[1.6] text-[#667085]">
+                {designKitStatus.installed
+                  ? `本机命令：${designKitStatus.command || 'designkit'}；配置目录${designKitStatus.local_config_dir_present ? '已存在' : '不存在'}。`
+                  : `请先安装 DesignKit CLI（最低版本 ${designKitStatus.minimum_version}）。`}
+                {' '}当前 CLI 未暴露 MCP 协议，不能直接作为 MCP Server 保存；美工 Skill 已绑定的只读 API 可继续使用。
+              </p>
+            </div>
+            <StatusBadge tone={designKitStatus.mcp_protocol_exposed ? 'green' : 'gray'}>
+              {designKitStatus.mcp_protocol_exposed ? 'MCP 可用' : '等待真实 MCP 适配器'}
+            </StatusBadge>
+          </div>
+        </div>
+      )}
       <div className="mt-[20px] mb-[16px] flex flex-wrap justify-end gap-[16px]">
         <UIButton variant="outline" onClick={() => navigate('/enterprise/tools')} className={RETURN_BUTTON_CLASS}>
           <IconArrowRight className="size-3.5 rotate-180" />

@@ -30,6 +30,15 @@ Follow the history’s concise Conventional Commit pattern, such as `feat(channe
 
 Copy `backend/.env.example` to `backend/.env`; never commit secrets or channel credentials. Use strong `APP_SECRET` values and least-privilege external credentials. The supported production migration path currently assumes SQLite.
 
+## Development Memory and Logging
+
+- Before each development step, record the date, objective, scope, and known blockers in `docs/DEVELOPMENT_LOG.md`.
+- After each step, append the changed files, validation commands and results, remaining risks, and the next recommended step. Do not rewrite prior entries.
+- Keep the reusable project rules in `docs/DEVELOPER_MEMORY.md`; update it when the team's working agreement changes.
+- Code comments must be readable to human maintainers. Explain intent, business constraints, security boundaries, or non-obvious trade-offs; do not add comments that merely restate the code.
+- Never put passwords, tokens, API secrets, cookies, private keys, full personal data, or raw external authorization payloads in source code, comments, memory, logs, test fixtures, or screenshots.
+- A development log records implementation evidence; it does not turn a seed, mock, local approval, or sandbox result into production approval.
+
 ## Agent skills
 
 ### Issue tracker

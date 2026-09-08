@@ -126,6 +126,26 @@ class Settings(BaseSettings):
     public_api_retention_days: int = 30
     public_api_webhook_timeout_seconds: float = 10.0
     public_api_webhook_max_attempts: int = 6
+    # Creative uploads are staged locally first; deployments can lower or
+    # raise this limit without changing the product lifecycle code.
+    creative_upload_max_bytes: int = 12 * 1024 * 1024
+    # Local is safe for development. Production uses an S3-compatible bucket
+    # only when every endpoint and credential field is explicitly configured.
+    creative_object_storage_backend: str = "local"
+    creative_object_storage_endpoint: str = ""
+    creative_object_storage_bucket: str = ""
+    creative_object_storage_region: str = "us-east-1"
+    creative_object_storage_access_key: str = ""
+    creative_object_storage_secret_key: str = ""
+    creative_object_storage_session_token: str = ""
+    creative_object_storage_prefix: str = "joukir/creative"
+    creative_object_storage_timeout_seconds: float = 30.0
+    creative_media_ffprobe_path: str = ""
+    creative_evidence_sync_interval_seconds: float = 15 * 60
+    creative_generation_enabled: bool = False
+    creative_generation_base_url: str = ""
+    creative_generation_api_key: str = ""
+    creative_generation_timeout_seconds: float = 120.0
     # 钉钉 emotion 接口的表情常量与所需权限尚未真机验证，验证通过前默认关闭：
     # 否则常量失效或权限未开时，每条入站消息都会留下一条失败的 reaction 投递。
     channel_dingtalk_reaction_enabled: bool = False

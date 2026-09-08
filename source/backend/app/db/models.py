@@ -2748,6 +2748,12 @@ class CreativeBrief(SQLModel, table=True):
     scenes_json: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     required_assets_json: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     constraints_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    fact_snapshot_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    brand_snapshot_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    platform_spec_snapshot_json: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(JSON)
+    )
+    snapshot_digest: str = Field(default="", index=True)
     status: str = Field(default="open", index=True)
     task_id: str = Field(index=True)
     due_at: Optional[datetime] = Field(default=None, index=True)
@@ -2799,6 +2805,159 @@ class CreativeAssetVersion(SQLModel, table=True):
     review_note: Optional[str] = None
     reviewed_at: Optional[datetime] = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
+class DesignQCReport(SQLModel, table=True):
+    """Immutable, reproducible QC evidence for one creative asset version."""
+
+    __tablename__ = "design_qc_reports"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "asset_version_id", "input_digest", name="uq_design_qc_input"
+        ),
+        CheckConstraint(
+            "overall_status IN ('pass', 'fail', 'unknown', 'not_applicable')",
+            name="design_qc_reports_status_check",
+        ),
+        Index(
+            "ix_design_qc_reports_asset_created",
+            "tenant_id",
+            "asset_version_id",
+            "created_at",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("design_qc"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    asset_version_id: str = Field(index=True)
+    asset_digest: str = Field(index=True)
+    brief_id: str = Field(index=True)
+    store_resource_id: str = Field(index=True)
+    snapshot_digest: str = Field(index=True)
+    checker_version: str = Field(index=True)
+    overall_status: str = Field(default="unknown", index=True)
+    findings_json: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
+    input_digest: str = Field(index=True)
+    created_by_user_id: str = Field(index=True)
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
+class CreativeEvidenceRecord(SQLModel, table=True):
+    """Tenant-scoped evidence registry used to expire Brief inputs safely."""
+
+    __tablename__ = "creative_evidence_records"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "evidence_type",
+            "source_ref",
+            "version",
+            name="uq_creative_evidence_version",
+        ),
+        CheckConstraint(
+            "status IN ('draft', 'verified', 'expired', 'revoked')",
+            name="creative_evidence_status_check",
+        ),
+        CheckConstraint(
+            "evidence_type IN ('facts', 'brand', 'platform_spec')",
+            name="creative_evidence_type_check",
+        ),
+        Index(
+            "ix_creative_evidence_active_lookup",
+            "tenant_id",
+            "evidence_type",
+            "source_ref",
+            "version",
+            "status",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("creative_evidence"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    evidence_type: str = Field(index=True)
+    source_ref: str = Field(index=True)
+    version: str = Field(index=True)
+    payload_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    content_digest: str = Field(index=True)
+    status: str = Field(default="draft", index=True)
+    effective_at: datetime = Field(default_factory=utc_now, index=True)
+    expires_at: Optional[datetime] = Field(default=None, index=True)
+    synced_at: datetime = Field(default_factory=utc_now, index=True)
+    sync_error: Optional[str] = None
+    created_by_user_id: str = Field(index=True)
+    updated_at: datetime = Field(default_factory=utc_now, index=True)
+
+
+class CreativeDeliveryChecklist(SQLModel, table=True):
+    """Evidence-bound delivery checklist; ready is not an external publish."""
+
+    __tablename__ = "creative_delivery_checklists"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "brief_id", "delivery_digest", name="uq_creative_delivery_digest"
+        ),
+        CheckConstraint(
+            "status IN ('blocked', 'ready', 'delivered', 'failed')",
+            name="creative_delivery_status_check",
+        ),
+        Index(
+            "ix_creative_delivery_brief_created",
+            "tenant_id",
+            "brief_id",
+            "created_at",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("creative_delivery"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    brief_id: str = Field(index=True)
+    store_resource_id: str = Field(index=True)
+    product_key: str = Field(index=True)
+    asset_version_ids_json: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    qc_report_ids_json: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    checklist_json: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
+    blockers_json: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
+    delivery_digest: str = Field(index=True)
+    status: str = Field(default="blocked", index=True)
+    created_by_user_id: str = Field(index=True)
+    delivered_at: Optional[datetime] = Field(default=None, index=True)
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
+class CreativeGenerationRequest(SQLModel, table=True):
+    """Idempotent provider submission; provider output is never auto-approved."""
+
+    __tablename__ = "creative_generation_requests"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "provider_key", "idempotency_key", name="uq_creative_generation_key"
+        ),
+        CheckConstraint(
+            "status IN ('queued', 'submitted', 'succeeded', 'failed', 'cancelled')",
+            name="creative_generation_status_check",
+        ),
+        Index(
+            "ix_creative_generation_brief_created",
+            "tenant_id",
+            "brief_id",
+            "created_at",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("creative_generation"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    brief_id: str = Field(index=True)
+    provider_key: str = Field(index=True)
+    idempotency_key: str = Field(index=True)
+    status: str = Field(default="queued", index=True)
+    request_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    response_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    external_request_id: Optional[str] = Field(default=None, index=True)
+    error_code: Optional[str] = Field(default=None, index=True)
+    error_message: Optional[str] = None
+    created_by_user_id: str = Field(index=True)
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+    updated_at: datetime = Field(default_factory=utc_now, index=True)
 
 
 class ProcurementRecommendation(SQLModel, table=True):

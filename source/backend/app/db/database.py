@@ -119,6 +119,10 @@ def init_db() -> None:
                 "listing_compliance_checks",
                 "creative_briefs",
                 "creative_asset_versions",
+                "design_qc_reports",
+                "creative_evidence_records",
+                "creative_delivery_checklists",
+                "creative_generation_requests",
                 "procurement_recommendations",
                 "product_launch_gates",
                 "product_quality_issues",
@@ -131,12 +135,15 @@ def init_db() -> None:
         )
         if settings.casbin_enabled:
             required.add("authorization_decisions")
+        _migrate_sqlite_design_qc_schema()
+        _migrate_sqlite_creative_production_schema()
         missing = required.difference(inspect(engine).get_table_names())
         if missing:
             names = ", ".join(sorted(missing))
             raise RuntimeError(f"Database migrations are not applied; missing tables: {names}")
     _migrate_sqlite_skill_schema()
     _migrate_sqlite_tiktok_oauth_schema()
+    _migrate_sqlite_creative_brief_snapshot_schema()
     if engine.dialect.name == "sqlite":
         _purge_orphaned_chat_sessions()
 
@@ -227,6 +234,163 @@ def _migrate_sqlite_tiktok_oauth_schema() -> None:
                     "ADD COLUMN flow VARCHAR NOT NULL DEFAULT 'mock'"
                 )
             )
+
+
+def _migrate_sqlite_creative_brief_snapshot_schema() -> None:
+    """Add versioned creative input snapshots to existing local databases."""
+
+    if engine.dialect.name != "sqlite":
+        return
+    inspector = inspect(engine)
+    if "creative_briefs" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("creative_briefs")}
+    additions = {
+        "fact_snapshot_json": "ALTER TABLE creative_briefs ADD COLUMN fact_snapshot_json JSON NOT NULL DEFAULT '{}'",
+        "brand_snapshot_json": "ALTER TABLE creative_briefs ADD COLUMN brand_snapshot_json JSON NOT NULL DEFAULT '{}'",
+        "platform_spec_snapshot_json": "ALTER TABLE creative_briefs ADD COLUMN platform_spec_snapshot_json JSON NOT NULL DEFAULT '{}'",
+        "snapshot_digest": "ALTER TABLE creative_briefs ADD COLUMN snapshot_digest VARCHAR NOT NULL DEFAULT ''",
+    }
+    with engine.begin() as conn:
+        for column_name, ddl in additions.items():
+            if column_name not in columns:
+                conn.execute(text(ddl))
+
+
+def _migrate_sqlite_design_qc_schema() -> None:
+    """Create the QC evidence table for existing local SQLite installations."""
+
+    if engine.dialect.name != "sqlite":
+        return
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS design_qc_reports (
+                    id VARCHAR PRIMARY KEY,
+                    tenant_id VARCHAR NOT NULL,
+                    asset_version_id VARCHAR NOT NULL,
+                    asset_digest VARCHAR NOT NULL,
+                    brief_id VARCHAR NOT NULL,
+                    store_resource_id VARCHAR NOT NULL,
+                    snapshot_digest VARCHAR NOT NULL,
+                    checker_version VARCHAR NOT NULL,
+                    overall_status VARCHAR NOT NULL DEFAULT 'unknown',
+                    findings_json JSON NOT NULL DEFAULT '[]',
+                    input_digest VARCHAR NOT NULL,
+                    created_by_user_id VARCHAR NOT NULL,
+                    created_at DATETIME NOT NULL,
+                    CONSTRAINT uq_design_qc_input UNIQUE (tenant_id, asset_version_id, input_digest),
+                    CONSTRAINT design_qc_reports_status_check CHECK (
+                        overall_status IN ('pass', 'fail', 'unknown', 'not_applicable')
+                    )
+                )
+                """
+            )
+        )
+
+
+def _migrate_sqlite_creative_production_schema() -> None:
+    """Create production creative tables for existing local SQLite installations."""
+
+    if engine.dialect.name != "sqlite":
+        return
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS creative_evidence_records (
+                    id VARCHAR PRIMARY KEY,
+                    tenant_id VARCHAR NOT NULL,
+                    evidence_type VARCHAR NOT NULL,
+                    source_ref VARCHAR NOT NULL,
+                    version VARCHAR NOT NULL,
+                    payload_json JSON NOT NULL DEFAULT '{}',
+                    content_digest VARCHAR NOT NULL,
+                    status VARCHAR NOT NULL DEFAULT 'draft',
+                    effective_at DATETIME NOT NULL,
+                    expires_at DATETIME,
+                    synced_at DATETIME NOT NULL,
+                    sync_error VARCHAR,
+                    created_by_user_id VARCHAR NOT NULL,
+                    updated_at DATETIME NOT NULL,
+                    CONSTRAINT uq_creative_evidence_version UNIQUE
+                        (tenant_id, evidence_type, source_ref, version),
+                    CONSTRAINT creative_evidence_status_check CHECK
+                        (status IN ('draft', 'verified', 'expired', 'revoked')),
+                    CONSTRAINT creative_evidence_type_check CHECK
+                        (evidence_type IN ('facts', 'brand', 'platform_spec'))
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS creative_delivery_checklists (
+                    id VARCHAR PRIMARY KEY,
+                    tenant_id VARCHAR NOT NULL,
+                    brief_id VARCHAR NOT NULL,
+                    store_resource_id VARCHAR NOT NULL,
+                    product_key VARCHAR NOT NULL,
+                    asset_version_ids_json JSON NOT NULL DEFAULT '[]',
+                    qc_report_ids_json JSON NOT NULL DEFAULT '[]',
+                    checklist_json JSON NOT NULL DEFAULT '[]',
+                    blockers_json JSON NOT NULL DEFAULT '[]',
+                    delivery_digest VARCHAR NOT NULL,
+                    status VARCHAR NOT NULL DEFAULT 'blocked',
+                    created_by_user_id VARCHAR NOT NULL,
+                    delivered_at DATETIME,
+                    created_at DATETIME NOT NULL,
+                    CONSTRAINT uq_creative_delivery_digest UNIQUE
+                        (tenant_id, brief_id, delivery_digest),
+                    CONSTRAINT creative_delivery_status_check CHECK
+                        (status IN ('blocked', 'ready', 'delivered', 'failed'))
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS creative_generation_requests (
+                    id VARCHAR PRIMARY KEY,
+                    tenant_id VARCHAR NOT NULL,
+                    brief_id VARCHAR NOT NULL,
+                    provider_key VARCHAR NOT NULL,
+                    idempotency_key VARCHAR NOT NULL,
+                    status VARCHAR NOT NULL DEFAULT 'queued',
+                    request_json JSON NOT NULL DEFAULT '{}',
+                    response_json JSON NOT NULL DEFAULT '{}',
+                    external_request_id VARCHAR,
+                    error_code VARCHAR,
+                    error_message VARCHAR,
+                    created_by_user_id VARCHAR NOT NULL,
+                    created_at DATETIME NOT NULL,
+                    updated_at DATETIME NOT NULL,
+                    CONSTRAINT uq_creative_generation_key UNIQUE
+                        (tenant_id, provider_key, idempotency_key),
+                    CONSTRAINT creative_generation_status_check CHECK
+                        (status IN ('queued', 'submitted', 'succeeded', 'failed', 'cancelled'))
+                )
+                """
+            )
+        )
+        for table, columns in {
+            "creative_evidence_records": "tenant_id, status, expires_at",
+            "creative_delivery_checklists": "tenant_id, brief_id, created_at",
+            "creative_generation_requests": "tenant_id, brief_id, created_at",
+        }.items():
+            index_name = f"ix_{table}_runtime"
+            conn.execute(
+                text(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table} ({columns})")
+            )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_design_qc_reports_asset_created "
+                "ON design_qc_reports (tenant_id, asset_version_id, created_at)"
+            )
+        )
 
 
 def _migrate_sqlite_skill_schema() -> None:

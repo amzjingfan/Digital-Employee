@@ -1,0 +1,117 @@
+{
+  "pack_id": "joukir-tiktok-pack",
+  "inventory_version": "1.0.0",
+  "source_policy": "Joukir-authored-local-methods-only",
+  "license_policy": "No third-party code, prompts, or data bundled",
+  "clipcat_hard_dependency": false,
+  "skills": [
+    {
+      "skill_id": "joukir-ad-inspection",
+      "source": "internal://joukir/skills/joukir-ad-inspection",
+      "license": "Joukir-internal-methods",
+      "third_party_code": false,
+      "third_party_prompt": false,
+      "dependencies": [],
+      "review_status": "approved_seed"
+    },
+    {
+      "skill_id": "joukir-content-angle",
+      "source": "internal://joukir/skills/joukir-content-angle",
+      "license": "Joukir-internal-methods",
+      "third_party_code": false,
+      "third_party_prompt": false,
+      "dependencies": [],
+      "review_status": "approved_seed"
+    },
+    {
+      "skill_id": "joukir-creative-qc",
+      "source": "internal://joukir/skills/joukir-creative-qc",
+      "license": "Joukir-internal-methods",
+      "third_party_code": false,
+      "third_party_prompt": false,
+      "dependencies": [],
+      "review_status": "approved_seed"
+    },
+    {
+      "skill_id": "joukir-creator-match",
+      "source": "internal://joukir/skills/joukir-creator-match",
+      "license": "Joukir-internal-methods",
+      "third_party_code": false,
+      "third_party_prompt": false,
+      "dependencies": [],
+      "review_status": "approved_seed"
+    },
+    {
+      "skill_id": "joukir-creator-profile",
+      "source": "internal://joukir/skills/joukir-creator-profile",
+      "license": "Joukir-internal-methods",
+      "third_party_code": false,
+      "third_party_prompt": false,
+      "dependencies": [],
+      "review_status": "approved_seed"
+    },
+    {
+      "skill_id": "joukir-live-plan",
+      "source": "internal://joukir/skills/joukir-live-plan",
+      "license": "Joukir-internal-methods",
+      "third_party_code": false,
+      "third_party_prompt": false,
+      "dependencies": [],
+      "review_status": "approved_seed"
+    },
+    {
+      "skill_id": "joukir-policy-check",
+      "source": "internal://joukir/skills/joukir-policy-check",
+      "license": "Joukir-internal-methods",
+      "third_party_code": false,
+      "third_party_prompt": false,
+      "dependencies": [],
+      "review_status": "approved_seed"
+    },
+    {
+      "skill_id": "joukir-product-truth",
+      "source": "internal://joukir/skills/joukir-product-truth",
+      "license": "Joukir-internal-methods",
+      "third_party_code": false,
+      "third_party_prompt": false,
+      "dependencies": [],
+      "review_status": "approved_seed"
+    },
+    {
+      "skill_id": "joukir-shop-health",
+      "source": "internal://joukir/skills/joukir-shop-health",
+      "license": "Joukir-internal-methods",
+      "third_party_code": false,
+      "third_party_prompt": false,
+      "dependencies": [],
+      "review_status": "approved_seed"
+    },
+    {
+      "skill_id": "joukir-short-video-script",
+      "source": "internal://joukir/skills/joukir-short-video-script",
+      "license": "Joukir-internal-methods",
+      "third_party_code": false,
+      "third_party_prompt": false,
+      "dependencies": [],
+      "review_status": "approved_seed"
+    },
+    {
+      "skill_id": "joukir-storyboard",
+      "source": "internal://joukir/skills/joukir-storyboard",
+      "license": "Joukir-internal-methods",
+      "third_party_code": false,
+      "third_party_prompt": false,
+      "dependencies": [],
+      "review_status": "approved_seed"
+    },
+    {
+      "skill_id": "joukir-tiktok-account-audit",
+      "source": "internal://joukir/skills/joukir-tiktok-account-audit",
+      "license": "Joukir-internal-methods",
+      "third_party_code": false,
+      "third_party_prompt": false,
+      "dependencies": [],
+      "review_status": "approved_seed"
+    }
+  ]
+}

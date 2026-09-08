@@ -107,6 +107,10 @@ export function isMissingChatSessionError(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404;
 }
 
+export function isReadOnlyExecutionSessionError(error: unknown): boolean {
+  return error instanceof ApiError && error.code === 'CHAT_SESSION_READ_ONLY';
+}
+
 export function modelStorageKey(tenantId: string): string {
   return `${MODEL_CONFIG_STORAGE_PREFIX}:${tenantId}`;
 }

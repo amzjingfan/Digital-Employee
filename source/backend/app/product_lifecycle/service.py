@@ -3,15 +3,18 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from datetime import datetime, timezone
-from typing import Any, Iterable
+import mimetypes
+import re
+from collections.abc import Iterable
+from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from app.business_resources.schema import HighRiskActionCreate
-from app.business_resources.service import create_action_request
+from app.business_resources.service import create_action_request, list_resources
 from app.config import get_settings
 from app.db.database import set_tenant_context
 from app.db.models import (
@@ -21,6 +24,10 @@ from app.db.models import (
     CommerceGovernanceEvent,
     CreativeAssetVersion,
     CreativeBrief,
+    CreativeDeliveryChecklist,
+    CreativeEvidenceRecord,
+    CreativeGenerationRequest,
+    DesignQCReport,
     HighRiskActionRequest,
     ListingComplianceCheck,
     ListingRuleSet,
@@ -30,12 +37,26 @@ from app.db.models import (
     User,
     utc_now,
 )
+from app.product_lifecycle.generation import (
+    CreativeGenerationProviderError,
+    submit_generation_request,
+)
+from app.product_lifecycle.media import CreativeMediaDecodeError, inspect_creative_media
 from app.product_lifecycle.schema import (
     CreativeAssetReview,
+    CreativeAssetUploadRead,
     CreativeAssetVersionCreate,
     CreativeAssetVersionRead,
     CreativeBriefCreate,
     CreativeBriefRead,
+    CreativeDeliveryChecklistCreate,
+    CreativeDeliveryChecklistRead,
+    CreativeEvidenceRead,
+    CreativeEvidenceSyncRequest,
+    CreativeGenerationRead,
+    CreativeGenerationSubmit,
+    DesignQCReportRead,
+    DesignQCRun,
     ListingComplianceCheckRead,
     ListingComplianceRun,
     ListingRuleSetCreate,
@@ -50,8 +71,15 @@ from app.product_lifecycle.schema import (
     ProductLifecycleOverview,
     ProductQualityIssueRead,
 )
+from app.product_lifecycle.storage import (
+    ObjectStorageError,
+    configured_object_store,
+    parse_s3_reference,
+)
 from app.security.authorization import authorize_business_resource
 from app.security.permissions import is_admin_user
+from app.session.attachment_store import read_staged_attachment_manifest, stage_chat_attachment
+from app.session.attachments import parse_chat_attachment
 from app.work_tasks.service import create_linked_task
 
 _RULE_ROLES = {"listing_compliance_specialist", "operations_supervisor"}
@@ -109,6 +137,13 @@ _ASSET_CHECKS = {
     "factual_consistency",
     "copyright",
 }
+_CREATIVE_UPLOAD_TYPES = {
+    "image/png": {".png"},
+    "image/jpeg": {".jpg", ".jpeg"},
+    "image/webp": {".webp"},
+    "video/mp4": {".mp4"},
+}
+_DESIGN_QC_CHECKER_VERSION = "joukir-design-qc-v1"
 
 
 def create_listing_rule_set(
@@ -346,6 +381,19 @@ def create_creative_brief(
     )
     dimensions = _bounded_object(request.dimensions, max_bytes=8 * 1024)
     constraints = _bounded_object(request.constraints, max_bytes=16 * 1024)
+    fact_snapshot = _evidence_snapshot(request.fact_snapshot, "fact_snapshot")
+    brand_snapshot = _evidence_snapshot(request.brand_snapshot, "brand_snapshot")
+    platform_spec_snapshot = _evidence_snapshot(
+        request.platform_spec_snapshot,
+        "platform_spec_snapshot",
+    )
+    snapshot_digest = _digest(
+        {
+            "facts": fact_snapshot,
+            "brand": brand_snapshot,
+            "platform_spec": platform_spec_snapshot,
+        }
+    )
     row = CreativeBrief(
         tenant_id=request.tenant_id,
         brief_key=request.brief_key.strip(),
@@ -357,6 +405,10 @@ def create_creative_brief(
         scenes_json=_clean_strings(request.scenes),
         required_assets_json=_clean_strings(request.required_assets),
         constraints_json=constraints,
+        fact_snapshot_json=fact_snapshot,
+        brand_snapshot_json=brand_snapshot,
+        platform_spec_snapshot_json=platform_spec_snapshot,
+        snapshot_digest=snapshot_digest,
         task_id="pending",
         due_at=_naive_utc(request.due_at) if request.due_at else None,
         created_by_user_id=user.id,
@@ -376,7 +428,11 @@ def create_creative_brief(
         risk_level="medium",
         due_at=row.due_at,
         scope={"store_resource_id": store.id, "store_code": store.code},
-        input_data={"brief_id": row.id, "required_assets": row.required_assets_json},
+        input_data={
+            "brief_id": row.id,
+            "required_assets": row.required_assets_json,
+            "snapshot_digest": row.snapshot_digest,
+        },
     )
     row.task_id = task.id
     db.add(row)
@@ -391,13 +447,135 @@ def list_creative_briefs(db: Session, *, tenant_id: str, user: User) -> list[Cre
     _require_tenant(tenant_id, user)
     _require_role(user, _VIEW_ROLES)
     set_tenant_context(db, tenant_id)
+    visible_store_ids = _visible_store_ids(db, tenant_id=tenant_id, user=user)
     rows = db.exec(
         select(CreativeBrief)
-        .where(CreativeBrief.tenant_id == tenant_id)
+        .where(
+            CreativeBrief.tenant_id == tenant_id,
+            CreativeBrief.store_resource_id.in_(visible_store_ids),
+        )
         .order_by(CreativeBrief.created_at.desc())
         .limit(300)
     ).all()
     return [_brief_read(row) for row in rows]
+
+
+def stage_creative_asset_upload(
+    db: Session,
+    *,
+    tenant_id: str,
+    brief_id: str,
+    filename: str,
+    content_type: str | None,
+    data: bytes,
+    user: User,
+) -> CreativeAssetUploadRead:
+    """Stage one creative file after checking the brief's store scope.
+
+    The staged attachment is intentionally owned by the uploading user. This
+    prevents another user in the same tenant from guessing an upload id before
+    the asset is registered and keeps the existing safe attachment store as
+    the single local file boundary.
+    """
+    _require_tenant(tenant_id, user)
+    _require_role(user, _DESIGN_ROLES)
+    set_tenant_context(db, tenant_id)
+    if not data:
+        raise HTTPException(status_code=400, detail="Uploaded creative file is empty")
+    max_bytes = get_settings().creative_upload_max_bytes
+    if len(data) > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Creative file exceeds the {max_bytes // (1024 * 1024)} MB limit",
+        )
+    normalized_type = _validate_creative_upload(filename, content_type, data)
+    try:
+        media_metadata = inspect_creative_media(data, normalized_type)
+    except CreativeMediaDecodeError as exc:
+        raise HTTPException(status_code=422, detail=f"Creative media cannot be decoded: {exc}") from exc
+    brief = _one(db, CreativeBrief, tenant_id, brief_id, "Creative brief")
+    _authorized_resource(
+        db,
+        tenant_id=tenant_id,
+        resource_id=brief.store_resource_id,
+        resource_type="store",
+        user=user,
+        action="REQUEST",
+    )
+    # The authorization decision is an auditable event even when file parsing
+    # later rejects the upload, so persist it before touching staged bytes.
+    db.commit()
+    parsed = parse_chat_attachment(
+        filename.strip() or "creative-asset",
+        normalized_type,
+        data,
+        extract_text=False,
+    )
+    staged = stage_chat_attachment(
+        parsed,
+        data,
+        tenant_id=tenant_id,
+        user_id=user.id,
+        extra_metadata=media_metadata,
+    )
+    if not staged.sha256:
+        raise HTTPException(status_code=500, detail="Creative upload digest was not generated")
+    file_reference = f"attachment://{staged.id}"
+    try:
+        object_store = configured_object_store()
+    except ObjectStorageError as exc:
+        # A production storage misconfiguration is an operational dependency
+        # failure, not a malformed user upload. Return a safe 503 to callers.
+        raise HTTPException(status_code=503, detail="Creative object storage is not configured") from exc
+    if object_store:
+        object_key = _creative_object_key(tenant_id, staged.id, staged.filename)
+        try:
+            object_store.put_bytes(object_key, data, normalized_type)
+        except ObjectStorageError as exc:
+            raise HTTPException(status_code=503, detail="Creative object storage is unavailable") from exc
+        file_reference = f"s3://{get_settings().creative_object_storage_bucket}/{object_key}"
+    return CreativeAssetUploadRead(
+        upload_id=staged.id,
+        filename=staged.filename,
+        content_type=staged.content_type,
+        size=staged.size,
+        file_reference=file_reference,
+        file_digest=f"sha256:{staged.sha256.lower()}",
+        media_metadata=media_metadata,
+    )
+
+
+def _validate_creative_upload(
+    filename: str,
+    content_type: str | None,
+    data: bytes,
+) -> str:
+    """Allow only passive image/video formats with a matching file signature."""
+    safe_name = filename.strip().lower()
+    suffix = "." + safe_name.rsplit(".", 1)[-1] if "." in safe_name else ""
+    declared = (content_type or "").split(";", 1)[0].strip().lower()
+    guessed = (mimetypes.guess_type(safe_name)[0] or "").lower()
+    effective_type = declared if declared in _CREATIVE_UPLOAD_TYPES else guessed
+    if effective_type not in _CREATIVE_UPLOAD_TYPES or suffix not in _CREATIVE_UPLOAD_TYPES[effective_type]:
+        raise HTTPException(
+            status_code=415,
+            detail="Only PNG, JPEG, WebP and MP4 creative files are supported",
+        )
+    if effective_type == "image/png" and not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise HTTPException(status_code=422, detail="PNG file signature is invalid")
+    if effective_type == "image/jpeg" and not (data.startswith(b"\xff\xd8") and data.endswith(b"\xff\xd9")):
+        raise HTTPException(status_code=422, detail="JPEG file signature is invalid")
+    if effective_type == "image/webp" and not (data.startswith(b"RIFF") and data[8:12] == b"WEBP"):
+        raise HTTPException(status_code=422, detail="WebP file signature is invalid")
+    if effective_type == "video/mp4" and data[4:8] != b"ftyp":
+        raise HTTPException(status_code=422, detail="MP4 file signature is invalid")
+    return effective_type
+
+
+def _creative_object_key(tenant_id: str, attachment_id: str, filename: str) -> str:
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", filename).strip(".-")[:120] or "creative.bin"
+    prefix = get_settings().creative_object_storage_prefix.strip("/")
+    return f"{prefix}/{tenant_id}/{attachment_id}/{safe_name}"
 
 
 def create_creative_asset_version(
@@ -407,6 +585,16 @@ def create_creative_asset_version(
     _require_role(user, _DESIGN_ROLES)
     set_tenant_context(db, request.tenant_id)
     brief = _one(db, CreativeBrief, request.tenant_id, request.brief_id, "Creative brief")
+    # A brief id is not a permission grant. Re-check the store scope before a
+    # designer can append a new immutable asset version to that brief.
+    _authorized_resource(
+        db,
+        tenant_id=request.tenant_id,
+        resource_id=brief.store_resource_id,
+        resource_type="store",
+        user=user,
+        action="REQUEST",
+    )
     parent = None
     if request.parent_version_id:
         parent = _one(
@@ -435,6 +623,12 @@ def create_creative_asset_version(
     provenance = _bounded_object(request.provenance, max_bytes=16 * 1024)
     if not provenance.get("source") or not provenance.get("license"):
         raise HTTPException(status_code=422, detail="Asset provenance requires source and license")
+    _verify_staged_creative_reference(
+        file_reference=request.file_reference,
+        file_digest=request.file_digest,
+        tenant_id=request.tenant_id,
+        user_id=user.id,
+    )
     parameters = _bounded_object(request.generation_parameters, max_bytes=16 * 1024)
     checks = _bounded_object(request.checks, allowed_keys=_ASSET_CHECKS, max_bytes=16 * 1024)
     missing_checks = sorted(_ASSET_CHECKS - set(checks))
@@ -507,6 +701,28 @@ def review_creative_asset_version(
         raise HTTPException(
             status_code=409, detail="Failed asset checks must be corrected in a new version"
         )
+    if request.decision == "approved":
+        latest_qc = db.exec(
+            select(DesignQCReport)
+            .where(
+                DesignQCReport.tenant_id == request.tenant_id,
+                DesignQCReport.asset_version_id == row.id,
+            )
+            .order_by(DesignQCReport.created_at.desc())
+        ).first()
+        if not latest_qc:
+            raise HTTPException(
+                status_code=409,
+                detail="Design QC report is required before human approval",
+            )
+        if latest_qc.overall_status != "pass":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Design QC gate is "
+                    f"{latest_qc.overall_status}; correct every fail or unknown finding first"
+                ),
+            )
     row.status = request.decision
     row.reviewed_by_user_id = user.id
     row.review_note = request.note.strip()
@@ -531,13 +747,587 @@ def list_creative_assets(
     _require_tenant(tenant_id, user)
     _require_role(user, _VIEW_ROLES)
     set_tenant_context(db, tenant_id)
+    visible_store_ids = _visible_store_ids(db, tenant_id=tenant_id, user=user)
     rows = db.exec(
         select(CreativeAssetVersion)
-        .where(CreativeAssetVersion.tenant_id == tenant_id)
+        .where(
+            CreativeAssetVersion.tenant_id == tenant_id,
+            CreativeAssetVersion.store_resource_id.in_(visible_store_ids),
+        )
         .order_by(CreativeAssetVersion.created_at.desc())
         .limit(500)
     ).all()
     return [_asset_read(row) for row in rows]
+
+
+def run_creative_asset_qc(
+    db: Session, *, request: DesignQCRun, user: User
+) -> DesignQCReportRead:
+    """Create an immutable QC report from the asset and its Brief snapshots."""
+
+    _require_tenant(request.tenant_id, user)
+    _require_role(user, _DESIGN_ROLES)
+    set_tenant_context(db, request.tenant_id)
+    asset = _one(
+        db, CreativeAssetVersion, request.tenant_id, request.asset_version_id, "Asset version"
+    )
+    _authorized_resource(
+        db,
+        tenant_id=request.tenant_id,
+        resource_id=asset.store_resource_id,
+        resource_type="store",
+        user=user,
+        action="READ",
+    )
+    brief = _one(db, CreativeBrief, request.tenant_id, asset.brief_id, "Creative brief")
+    checker_version = request.checker_version.strip() or _DESIGN_QC_CHECKER_VERSION
+    findings: list[dict[str, Any]] = []
+
+    def finding(
+        check_key: str,
+        status: str,
+        severity: str,
+        rule: str,
+        evidence: str,
+    ) -> None:
+        findings.append(
+            {
+                "check_key": check_key,
+                "status": status,
+                "severity": severity,
+                "rule": rule,
+                "evidence": evidence,
+                "checker_version": checker_version,
+            }
+        )
+
+    # A staged upload is re-read here so the approval evidence includes the
+    # same server-side digest check that happened during asset registration.
+    if asset.file_reference.startswith("attachment://"):
+        manifest = read_staged_attachment_manifest(
+            attachment_id=asset.file_reference.removeprefix("attachment://"),
+            tenant_id=request.tenant_id,
+            user_id=user.id,
+        )
+        if not manifest or f"sha256:{str(manifest['sha256']).lower()}" != asset.file_digest.lower():
+            finding(
+                "file_integrity",
+                "fail",
+                "P0",
+                "staged_file_digest_matches",
+                "服务端暂存文件不存在或摘要与素材版本不一致",
+            )
+        else:
+            finding(
+                "file_integrity",
+                "pass",
+                "P0",
+                "staged_file_digest_matches",
+                f"暂存文件已复核，SHA-256={asset.file_digest}",
+            )
+    elif (
+        asset.file_reference.startswith("s3://")
+        and get_settings().creative_object_storage_backend.strip().lower() == "s3"
+    ):
+        settings = get_settings()
+        key = parse_s3_reference(asset.file_reference, settings.creative_object_storage_bucket)
+        try:
+            object_store = configured_object_store(settings)
+            data = object_store.get_bytes(key) if object_store and key else b""
+        except ObjectStorageError:
+            data = b""
+        actual_digest = f"sha256:{hashlib.sha256(data).hexdigest()}" if data else ""
+        if actual_digest != asset.file_digest.lower():
+            finding(
+                "file_integrity",
+                "fail",
+                "P0",
+                "object_store_digest_matches",
+                "对象存储文件不存在或摘要与素材版本不一致",
+            )
+        else:
+            finding(
+                "file_integrity",
+                "pass",
+                "P0",
+                "object_store_digest_matches",
+                f"对象存储文件已复核，SHA-256={asset.file_digest}",
+            )
+    else:
+        # Legacy external references remain readable, but the current worker
+        # cannot claim object-storage bytes were re-read in this process.
+        finding(
+            "file_integrity",
+            "not_applicable",
+            "info",
+            "external_file_reference",
+            "历史外部文件引用由上游对象存储/设计工具负责校验，本地 QC 不宣称已读取文件内容",
+        )
+
+    for check_key in sorted(_ASSET_CHECKS):
+        if check_key not in asset.checks_json:
+            finding(
+                check_key,
+                "unknown",
+                "P1",
+                f"asset_check_{check_key}",
+                "登记时没有提供该质检项的明确结果",
+            )
+        elif _check_passed(asset.checks_json[check_key]):
+            finding(
+                check_key,
+                "pass",
+                "P1",
+                f"asset_check_{check_key}",
+                "素材登记记录为通过",
+            )
+        else:
+            finding(
+                check_key,
+                "fail",
+                "P1",
+                f"asset_check_{check_key}",
+                "素材登记记录为未通过",
+            )
+
+    expire_creative_evidence_records(db)
+    for check_key, evidence_type, label, snapshot in (
+        ("facts_evidence", "facts", "商品事实", brief.fact_snapshot_json),
+        ("brand_evidence", "brand", "品牌规范", brief.brand_snapshot_json),
+        ("platform_spec_evidence", "platform_spec", "平台规格", brief.platform_spec_snapshot_json),
+    ):
+        status = str(snapshot.get("status", "")).strip().lower() if snapshot else ""
+        if not snapshot:
+            finding(check_key, "unknown", "P0", f"{check_key}_verified", f"{label}快照为空")
+            continue
+        source_ref = str(snapshot.get("source_ref", "")).strip()
+        version = str(snapshot.get("version", "")).strip()
+        registry = db.exec(
+            select(CreativeEvidenceRecord).where(
+                CreativeEvidenceRecord.tenant_id == request.tenant_id,
+                CreativeEvidenceRecord.evidence_type == evidence_type,
+                CreativeEvidenceRecord.source_ref == source_ref,
+                CreativeEvidenceRecord.version == version,
+            )
+        ).first()
+        if registry and registry.status == "verified" and registry.content_digest == _digest(snapshot):
+            finding(
+                check_key,
+                "pass",
+                "P0",
+                f"{check_key}_verified",
+                f"{label}证据 {source_ref} / {version} 已由独立证据库 verified",
+            )
+        else:
+            registry_status = registry.status if registry else "missing"
+            finding(
+                check_key,
+                "unknown",
+                "P0",
+                f"{check_key}_verified",
+                f"{label}独立证据状态为 {registry_status}，快照状态为 {status or 'missing'}，或摘要不一致",
+            )
+
+    provenance_ok = bool(asset.provenance_json.get("source")) and bool(
+        asset.provenance_json.get("license")
+    )
+    finding(
+        "provenance",
+        "pass" if provenance_ok else "fail",
+        "P0",
+        "provenance_source_and_license",
+        "素材来源和授权字段已登记" if provenance_ok else "素材来源或授权字段缺失",
+    )
+    input_digest = _digest(
+        {
+            "asset_version_id": asset.id,
+            "asset_digest": asset.file_digest,
+            "brief_snapshot_digest": brief.snapshot_digest,
+            "fact_snapshot": brief.fact_snapshot_json,
+            "brand_snapshot": brief.brand_snapshot_json,
+            "platform_spec_snapshot": brief.platform_spec_snapshot_json,
+            "checks": asset.checks_json,
+            "checker_version": checker_version,
+        }
+    )
+    existing = db.exec(
+        select(DesignQCReport).where(
+            DesignQCReport.tenant_id == request.tenant_id,
+            DesignQCReport.asset_version_id == asset.id,
+            DesignQCReport.input_digest == input_digest,
+        )
+    ).first()
+    if existing:
+        return _qc_read(existing)
+    statuses = {item["status"] for item in findings}
+    overall_status = "fail" if "fail" in statuses else "unknown" if "unknown" in statuses else "pass"
+    row = DesignQCReport(
+        tenant_id=request.tenant_id,
+        asset_version_id=asset.id,
+        asset_digest=asset.file_digest,
+        brief_id=brief.id,
+        store_resource_id=asset.store_resource_id,
+        snapshot_digest=brief.snapshot_digest,
+        checker_version=checker_version,
+        overall_status=overall_status,
+        findings_json=findings,
+        input_digest=input_digest,
+        created_by_user_id=user.id,
+    )
+    db.add(row)
+    db.flush()
+    _event(
+        db,
+        "design_qc_report",
+        row.id,
+        "qc_completed",
+        user,
+        {
+            "asset_version_id": asset.id,
+            "asset_digest": asset.file_digest,
+            "snapshot_digest": brief.snapshot_digest,
+            "overall_status": overall_status,
+            "finding_count": len(findings),
+        },
+    )
+    db.commit()
+    db.refresh(row)
+    return _qc_read(row)
+
+
+def list_creative_qc_reports(
+    db: Session, *, tenant_id: str, user: User
+) -> list[DesignQCReportRead]:
+    _require_tenant(tenant_id, user)
+    _require_role(user, _VIEW_ROLES)
+    set_tenant_context(db, tenant_id)
+    visible_store_ids = _visible_store_ids(db, tenant_id=tenant_id, user=user)
+    rows = db.exec(
+        select(DesignQCReport)
+        .where(
+            DesignQCReport.tenant_id == tenant_id,
+            DesignQCReport.store_resource_id.in_(visible_store_ids),
+        )
+        .order_by(DesignQCReport.created_at.desc())
+        .limit(500)
+    ).all()
+    return [_qc_read(row) for row in rows]
+
+
+def sync_creative_evidence(
+    db: Session, *, request: CreativeEvidenceSyncRequest, user: User
+) -> list[CreativeEvidenceRead]:
+    """Upsert trusted evidence versions; clients cannot bypass the tenant gate."""
+
+    _require_tenant(request.tenant_id, user)
+    _require_manager(user)
+    set_tenant_context(db, request.tenant_id)
+    now = utc_now()
+    result: list[CreativeEvidenceRecord] = []
+    for item in request.records:
+        payload = _bounded_object(item.payload, max_bytes=64 * 1024)
+        status = item.status
+        if status == "verified" and item.expires_at and _naive_utc(item.expires_at) <= now:
+            status = "expired"
+        digest = _digest(payload)
+        row = db.exec(
+            select(CreativeEvidenceRecord).where(
+                CreativeEvidenceRecord.tenant_id == request.tenant_id,
+                CreativeEvidenceRecord.evidence_type == item.evidence_type,
+                CreativeEvidenceRecord.source_ref == item.source_ref.strip(),
+                CreativeEvidenceRecord.version == item.version.strip(),
+            )
+        ).first()
+        if row is None:
+            row = CreativeEvidenceRecord(
+                tenant_id=request.tenant_id,
+                evidence_type=item.evidence_type,
+                source_ref=item.source_ref.strip(),
+                version=item.version.strip(),
+                payload_json=payload,
+                content_digest=digest,
+                status=status,
+                effective_at=_naive_utc(item.effective_at),
+                expires_at=_naive_utc(item.expires_at) if item.expires_at else None,
+                synced_at=now,
+                created_by_user_id=user.id,
+            )
+        else:
+            row.payload_json = payload
+            row.content_digest = digest
+            row.status = status
+            row.effective_at = _naive_utc(item.effective_at)
+            row.expires_at = _naive_utc(item.expires_at) if item.expires_at else None
+            row.synced_at = now
+            row.sync_error = None
+            row.updated_at = now
+        db.add(row)
+        db.flush()
+        _event(
+            db,
+            "creative_evidence_record",
+            row.id,
+            "evidence_synced",
+            user,
+            {"evidence_type": row.evidence_type, "version": row.version, "status": row.status, "digest": row.content_digest},
+        )
+        result.append(row)
+    db.commit()
+    for row in result:
+        db.refresh(row)
+    return [_evidence_read(row) for row in result]
+
+
+def expire_creative_evidence_records(db: Session, *, now: datetime | None = None) -> int:
+    """Move due verified records to expired; safe to call from every worker replica."""
+
+    now = now or utc_now()
+    rows = db.exec(
+        select(CreativeEvidenceRecord).where(
+            CreativeEvidenceRecord.status == "verified",
+            CreativeEvidenceRecord.expires_at.is_not(None),
+            CreativeEvidenceRecord.expires_at <= now,
+        )
+    ).all()
+    for row in rows:
+        row.status = "expired"
+        row.sync_error = "evidence_expired_by_scheduler"
+        row.updated_at = now
+        db.add(row)
+    if rows:
+        db.commit()
+    return len(rows)
+
+
+def list_creative_evidence(
+    db: Session, *, tenant_id: str, user: User
+) -> list[CreativeEvidenceRead]:
+    _require_tenant(tenant_id, user)
+    _require_role(user, _VIEW_ROLES)
+    set_tenant_context(db, tenant_id)
+    expire_creative_evidence_records(db)
+    rows = db.exec(
+        select(CreativeEvidenceRecord)
+        .where(CreativeEvidenceRecord.tenant_id == tenant_id)
+        .order_by(CreativeEvidenceRecord.updated_at.desc())
+        .limit(500)
+    ).all()
+    return [_evidence_read(row) for row in rows]
+
+
+def create_creative_delivery_checklist(
+    db: Session, *, request: CreativeDeliveryChecklistCreate, user: User
+) -> CreativeDeliveryChecklistRead:
+    _require_tenant(request.tenant_id, user)
+    _require_role(user, _DESIGN_ROLES | _MANAGER_ROLES)
+    set_tenant_context(db, request.tenant_id)
+    brief = _one(db, CreativeBrief, request.tenant_id, request.brief_id, "Creative brief")
+    _authorized_resource(
+        db,
+        tenant_id=request.tenant_id,
+        resource_id=brief.store_resource_id,
+        resource_type="store",
+        user=user,
+        action="REQUEST",
+    )
+    asset_ids = sorted(set(request.asset_version_ids))
+    assets = [
+        _one(db, CreativeAssetVersion, request.tenant_id, asset_id, "Asset version")
+        for asset_id in asset_ids
+    ]
+    checklist: list[dict[str, Any]] = []
+    blockers: list[dict[str, Any]] = []
+    qc_ids: list[str] = []
+    asset_types = {asset.asset_type for asset in assets}
+    required_types = set(brief.required_assets_json)
+    for asset in assets:
+        if asset.brief_id != brief.id or asset.product_key != brief.product_key:
+            blockers.append({"code": "asset_scope_mismatch", "detail": asset.id})
+        if asset.status != "approved":
+            blockers.append({"code": "asset_not_approved", "detail": asset.id})
+        qc = db.exec(
+            select(DesignQCReport)
+            .where(
+                DesignQCReport.tenant_id == request.tenant_id,
+                DesignQCReport.asset_version_id == asset.id,
+            )
+            .order_by(DesignQCReport.created_at.desc())
+        ).first()
+        if not qc or qc.overall_status != "pass":
+            blockers.append({"code": "qc_not_pass", "detail": asset.id})
+        else:
+            qc_ids.append(qc.id)
+        checklist.append(
+            {"asset_version_id": asset.id, "asset_type": asset.asset_type, "status": asset.status, "qc_report_id": qc.id if qc else None}
+        )
+    for required_type in sorted(required_types - asset_types):
+        blockers.append({"code": "required_asset_missing", "detail": required_type})
+    evidence_blockers = _brief_evidence_blockers(db, brief)
+    blockers.extend(evidence_blockers)
+    delivery_digest = _digest(
+        {
+            "brief_id": brief.id,
+            "snapshot_digest": brief.snapshot_digest,
+            "asset_ids": asset_ids,
+            "asset_digests": sorted(asset.file_digest for asset in assets),
+            "qc_ids": sorted(qc_ids),
+            "evidence_blockers": evidence_blockers,
+        }
+    )
+    existing = db.exec(
+        select(CreativeDeliveryChecklist).where(
+            CreativeDeliveryChecklist.tenant_id == request.tenant_id,
+            CreativeDeliveryChecklist.brief_id == brief.id,
+            CreativeDeliveryChecklist.delivery_digest == delivery_digest,
+        )
+    ).first()
+    if existing:
+        return _delivery_read(existing)
+    row = CreativeDeliveryChecklist(
+        tenant_id=request.tenant_id,
+        brief_id=brief.id,
+        store_resource_id=brief.store_resource_id,
+        product_key=brief.product_key,
+        asset_version_ids_json=asset_ids,
+        qc_report_ids_json=sorted(qc_ids),
+        checklist_json=checklist,
+        blockers_json=blockers,
+        delivery_digest=delivery_digest,
+        status="ready" if not blockers else "blocked",
+        created_by_user_id=user.id,
+    )
+    db.add(row)
+    db.flush()
+    _event(
+        db,
+        "creative_delivery_checklist",
+        row.id,
+        "delivery_checklist_created",
+        user,
+        {"status": row.status, "delivery_digest": row.delivery_digest, "blocker_count": len(blockers)},
+    )
+    db.commit()
+    db.refresh(row)
+    return _delivery_read(row)
+
+
+def list_creative_delivery_checklists(
+    db: Session, *, tenant_id: str, user: User
+) -> list[CreativeDeliveryChecklistRead]:
+    _require_tenant(tenant_id, user)
+    _require_role(user, _VIEW_ROLES)
+    set_tenant_context(db, tenant_id)
+    visible_store_ids = _visible_store_ids(db, tenant_id=tenant_id, user=user)
+    rows = db.exec(
+        select(CreativeDeliveryChecklist)
+        .where(
+            CreativeDeliveryChecklist.tenant_id == tenant_id,
+            CreativeDeliveryChecklist.store_resource_id.in_(visible_store_ids),
+        )
+        .order_by(CreativeDeliveryChecklist.created_at.desc())
+        .limit(300)
+    ).all()
+    return [_delivery_read(row) for row in rows]
+
+
+def submit_creative_generation(
+    db: Session, *, request: CreativeGenerationSubmit, user: User
+) -> CreativeGenerationRead:
+    _require_tenant(request.tenant_id, user)
+    _require_role(user, _DESIGN_ROLES)
+    set_tenant_context(db, request.tenant_id)
+    brief = _one(db, CreativeBrief, request.tenant_id, request.brief_id, "Creative brief")
+    _authorized_resource(
+        db,
+        tenant_id=request.tenant_id,
+        resource_id=brief.store_resource_id,
+        resource_type="store",
+        user=user,
+        action="REQUEST",
+    )
+    existing = db.exec(
+        select(CreativeGenerationRequest).where(
+            CreativeGenerationRequest.tenant_id == request.tenant_id,
+            CreativeGenerationRequest.provider_key == request.provider_key.strip(),
+            CreativeGenerationRequest.idempotency_key == request.idempotency_key.strip(),
+        )
+    ).first()
+    if existing:
+        return _generation_read(existing)
+    blockers = _brief_evidence_blockers(db, brief)
+    if blockers:
+        raise HTTPException(status_code=409, detail={"code": "evidence_not_ready", "blockers": blockers})
+    payload = {
+        "brief_id": brief.id,
+        "product_key": brief.product_key,
+        "language": brief.language,
+        "dimensions": brief.dimensions_json,
+        "selling_points": brief.selling_points_json,
+        "scenes": brief.scenes_json,
+        "required_assets": brief.required_assets_json,
+        "constraints": brief.constraints_json,
+        "fact_snapshot": brief.fact_snapshot_json,
+        "brand_snapshot": brief.brand_snapshot_json,
+        "platform_spec_snapshot": brief.platform_spec_snapshot_json,
+        "instructions": request.instructions,
+    }
+    row = CreativeGenerationRequest(
+        tenant_id=request.tenant_id,
+        brief_id=brief.id,
+        provider_key=request.provider_key.strip(),
+        idempotency_key=request.idempotency_key.strip(),
+        status="queued",
+        request_json=payload,
+        created_by_user_id=user.id,
+    )
+    db.add(row)
+    db.flush()
+    try:
+        provider_result = submit_generation_request(
+            provider_key=row.provider_key,
+            payload=payload,
+            idempotency_key=row.idempotency_key,
+        )
+    except CreativeGenerationProviderError as exc:
+        row.status = "failed"
+        row.error_code = "provider_unavailable"
+        row.error_message = str(exc)
+        row.updated_at = utc_now()
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return _generation_read(row)
+    row.status = "submitted"
+    row.external_request_id = provider_result["external_request_id"]
+    row.response_json = provider_result
+    row.updated_at = utc_now()
+    db.add(row)
+    _event(
+        db,
+        "creative_generation_request",
+        row.id,
+        "generation_submitted",
+        user,
+        {"provider_key": row.provider_key, "external_request_id": row.external_request_id},
+    )
+    db.commit()
+    db.refresh(row)
+    return _generation_read(row)
+
+
+def list_creative_generation_requests(
+    db: Session, *, tenant_id: str, user: User
+) -> list[CreativeGenerationRead]:
+    _require_tenant(tenant_id, user)
+    _require_role(user, _VIEW_ROLES)
+    set_tenant_context(db, tenant_id)
+    rows = db.exec(
+        select(CreativeGenerationRequest)
+        .where(CreativeGenerationRequest.tenant_id == tenant_id)
+        .order_by(CreativeGenerationRequest.created_at.desc())
+        .limit(300)
+    ).all()
+    return [_generation_read(row) for row in rows]
 
 
 def create_procurement_recommendation(
@@ -1327,6 +2117,68 @@ def _authorized_resource(
     return row
 
 
+def _visible_store_ids(db: Session, *, tenant_id: str, user: User) -> list[str]:
+    """Return stores visible to the current role for list endpoints.
+
+    Create and review endpoints already authorize a concrete resource. List
+    endpoints must apply the same decision before returning rows, otherwise a
+    designer could read another store's briefs merely by sharing a tenant id.
+    """
+    return [
+        resource.id
+        for resource in list_resources(
+            db, tenant_id=tenant_id, user=user, resource_type="store"
+        )
+    ]
+
+
+def _verify_staged_creative_reference(
+    *,
+    file_reference: str,
+    file_digest: str,
+    tenant_id: str,
+    user_id: str,
+) -> None:
+    """Verify local or configured object-store references; keep legacy URIs readable.
+
+    Existing integrations may provide an already-managed object-storage URI,
+    so only references from the configured production adapter are re-read. A
+    legacy URI is left compatible only when this deployment has no object-store
+    credentials; it cannot claim production verification in that mode.
+    """
+    reference = file_reference.strip()
+    if reference.startswith("attachment://"):
+        attachment_id = reference.removeprefix("attachment://").strip()
+        if not attachment_id:
+            raise HTTPException(status_code=422, detail="Creative upload reference is empty")
+        manifest = read_staged_attachment_manifest(
+            attachment_id=attachment_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+        )
+        if not manifest:
+            raise HTTPException(status_code=422, detail="Creative upload is missing or corrupted")
+        expected_digest = f"sha256:{str(manifest['sha256']).lower()}"
+        if file_digest.strip().lower() != expected_digest:
+            raise HTTPException(status_code=409, detail="Creative upload digest does not match")
+        return
+    if reference.startswith("s3://"):
+        settings = get_settings()
+        object_store = configured_object_store(settings)
+        if not object_store:
+            return
+        key = parse_s3_reference(reference, settings.creative_object_storage_bucket)
+        if not key:
+            raise HTTPException(status_code=422, detail="Creative object reference is invalid")
+        try:
+            data = object_store.get_bytes(key)
+        except ObjectStorageError as exc:
+            raise HTTPException(status_code=503, detail="Creative object storage is unavailable") from exc
+        actual_digest = f"sha256:{hashlib.sha256(data).hexdigest()}"
+        if actual_digest != file_digest.strip().lower():
+            raise HTTPException(status_code=409, detail="Creative object digest does not match")
+
+
 def _event(
     db: Session,
     aggregate_type: str,
@@ -1414,6 +2266,10 @@ def _brief_read(row: CreativeBrief) -> CreativeBriefRead:
         scenes=row.scenes_json,
         required_assets=row.required_assets_json,
         constraints=row.constraints_json,
+        fact_snapshot=row.fact_snapshot_json or {},
+        brand_snapshot=row.brand_snapshot_json or {},
+        platform_spec_snapshot=row.platform_spec_snapshot_json or {},
+        snapshot_digest=row.snapshot_digest,
         status=row.status,
         task_id=row.task_id,
         due_at=row.due_at,
@@ -1447,6 +2303,111 @@ def _asset_read(row: CreativeAssetVersion) -> CreativeAssetVersionRead:
         reviewed_at=row.reviewed_at,
         created_at=row.created_at,
     )
+
+
+def _qc_read(row: DesignQCReport) -> DesignQCReportRead:
+    return DesignQCReportRead(
+        id=row.id,
+        tenant_id=row.tenant_id,
+        asset_version_id=row.asset_version_id,
+        asset_digest=row.asset_digest,
+        brief_id=row.brief_id,
+        store_resource_id=row.store_resource_id,
+        snapshot_digest=row.snapshot_digest,
+        checker_version=row.checker_version,
+        overall_status=row.overall_status,
+        findings=row.findings_json,
+        input_digest=row.input_digest,
+        created_by_user_id=row.created_by_user_id,
+        created_at=row.created_at,
+    )
+
+
+def _evidence_read(row: CreativeEvidenceRecord) -> CreativeEvidenceRead:
+    return CreativeEvidenceRead(
+        id=row.id,
+        tenant_id=row.tenant_id,
+        evidence_type=row.evidence_type,
+        source_ref=row.source_ref,
+        version=row.version,
+        payload=row.payload_json,
+        content_digest=row.content_digest,
+        status=row.status,
+        effective_at=row.effective_at,
+        expires_at=row.expires_at,
+        synced_at=row.synced_at,
+        sync_error=row.sync_error,
+        created_by_user_id=row.created_by_user_id,
+        updated_at=row.updated_at,
+    )
+
+
+def _delivery_read(row: CreativeDeliveryChecklist) -> CreativeDeliveryChecklistRead:
+    return CreativeDeliveryChecklistRead(
+        id=row.id,
+        tenant_id=row.tenant_id,
+        brief_id=row.brief_id,
+        store_resource_id=row.store_resource_id,
+        product_key=row.product_key,
+        asset_version_ids=row.asset_version_ids_json,
+        qc_report_ids=row.qc_report_ids_json,
+        checklist=row.checklist_json,
+        blockers=row.blockers_json,
+        delivery_digest=row.delivery_digest,
+        status=row.status,
+        created_by_user_id=row.created_by_user_id,
+        delivered_at=row.delivered_at,
+        created_at=row.created_at,
+    )
+
+
+def _generation_read(row: CreativeGenerationRequest) -> CreativeGenerationRead:
+    return CreativeGenerationRead(
+        id=row.id,
+        tenant_id=row.tenant_id,
+        brief_id=row.brief_id,
+        provider_key=row.provider_key,
+        idempotency_key=row.idempotency_key,
+        status=row.status,
+        request=row.request_json,
+        response=row.response_json,
+        external_request_id=row.external_request_id,
+        error_code=row.error_code,
+        error_message=row.error_message,
+        created_by_user_id=row.created_by_user_id,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _brief_evidence_blockers(db: Session, brief: CreativeBrief) -> list[dict[str, Any]]:
+    """Use the independent registry as the production source of truth."""
+
+    expire_creative_evidence_records(db)
+    blockers: list[dict[str, Any]] = []
+    for evidence_type, snapshot in (
+        ("facts", brief.fact_snapshot_json),
+        ("brand", brief.brand_snapshot_json),
+        ("platform_spec", brief.platform_spec_snapshot_json),
+    ):
+        source_ref = str(snapshot.get("source_ref", "")).strip() if snapshot else ""
+        version = str(snapshot.get("version", "")).strip() if snapshot else ""
+        row = db.exec(
+            select(CreativeEvidenceRecord).where(
+                CreativeEvidenceRecord.tenant_id == brief.tenant_id,
+                CreativeEvidenceRecord.evidence_type == evidence_type,
+                CreativeEvidenceRecord.source_ref == source_ref,
+                CreativeEvidenceRecord.version == version,
+            )
+        ).first()
+        if not row or row.status != "verified" or row.content_digest != _digest(snapshot):
+            blockers.append(
+                {
+                    "code": "evidence_not_verified",
+                    "detail": f"{evidence_type}:{source_ref or 'missing'}:{version or 'missing'}",
+                }
+            )
+    return blockers
 
 
 def _procurement_read(row: ProcurementRecommendation) -> ProcurementRecommendationRead:
@@ -1578,6 +2539,23 @@ def _bounded_object(
     return json.loads(encoded.decode("utf-8"))
 
 
+def _evidence_snapshot(value: dict[str, Any], label: str) -> dict[str, Any]:
+    """Keep evidence metadata explicit without breaking legacy empty briefs."""
+    snapshot = _bounded_object(value, max_bytes=16 * 1024)
+    if snapshot:
+        missing = [
+            key
+            for key in ("source_ref", "version", "status")
+            if not str(snapshot.get(key) or "").strip()
+        ]
+        if missing:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{label} requires: {', '.join(missing)}",
+            )
+    return snapshot
+
+
 def _clean_strings(values: Iterable[str]) -> list[str]:
     result = [str(value).strip() for value in values if str(value).strip()]
     if not result:
@@ -1621,7 +2599,7 @@ def _digest(value: Any) -> str:
 def _naive_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value
-    return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 def _require_tenant(tenant_id: str, user: User) -> None:

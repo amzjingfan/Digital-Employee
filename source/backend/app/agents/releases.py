@@ -395,6 +395,23 @@ def _validate_production_readiness(
     ).first()
     if not identity:
         raise AgentReleaseError("Production employee requires an active dedicated service identity")
+    pending_review = sorted(
+        {
+            str(item.get("resource_type"))
+            for item in snapshot.get("resources", [])
+            if item.get("status") == "active"
+            and isinstance(item.get("metadata"), dict)
+            and item["metadata"].get("review_status") not in {None, "approved"}
+        }
+    )
+    if pending_review:
+        # A newly imported package must not ride along with older approved
+        # resources.  Every active capability in the next immutable release
+        # needs its own business review evidence.
+        raise AgentReleaseError(
+            "Production employee has active resources awaiting review: "
+            + ", ".join(pending_review)
+        )
     approved_types = {
         str(item.get("resource_type"))
         for item in snapshot.get("resources", [])

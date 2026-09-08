@@ -88,6 +88,7 @@ import {
   isKnowledgeTracePhase,
   isMissingChatSessionError,
   isRecoverableRunningTrace,
+  isReadOnlyExecutionSessionError,
   isScheduledSession,
   isStreamingMessageId,
   isTerminalSessionEvent,
@@ -3208,6 +3209,19 @@ export function useChatSession(options: UseChatSessionOptions = {}) {
         redirectToLogin();
         return;
       }
+      if (isReadOnlyExecutionSessionError(error)) {
+        const slot = getSlot(liveConversationId);
+        slot.realtimeMessages = slot.realtimeMessages.filter((item) => item.id !== `local_${turnId}`);
+        finishTrace(getStreamSlot(liveConversationId).turnId || turnId, true);
+        clearStreamSlot(liveConversationId, true);
+        clearRunningTurn();
+        notifyStore();
+        notify.warning('执行会话仅可查看，已为你切换到新对话');
+        if (sessionAgentId) {
+          navigate(`${CHAT_BASE_PATH}/draft/${encodeURIComponent(sessionAgentId)}`, { replace: true });
+        }
+        return;
+      }
       beginRelayRecovery();
     } finally {
       clearStreamWatchdog();
@@ -3225,6 +3239,7 @@ export function useChatSession(options: UseChatSessionOptions = {}) {
     clearStreamSlot,
     finalizeStreaming,
     finishTrace,
+    getSlot,
     getStreamSlot,
     handleStreamEvent,
     invalidateModelSelection,

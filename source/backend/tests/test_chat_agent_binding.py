@@ -1,19 +1,21 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from fastapi import HTTPException
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.api import chat as chat_api
 from app.agents.branching import agent_private_metadata
+from app.api import chat as chat_api
 from app.api.chat import (
     _bind_request_to_session_agent,
     _ensure_chat_agent_available,
     _user_message_metadata,
     create_chat_session,
-    list_slash_commands,
     list_chat_sessions,
+    list_slash_commands,
 )
 from app.core.agent_loop import AgentLoop, AgentLoopPreconditionError
 from app.db.models import (
@@ -34,6 +36,78 @@ from app.db.models import (
     utc_now,
 )
 from app.session.session_schema import ChatSessionCreateRequest, ChatTurnRequest
+
+
+def test_chat_stream_binds_tenant_context_in_worker_and_relay(monkeypatch) -> None:
+    engine = _test_engine()
+    tenant_contexts: list[str] = []
+
+    def record_tenant_context(db: Session, tenant_id: str) -> None:
+        tenant_contexts.append(tenant_id)
+        db.info["staffdeck_tenant_id"] = tenant_id
+
+    def fake_handle_turn_stream(self: AgentLoop, request: ChatTurnRequest):
+        session_id = "session_stream_tenant_context"
+        self.db.add(
+            ChatSession(
+                id=session_id,
+                tenant_id=request.tenant_id,
+                user_id=request.user_id,
+                agent_id=request.agent_id,
+            )
+        )
+        self.db.commit()
+        yield {"event": "session_created", "data": {"sessionId": session_id}}
+        yield {
+            "event": "complete",
+            "data": {"sessionId": session_id, "reply": "内置对话链路正常"},
+        }
+
+    monkeypatch.setattr(chat_api, "engine", engine)
+    monkeypatch.setattr(chat_api, "set_tenant_context", record_tenant_context)
+    monkeypatch.setattr(AgentLoop, "handle_turn_stream", fake_handle_turn_stream)
+    monkeypatch.setattr(chat_api, "_schedule_session_title_summary", lambda *_args: None)
+
+    with Session(engine) as db:
+        db.add(Tenant(id="tenant_demo", name="Demo"))
+        current_user = User(
+            id="user_demo",
+            tenant_id="tenant_demo",
+            username="demo",
+            password_hash="x",
+        )
+        db.add(current_user)
+        db.add(
+            AgentProfile(
+                id="agent_demo",
+                tenant_id="tenant_demo",
+                name="客服",
+                is_overall=False,
+                metadata_json={"owner_user_id": "user_demo"},
+            )
+        )
+        db.commit()
+
+        response = chat_api.chat_stream(
+            ChatTurnRequest(
+                tenant_id="tenant_demo",
+                agent_id="agent_demo",
+                message="你好",
+            ),
+            current_user=current_user,
+            db=db,
+        )
+
+        async def consume_stream() -> str:
+            chunks = [chunk async for chunk in response.body_iterator]
+            return "".join(chunk.decode() if isinstance(chunk, bytes) else chunk for chunk in chunks)
+
+        payload = asyncio.run(consume_stream())
+
+    assert "event: session_created" in payload
+    assert "event: complete" in payload
+    assert len(tenant_contexts) >= 2
+    assert set(tenant_contexts) == {"tenant_demo"}
 
 
 def test_existing_chat_session_cannot_switch_agent() -> None:

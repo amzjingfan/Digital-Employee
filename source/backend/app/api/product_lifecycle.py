@@ -2,17 +2,26 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlmodel import Session
 
 from app.db import get_session
 from app.db.models import User
 from app.product_lifecycle.schema import (
     CreativeAssetReview,
+    CreativeAssetUploadRead,
     CreativeAssetVersionCreate,
     CreativeAssetVersionRead,
     CreativeBriefCreate,
     CreativeBriefRead,
+    CreativeDeliveryChecklistCreate,
+    CreativeDeliveryChecklistRead,
+    CreativeEvidenceRead,
+    CreativeEvidenceSyncRequest,
+    CreativeGenerationRead,
+    CreativeGenerationSubmit,
+    DesignQCReportRead,
+    DesignQCRun,
     ListingComplianceCheckRead,
     ListingComplianceRun,
     ListingRuleSetCreate,
@@ -30,11 +39,16 @@ from app.product_lifecycle.schema import (
 from app.product_lifecycle.service import (
     create_creative_asset_version,
     create_creative_brief,
+    create_creative_delivery_checklist,
     create_listing_rule_set,
     create_procurement_recommendation,
     evaluate_product_launch_gate,
     list_creative_assets,
     list_creative_briefs,
+    list_creative_delivery_checklists,
+    list_creative_evidence,
+    list_creative_generation_requests,
+    list_creative_qc_reports,
     list_listing_checks,
     list_listing_rule_sets,
     list_procurement_recommendations,
@@ -44,8 +58,12 @@ from app.product_lifecycle.service import (
     publish_listing_rule_set,
     review_creative_asset_version,
     review_procurement_recommendation,
+    run_creative_asset_qc,
     run_listing_compliance_check,
+    stage_creative_asset_upload,
+    submit_creative_generation,
     submit_product_launch,
+    sync_creative_evidence,
 )
 from app.security.auth import get_current_user
 
@@ -144,6 +162,100 @@ def post_creative_asset(
     db: Annotated[Session, Depends(get_session)],
 ) -> CreativeAssetVersionRead:
     return create_creative_asset_version(db, request=request, user=current_user)
+
+
+@router.post("/creative-assets/uploads", response_model=CreativeAssetUploadRead)
+async def post_creative_asset_upload(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+    tenant_id: str = Query(...),
+    brief_id: str = Query(...),
+    file: UploadFile = File(...),  # noqa: B008 - FastAPI binds multipart data here.
+) -> CreativeAssetUploadRead:
+    return stage_creative_asset_upload(
+        db,
+        tenant_id=tenant_id,
+        brief_id=brief_id,
+        filename=file.filename or "creative-asset",
+        content_type=file.content_type,
+        data=await file.read(),
+        user=current_user,
+    )
+
+
+@router.get("/creative-qc", response_model=list[DesignQCReportRead])
+def get_creative_qc_reports(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+    tenant_id: Annotated[str, Query()],
+) -> list[DesignQCReportRead]:
+    return list_creative_qc_reports(db, tenant_id=tenant_id, user=current_user)
+
+
+@router.post("/creative-assets/{asset_version_id}/qc", response_model=DesignQCReportRead)
+def post_creative_asset_qc(
+    asset_version_id: str,
+    request: DesignQCRun,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> DesignQCReportRead:
+    if request.asset_version_id != asset_version_id:
+        raise HTTPException(status_code=422, detail="Asset version id does not match request path")
+    return run_creative_asset_qc(db, request=request, user=current_user)
+
+
+@router.get("/creative-evidence", response_model=list[CreativeEvidenceRead])
+def get_creative_evidence(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+    tenant_id: Annotated[str, Query()],
+) -> list[CreativeEvidenceRead]:
+    return list_creative_evidence(db, tenant_id=tenant_id, user=current_user)
+
+
+@router.post("/creative-evidence/sync", response_model=list[CreativeEvidenceRead])
+def post_creative_evidence_sync(
+    request: CreativeEvidenceSyncRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> list[CreativeEvidenceRead]:
+    return sync_creative_evidence(db, request=request, user=current_user)
+
+
+@router.get("/creative-deliveries", response_model=list[CreativeDeliveryChecklistRead])
+def get_creative_deliveries(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+    tenant_id: Annotated[str, Query()],
+) -> list[CreativeDeliveryChecklistRead]:
+    return list_creative_delivery_checklists(db, tenant_id=tenant_id, user=current_user)
+
+
+@router.post("/creative-deliveries/checklist", response_model=CreativeDeliveryChecklistRead)
+def post_creative_delivery_checklist(
+    request: CreativeDeliveryChecklistCreate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> CreativeDeliveryChecklistRead:
+    return create_creative_delivery_checklist(db, request=request, user=current_user)
+
+
+@router.get("/creative-generations", response_model=list[CreativeGenerationRead])
+def get_creative_generations(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+    tenant_id: Annotated[str, Query()],
+) -> list[CreativeGenerationRead]:
+    return list_creative_generation_requests(db, tenant_id=tenant_id, user=current_user)
+
+
+@router.post("/creative-generations", response_model=CreativeGenerationRead)
+def post_creative_generation(
+    request: CreativeGenerationSubmit,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> CreativeGenerationRead:
+    return submit_creative_generation(db, request=request, user=current_user)
 
 
 @router.post("/creative-assets/{asset_version_id}/review", response_model=CreativeAssetVersionRead)

@@ -3,6 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { ChatMessage } from '@/types';
+import { ApiError } from '@/api/client';
 
 import {
   STREAM_TERMINAL_EVENTS,
@@ -10,6 +11,7 @@ import {
   canRateMessage,
   harnessEventTraceLine,
   harnessWorkspaceArtifacts,
+  isReadOnlyExecutionSessionError,
   knowledgeCitations,
   messageAttachments,
   renderInlineMarkdown,
@@ -30,6 +32,15 @@ function message(patch: Partial<ChatMessage> = {}): ChatMessage {
 }
 
 describe('chat history consumer contract', () => {
+  it('recognizes the stable read-only execution-session error', () => {
+    expect(isReadOnlyExecutionSessionError(new ApiError(
+      403,
+      JSON.stringify({ detail: { code: 'CHAT_SESSION_READ_ONLY', message: 'read-only' } }),
+      'Forbidden',
+    ))).toBe(true);
+    expect(isReadOnlyExecutionSessionError(new ApiError(403, '{"detail":"forbidden"}', 'Forbidden'))).toBe(false);
+  });
+
   it('keeps inline citations but removes duplicate trailing citation summaries', () => {
     const content = [
       '请假制度按员工手册执行[1]，办公用品按行政手册执行[5]。',

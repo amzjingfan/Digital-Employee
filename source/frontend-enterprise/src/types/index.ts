@@ -518,6 +518,16 @@ export type MCPServerRead = {
   updated_at: string;
 };
 
+export type DesignKitCliStatusRead = {
+  installed: boolean;
+  command?: string | null;
+  version?: string | null;
+  minimum_version: string;
+  version_supported: boolean;
+  local_config_dir_present: boolean;
+  mcp_protocol_exposed: boolean;
+};
+
 export type MCPDiscoveredTool = {
   name: string;
   title: string;

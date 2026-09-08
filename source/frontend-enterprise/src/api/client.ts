@@ -134,6 +134,31 @@ export async function uploadChatAttachments<T>(
   return response.json() as Promise<T>;
 }
 
+export async function uploadCreativeAsset<T>(
+  tenantId: string,
+  briefId: string,
+  file: File,
+  signal?: AbortSignal,
+): Promise<T> {
+  const form = new FormData();
+  form.append('file', file);
+  const response = await fetch(
+    `${API_BASE}/api/enterprise/work-tasks/product-lifecycle/creative-assets/uploads?tenant_id=${encodeURIComponent(tenantId)}&brief_id=${encodeURIComponent(briefId)}`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: { ...authHeader() },
+      body: form,
+      signal,
+    },
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new ApiError(response.status, text, response.statusText);
+  }
+  return response.json() as Promise<T>;
+}
+
 export async function streamChatTurn(
   body: Record<string, unknown>,
   onEvent: (item: StreamEvent) => void,

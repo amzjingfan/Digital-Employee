@@ -10,8 +10,8 @@ from app.a2a import recover_codex_a2a_tasks, stop_codex_a2a_tasks
 from app.a2a import router as a2a_router
 from app.accounts.casdoor_sync import start_casdoor_sync, stop_casdoor_sync
 from app.api import (
-    agents,
     advertising,
+    agents,
     app_updates,
     auth,
     authorization,
@@ -21,6 +21,7 @@ from app.api import (
     chat,
     crossborder_operations,
     crossborder_tools,
+    designkit,
     evolution,
     feedback,
     general_skills,
@@ -56,6 +57,10 @@ from app.core.harness_recovery import (
 )
 from app.db import engine, init_db
 from app.db.seed import seed_demo_data
+from app.product_lifecycle.evidence_worker import (
+    start_creative_evidence_worker,
+    stop_creative_evidence_worker,
+)
 from app.public_api import create_public_api_app
 from app.public_api.jobs import cleanup_public_api_records, recover_public_jobs
 from app.public_api.maintenance import start_public_api_maintenance, stop_public_api_maintenance
@@ -112,6 +117,7 @@ def on_startup() -> None:
             recover_codex_a2a_tasks()
             recover_a2a_client_tasks()
             start_background_worker()
+            start_creative_evidence_worker()
             start_casdoor_sync()
             start_shadow_worker()
             start_channel_services()
@@ -143,6 +149,7 @@ def on_shutdown() -> None:
             stop_public_api_maintenance()
             stop_channel_services()
             stop_background_worker()
+            stop_creative_evidence_worker()
             stop_casdoor_sync()
             stop_shadow_worker()
             stop_timeout_sweeper()
@@ -201,6 +208,7 @@ app.include_router(crossborder_operations.router, dependencies=enterprise_permis
 app.include_router(product_lifecycle.router, dependencies=enterprise_permissions)
 app.include_router(work_tasks.router, dependencies=enterprise_permissions)
 app.include_router(crossborder_tools.router)
+app.include_router(designkit.router, dependencies=enterprise_permissions)
 if settings.mock_api_enabled:
     app.include_router(mock.router)
 app.include_router(a2a_router)

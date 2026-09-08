@@ -8,6 +8,7 @@ import threading
 import time
 import traceback
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import timedelta
 from urllib.parse import quote
 
@@ -26,7 +27,7 @@ from app.core.capability_manifest import CapabilityManifestBuilder
 from app.core.harness_session_cleanup import harness_task_workspace_path
 from app.core.harness_turn_store import HarnessTurnStore
 from app.core.slash_commands import SlashCommandRead, slash_command_catalog
-from app.db import engine, get_session
+from app.db import engine, get_session, set_tenant_context
 from app.db.models import (
     AgentEvent,
     AgentProfile,
@@ -109,6 +110,7 @@ MAX_CHAT_ATTACHMENT_BYTES = 12 * 1024 * 1024
 MAX_CHAT_ATTACHMENTS = 8
 SESSION_TITLE_SUMMARY_EVENT = "session_title_summarized"
 SCHEDULE_WEEKDAY_LABELS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
+READ_ONLY_EXECUTION_CHANNELS = frozenset({"work_task"})
 EVENT_PAYLOAD_META_KEYS = {"id", "event", "type", "event_type", "created_at", "data"}
 STREAM_RELAY_EVENT_ALIASES = {
     "router_decision_created": "router_decision",
@@ -120,6 +122,16 @@ STREAM_RELAY_TERMINAL_EVENTS = {
     "stream_cancelled",
     "stream_interrupted",
 }
+
+
+@contextmanager
+def _tenant_session(tenant_id: str) -> Iterator[Session]:
+    """Open a database session with PostgreSQL tenant context restored."""
+    with Session(engine) as db:
+        set_tenant_context(db, tenant_id)
+        yield db
+
+
 SPAN_EVENT_TYPES = {
     "llm_call_started",
     "llm_call_finished",
@@ -283,7 +295,7 @@ def _summarize_session_title_once(
             messages: list[Message] = []
             model_config = None
             effective_agent_id = agent_id
-            with Session(engine) as db:
+            with _tenant_session(tenant_id) as db:
                 session = db.exec(
                     select(ChatSession).where(
                         ChatSession.id == session_id,
@@ -343,7 +355,7 @@ def _summarize_session_title_once(
                         if title_turn_id:
                             traced_payload.setdefault("turn_id", title_turn_id)
                             traced_payload.setdefault("user_message_id", title_turn_id)
-                        with Session(engine) as span_db:
+                        with _tenant_session(tenant_id) as span_db:
                             _persist_relay_only_event(
                                 span_db,
                                 tenant_id,
@@ -364,7 +376,7 @@ def _summarize_session_title_once(
             if not title:
                 return
 
-            with Session(engine) as db:
+            with _tenant_session(tenant_id) as db:
                 session = db.exec(
                     select(ChatSession).where(
                         ChatSession.id == session_id,
@@ -1111,7 +1123,7 @@ def chat_stream(
     def run_stream_worker() -> None:
         span_sink_token = None
         try:
-            with Session(engine) as worker_db:
+            with _tenant_session(request.tenant_id) as worker_db:
                 span_turn_id = {"value": ""}
 
                 def persist_span(event_type: str, payload: dict[str, object]) -> None:
@@ -1313,7 +1325,7 @@ def chat_stream(
             logger.exception("chat stream worker failed")
             session_id = source_session_id["value"] or request.session_id or ""
             if session_id:
-                with Session(engine) as error_db:
+                with _tenant_session(request.tenant_id) as error_db:
                     chat_session = error_db.get(ChatSession, session_id)
                     if chat_session:
                         _persist_chat_turn_interrupted(
@@ -1334,7 +1346,7 @@ def chat_stream(
             logger.exception("chat stream worker stopped with base exception")
             session_id = source_session_id["value"] or request.session_id or ""
             if session_id:
-                with Session(engine) as error_db:
+                with _tenant_session(request.tenant_id) as error_db:
                     chat_session = error_db.get(ChatSession, session_id)
                     if chat_session:
                         _persist_chat_turn_interrupted(
@@ -1358,7 +1370,7 @@ def chat_stream(
                 reset_span_sink(span_sink_token)
             session_id = source_session_id["value"] or request.session_id or ""
             if session_id and not worker_terminal["seen"]:
-                with Session(engine) as final_db:
+                with _tenant_session(request.tenant_id) as final_db:
                     chat_session = final_db.get(ChatSession, session_id)
                     if chat_session:
                         changed = _persist_chat_turn_interrupted(
@@ -1386,7 +1398,7 @@ def chat_stream(
             session_id = source_session_id["value"]
             emitted = False
             if session_id:
-                with Session(engine) as relay_db:
+                with _tenant_session(request.tenant_id) as relay_db:
                     rows = _events_after_cursor(relay_db, request.tenant_id, session_id, initial_cursor)
                 for row in rows:
                     payload = row.payload_json or {}
@@ -1414,7 +1426,7 @@ def chat_stream(
                 return
             if time.monotonic() > deadline:
                 if session_id:
-                    with Session(engine) as timeout_db:
+                    with _tenant_session(request.tenant_id) as timeout_db:
                         chat_session = timeout_db.get(ChatSession, session_id)
                         if chat_session:
                             _persist_chat_turn_interrupted(
@@ -2645,13 +2657,28 @@ def _ensure_chat_session_available(db: Session, tenant_id: str, user_id: str, se
 
 
 def _ensure_team_session_human_writable(chat_session: ChatSession) -> None:
-    """团队内部会话(任务执行/竞标/验收)仅可查看,不允许人工 /turn、/stream 写入。
+    """Reject background execution sessions from human /turn and /stream writes.
 
-    判据与 _team_tl_session_team 一致:只有「TL 对话」标题的团队会话才对人类开放发言,
-    其余团队会话由唤醒机制自主驱动,人工写入会污染任务历史并绕过 Agent 权限校验。
+    Work-task sessions are created for the execution worker and do not have a
+    channel binding that can receive web replies. Team execution sessions use
+    the same guard so a human cannot contaminate an autonomous task history.
     """
+    if chat_session.channel in READ_ONLY_EXECUTION_CHANNELS:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "CHAT_SESSION_READ_ONLY",
+                "message": "Execution sessions are read-only; start a new conversation",
+            },
+        )
     if chat_session.team_id and "TL 对话" not in (chat_session.title or ""):
-        raise HTTPException(status_code=403, detail="Team execution sessions are read-only")
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "CHAT_SESSION_READ_ONLY",
+                "message": "Team execution sessions are read-only; start a new conversation",
+            },
+        )
 
 
 def _team_tl_session_team(db: Session, chat_session: ChatSession) -> Team | None:

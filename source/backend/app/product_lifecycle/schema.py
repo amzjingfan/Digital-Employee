@@ -110,6 +110,9 @@ class CreativeBriefCreate(BaseModel):
     scenes: list[str] = Field(min_length=1, max_length=20)
     required_assets: list[str] = Field(min_length=1, max_length=30)
     constraints: dict[str, Any] = Field(default_factory=dict)
+    fact_snapshot: dict[str, Any] = Field(default_factory=dict)
+    brand_snapshot: dict[str, Any] = Field(default_factory=dict)
+    platform_spec_snapshot: dict[str, Any] = Field(default_factory=dict)
     due_at: datetime | None = None
 
 
@@ -125,6 +128,10 @@ class CreativeBriefRead(BaseModel):
     scenes: list[str]
     required_assets: list[str]
     constraints: dict[str, Any]
+    fact_snapshot: dict[str, Any]
+    brand_snapshot: dict[str, Any]
+    platform_spec_snapshot: dict[str, Any]
+    snapshot_digest: str
     status: Literal["open", "in_progress", "completed", "cancelled"]
     task_id: str
     due_at: datetime | None
@@ -155,10 +162,140 @@ class CreativeAssetVersionCreate(BaseModel):
     contains_sensitive_claims: bool = False
 
 
+class CreativeAssetUploadRead(BaseModel):
+    """Server-authoritative manifest returned after a creative file is staged."""
+
+    upload_id: str
+    filename: str
+    content_type: str
+    size: int
+    file_reference: str
+    file_digest: str
+    media_metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class CreativeAssetReview(BaseModel):
     tenant_id: str = Field(min_length=1, max_length=128)
     decision: Literal["approved", "rejected"]
     note: str = Field(min_length=4, max_length=1000)
+
+
+QCStatus = Literal["pass", "fail", "unknown", "not_applicable"]
+
+
+class DesignQCFindingRead(BaseModel):
+    check_key: str
+    status: QCStatus
+    severity: Literal["P0", "P1", "P2", "info"]
+    rule: str
+    evidence: str
+    checker_version: str
+
+
+class DesignQCRun(BaseModel):
+    tenant_id: str = Field(min_length=1, max_length=128)
+    asset_version_id: str = Field(min_length=1, max_length=128)
+    checker_version: str = Field(default="joukir-design-qc-v1", min_length=1, max_length=80)
+
+
+class DesignQCReportRead(BaseModel):
+    id: str
+    tenant_id: str
+    asset_version_id: str
+    asset_digest: str
+    brief_id: str
+    store_resource_id: str
+    snapshot_digest: str
+    checker_version: str
+    overall_status: QCStatus
+    findings: list[DesignQCFindingRead]
+    input_digest: str
+    created_by_user_id: str
+    created_at: datetime
+
+
+EvidenceType = Literal["facts", "brand", "platform_spec"]
+EvidenceStatus = Literal["draft", "verified", "expired", "revoked"]
+
+
+class CreativeEvidenceSyncItem(BaseModel):
+    evidence_type: EvidenceType
+    source_ref: str = Field(min_length=1, max_length=240)
+    version: str = Field(min_length=1, max_length=100)
+    payload: dict[str, Any]
+    status: EvidenceStatus = "verified"
+    effective_at: datetime
+    expires_at: datetime | None = None
+
+
+class CreativeEvidenceSyncRequest(BaseModel):
+    tenant_id: str = Field(min_length=1, max_length=128)
+    records: list[CreativeEvidenceSyncItem] = Field(min_length=1, max_length=100)
+
+
+class CreativeEvidenceRead(BaseModel):
+    id: str
+    tenant_id: str
+    evidence_type: EvidenceType
+    source_ref: str
+    version: str
+    payload: dict[str, Any]
+    content_digest: str
+    status: EvidenceStatus
+    effective_at: datetime
+    expires_at: datetime | None
+    synced_at: datetime
+    sync_error: str | None
+    created_by_user_id: str
+    updated_at: datetime
+
+
+class CreativeDeliveryChecklistCreate(BaseModel):
+    tenant_id: str = Field(min_length=1, max_length=128)
+    brief_id: str = Field(min_length=1, max_length=128)
+    asset_version_ids: list[str] = Field(min_length=1, max_length=50)
+
+
+class CreativeDeliveryChecklistRead(BaseModel):
+    id: str
+    tenant_id: str
+    brief_id: str
+    store_resource_id: str
+    product_key: str
+    asset_version_ids: list[str]
+    qc_report_ids: list[str]
+    checklist: list[dict[str, Any]]
+    blockers: list[dict[str, Any]]
+    delivery_digest: str
+    status: Literal["blocked", "ready", "delivered", "failed"]
+    created_by_user_id: str
+    delivered_at: datetime | None
+    created_at: datetime
+
+
+class CreativeGenerationSubmit(BaseModel):
+    tenant_id: str = Field(min_length=1, max_length=128)
+    brief_id: str = Field(min_length=1, max_length=128)
+    provider_key: str = Field(min_length=1, max_length=80)
+    idempotency_key: str = Field(min_length=8, max_length=180)
+    instructions: dict[str, Any] = Field(default_factory=dict)
+
+
+class CreativeGenerationRead(BaseModel):
+    id: str
+    tenant_id: str
+    brief_id: str
+    provider_key: str
+    idempotency_key: str
+    status: Literal["queued", "submitted", "succeeded", "failed", "cancelled"]
+    request: dict[str, Any]
+    response: dict[str, Any]
+    external_request_id: str | None
+    error_code: str | None
+    error_message: str | None
+    created_by_user_id: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class CreativeAssetVersionRead(BaseModel):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 from datetime import timedelta
 
 import pytest
@@ -7,8 +9,9 @@ from fastapi import HTTPException
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.business_resources.schema import BusinessResourceCreate
+from app.business_resources.schema import BusinessResourceCreate, ResourceScopeInput
 from app.business_resources.service import create_resource
+from app.config import get_settings
 from app.db.models import (
     BusinessActionExecution,
     HighRiskActionRequest,
@@ -20,6 +23,11 @@ from app.product_lifecycle.schema import (
     CreativeAssetReview,
     CreativeAssetVersionCreate,
     CreativeBriefCreate,
+    CreativeDeliveryChecklistCreate,
+    CreativeEvidenceSyncItem,
+    CreativeEvidenceSyncRequest,
+    CreativeGenerationSubmit,
+    DesignQCRun,
     ListingComplianceRun,
     ListingRuleSetCreate,
     ListingRuleSetPublish,
@@ -32,15 +40,23 @@ from app.product_lifecycle.schema import (
 from app.product_lifecycle.service import (
     create_creative_asset_version,
     create_creative_brief,
+    create_creative_delivery_checklist,
     create_listing_rule_set,
     create_procurement_recommendation,
     evaluate_product_launch_gate,
+    expire_creative_evidence_records,
+    list_creative_assets,
+    list_creative_briefs,
     product_lifecycle_overview,
     publish_listing_rule_set,
     review_creative_asset_version,
     review_procurement_recommendation,
+    run_creative_asset_qc,
     run_listing_compliance_check,
+    stage_creative_asset_upload,
+    submit_creative_generation,
     submit_product_launch,
+    sync_creative_evidence,
 )
 
 
@@ -61,6 +77,15 @@ def _user(user_id: str, role: str, *, tenant_id: str = "tenant_demo") -> User:
         business_role=role,
         password_hash="disabled",
     )
+
+
+@pytest.fixture(autouse=True)
+def local_creative_storage_for_unit_tests(monkeypatch: pytest.MonkeyPatch):
+    """Keep SQLite unit tests independent from the production MinIO profile."""
+    monkeypatch.setenv("CREATIVE_OBJECT_STORAGE_BACKEND", "local")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 @pytest.fixture
@@ -177,8 +202,26 @@ def _brief_and_asset(db: Session, workforce: dict[str, User], resources: dict[st
             dimensions={"width": 2000, "height": 2000, "unit": "px"},
             selling_points=["Wireless control", "Compact enclosure"],
             scenes=["Home office"],
-            required_assets=["main_image", "secondary_image"],
+            required_assets=["main_image"],
             constraints={"background": "white", "safe_area_percent": 5},
+            fact_snapshot={
+                "source_ref": "sku-facts/PRODUCT-1001",
+                "version": "facts-v3",
+                "status": "verified",
+                "facts": {"material": "ABS"},
+            },
+            brand_snapshot={
+                "source_ref": "brand-kit/joukir",
+                "version": "brand-v2",
+                "status": "verified",
+                "logo": {"clear_space": 24},
+            },
+            platform_spec_snapshot={
+                "source_ref": "amazon-us/electronics",
+                "version": "spec-v5",
+                "status": "verified",
+                "module": "main_image",
+            },
             due_at=utc_now() + timedelta(days=3),
         ),
         user=workforce["designer"],
@@ -210,7 +253,243 @@ def _brief_and_asset(db: Session, workforce: dict[str, User], resources: dict[st
         ),
         user=workforce["designer"],
     )
+    sync_creative_evidence(
+        db,
+        request=CreativeEvidenceSyncRequest(
+            tenant_id="tenant_demo",
+            records=[
+                CreativeEvidenceSyncItem(
+                    evidence_type="facts",
+                    source_ref="sku-facts/PRODUCT-1001",
+                    version="facts-v3",
+                    payload=brief.fact_snapshot,
+                    effective_at=utc_now() - timedelta(days=1),
+                    expires_at=utc_now() + timedelta(days=30),
+                ),
+                CreativeEvidenceSyncItem(
+                    evidence_type="brand",
+                    source_ref="brand-kit/joukir",
+                    version="brand-v2",
+                    payload=brief.brand_snapshot,
+                    effective_at=utc_now() - timedelta(days=1),
+                    expires_at=utc_now() + timedelta(days=30),
+                ),
+                CreativeEvidenceSyncItem(
+                    evidence_type="platform_spec",
+                    source_ref="amazon-us/electronics",
+                    version="spec-v5",
+                    payload=brief.platform_spec_snapshot,
+                    effective_at=utc_now() - timedelta(days=1),
+                    expires_at=utc_now() + timedelta(days=30),
+                ),
+            ],
+        ),
+        user=workforce["supervisor"],
+    )
+    run_creative_asset_qc(
+        db,
+        request=DesignQCRun(tenant_id="tenant_demo", asset_version_id=asset.id),
+        user=workforce["designer"],
+    )
     return brief, asset
+
+
+def test_creative_brief_and_asset_reads_follow_store_scope(
+    db: Session, workforce: dict[str, User], resources: dict[str, str]
+) -> None:
+    """A tenant-wide user must not infer store access from a shared brief id."""
+    restricted_store = create_resource(
+        db,
+        request=BusinessResourceCreate(
+            tenant_id="tenant_demo",
+            resource_type="store",
+            code="AMZ-RESTRICTED",
+            name="Restricted Amazon store",
+            scopes=[
+                ResourceScopeInput(
+                    business_role="listing_compliance_specialist", access_level="operator"
+                )
+            ],
+        ),
+        user=workforce["supervisor"],
+    )
+    visible_brief, visible_asset = _brief_and_asset(db, workforce, resources)
+    hidden_brief = create_creative_brief(
+        db,
+        request=CreativeBriefCreate(
+            tenant_id="tenant_demo",
+            brief_key="BRIEF-RESTRICTED-1001",
+            store_resource_id=restricted_store.id,
+            product_key="PRODUCT-RESTRICTED-1001",
+            language="en-US",
+            dimensions={"width": 1600, "height": 1600, "unit": "px"},
+            selling_points=["Restricted store product"],
+            scenes=["Product detail"],
+            required_assets=["main_image"],
+        ),
+        user=workforce["supervisor"],
+    )
+
+    briefs = list_creative_briefs(db, tenant_id="tenant_demo", user=workforce["designer"])
+    assets = list_creative_assets(db, tenant_id="tenant_demo", user=workforce["designer"])
+
+    assert [item.id for item in briefs] == [visible_brief.id]
+    assert [item.id for item in assets] == [visible_asset.id]
+    with pytest.raises(HTTPException) as error:
+        create_creative_asset_version(
+            db,
+            request=CreativeAssetVersionCreate(
+                tenant_id="tenant_demo",
+                asset_key="ASSET-RESTRICTED-MAIN",
+                brief_id=hidden_brief.id,
+                asset_type="main_image",
+                file_reference="s3://restricted/main.png",
+                file_digest="sha256:restricted",
+                provenance={"source": "tenant-owned", "license": "tenant-owned"},
+                checks={
+                    "dimensions": True,
+                    "clarity": True,
+                    "text_safe_area": True,
+                    "logo": True,
+                    "brand_colors": True,
+                    "factual_consistency": True,
+                    "copyright": True,
+                },
+            ),
+            user=workforce["designer"],
+        )
+    assert error.value.status_code == 404
+
+
+def test_creative_upload_manifest_is_server_verified_before_asset_registration(
+    db: Session,
+    workforce: dict[str, User],
+    resources: dict[str, str],
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The asset API accepts an upload only when the staged bytes match its digest."""
+    monkeypatch.setenv("ULTRARAG_DATA_DIR", str(tmp_path / "data"))
+    brief, _ = _brief_and_asset(db, workforce, resources)
+    creative_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
+    with pytest.raises(HTTPException) as invalid_upload:
+        stage_creative_asset_upload(
+            db,
+            tenant_id="tenant_demo",
+            brief_id=brief.id,
+            filename="not-a-png.png",
+            content_type="image/png",
+            data=b"not actually a png",
+            user=workforce["designer"],
+        )
+    assert invalid_upload.value.status_code == 422
+    upload = stage_creative_asset_upload(
+        db,
+        tenant_id="tenant_demo",
+        brief_id=brief.id,
+        filename="main-v2.png",
+        content_type="image/png",
+        data=creative_bytes,
+        user=workforce["designer"],
+    )
+
+    assert upload.file_reference == f"attachment://{upload.upload_id}"
+    assert upload.file_digest == "sha256:" + hashlib.sha256(creative_bytes).hexdigest()
+    asset = create_creative_asset_version(
+        db,
+        request=CreativeAssetVersionCreate(
+            tenant_id="tenant_demo",
+            asset_key="ASSET-SKU-1001-SECONDARY",
+            brief_id=brief.id,
+            asset_type="secondary_image",
+            file_reference=upload.file_reference,
+            file_digest=upload.file_digest,
+            provenance={"source": "tenant-upload", "license": "tenant-owned"},
+            checks={
+                "dimensions": True,
+                "clarity": True,
+                "text_safe_area": True,
+                "logo": True,
+                "brand_colors": True,
+                "factual_consistency": True,
+                "copyright": True,
+            },
+        ),
+        user=workforce["designer"],
+    )
+    assert asset.status == "pending_review"
+
+    with pytest.raises(HTTPException) as error:
+        create_creative_asset_version(
+            db,
+            request=CreativeAssetVersionCreate(
+                tenant_id="tenant_demo",
+                asset_key="ASSET-SKU-1001-ALTERED",
+                brief_id=brief.id,
+                asset_type="secondary_image",
+                file_reference=upload.file_reference,
+                file_digest="sha256:" + "0" * 64,
+                provenance={"source": "tenant-upload", "license": "tenant-owned"},
+                checks={
+                    "dimensions": True,
+                    "clarity": True,
+                    "text_safe_area": True,
+                    "logo": True,
+                    "brand_colors": True,
+                    "factual_consistency": True,
+                    "copyright": True,
+                },
+            ),
+            user=workforce["designer"],
+        )
+    assert error.value.status_code == 409
+
+
+def test_creative_brief_captures_evidence_snapshots_and_digest(
+    db: Session, workforce: dict[str, User], resources: dict[str, str]
+) -> None:
+    brief = create_creative_brief(
+        db,
+        request=CreativeBriefCreate(
+            tenant_id="tenant_demo",
+            brief_key="BRIEF-SNAPSHOT-1001",
+            store_resource_id=resources["store"],
+            product_key="PRODUCT-SNAPSHOT-1001",
+            language="en-US",
+            dimensions={"width": 2000, "height": 2000, "unit": "px"},
+            selling_points=["Evidence-backed design"],
+            scenes=["Main image"],
+            required_assets=["main_image"],
+            fact_snapshot={
+                "source_ref": "catalog:product-snapshot-1001",
+                "version": "facts-v2",
+                "status": "verified",
+                "facts": {"material": "ABS"},
+            },
+            brand_snapshot={
+                "source_ref": "brand:joukir-v3",
+                "version": "brand-v3",
+                "status": "verified",
+                "colors": ["#315EA8"],
+            },
+            platform_spec_snapshot={
+                "source_ref": "amazon:us:electronics",
+                "version": "spec-v5",
+                "status": "verified",
+                "module": "main_image",
+                "width": 2000,
+                "height": 2000,
+            },
+        ),
+        user=workforce["designer"],
+    )
+
+    assert brief.fact_snapshot["version"] == "facts-v2"
+    assert brief.brand_snapshot["version"] == "brand-v3"
+    assert brief.platform_spec_snapshot["module"] == "main_image"
+    assert brief.snapshot_digest.startswith("sha256:")
 
 
 def _procurement(db: Session, workforce: dict[str, User], resources: dict[str, str]):
@@ -369,6 +648,142 @@ def test_creative_asset_is_append_only_and_requires_human_review(
     assert child.version == 2
     assert child.parent_version_id == approved.id
     assert child.file_digest != approved.file_digest
+
+
+def test_creative_qc_blocks_unknown_brief_evidence_and_is_idempotent(
+    db: Session, workforce: dict[str, User], resources: dict[str, str]
+) -> None:
+    brief = create_creative_brief(
+        db,
+        request=CreativeBriefCreate(
+            tenant_id="tenant_demo",
+            brief_key="BRIEF-QC-UNKNOWN-1001",
+            store_resource_id=resources["store"],
+            product_key="PRODUCT-QC-1001",
+            language="en-US",
+            dimensions={"width": 2000, "height": 2000, "unit": "px"},
+            selling_points=["Verified selling point"],
+            scenes=["White background"],
+            required_assets=["main_image"],
+        ),
+        user=workforce["designer"],
+    )
+    asset = create_creative_asset_version(
+        db,
+        request=CreativeAssetVersionCreate(
+            tenant_id="tenant_demo",
+            asset_key="ASSET-QC-UNKNOWN-1001",
+            brief_id=brief.id,
+            asset_type="main_image",
+            file_reference="s3://tenant-demo/reviewed/qc-unknown.png",
+            file_digest="sha256:qc-unknown",
+            provenance={"source": "human-retouch", "license": "tenant-owned"},
+            checks={key: True for key in (
+                "dimensions", "clarity", "text_safe_area", "logo", "brand_colors",
+                "factual_consistency", "copyright",
+            )},
+        ),
+        user=workforce["designer"],
+    )
+    report = run_creative_asset_qc(
+        db,
+        request=DesignQCRun(tenant_id="tenant_demo", asset_version_id=asset.id),
+        user=workforce["designer"],
+    )
+    assert report.overall_status == "unknown"
+    assert {item.check_key for item in report.findings if item.status == "unknown"} >= {
+        "facts_evidence", "brand_evidence", "platform_spec_evidence",
+    }
+    same_report = run_creative_asset_qc(
+        db,
+        request=DesignQCRun(tenant_id="tenant_demo", asset_version_id=asset.id),
+        user=workforce["designer"],
+    )
+    assert same_report.id == report.id
+    with pytest.raises(HTTPException) as blocked:
+        review_creative_asset_version(
+            db,
+            asset_version_id=asset.id,
+            request=CreativeAssetReview(
+                tenant_id="tenant_demo", decision="approved", note="Attempted approval"
+            ),
+            user=workforce["supervisor"],
+        )
+    assert blocked.value.status_code == 409
+    assert "unknown" in str(blocked.value.detail)
+
+
+def test_creative_delivery_checklist_requires_qc_and_current_evidence(
+    db: Session, workforce: dict[str, User], resources: dict[str, str]
+) -> None:
+    brief, asset = _brief_and_asset(db, workforce, resources)
+    approved = review_creative_asset_version(
+        db,
+        asset_version_id=asset.id,
+        request=CreativeAssetReview(
+            tenant_id="tenant_demo", decision="approved", note="QC and evidence reviewed"
+        ),
+        user=workforce["supervisor"],
+    )
+    ready = create_creative_delivery_checklist(
+        db,
+        request=CreativeDeliveryChecklistCreate(
+            tenant_id="tenant_demo", brief_id=brief.id, asset_version_ids=[approved.id]
+        ),
+        user=workforce["supervisor"],
+    )
+    assert ready.status == "ready", ready.blockers
+    assert ready.blockers == []
+
+    sync_creative_evidence(
+        db,
+        request=CreativeEvidenceSyncRequest(
+            tenant_id="tenant_demo",
+            records=[
+                CreativeEvidenceSyncItem(
+                    evidence_type="facts",
+                    source_ref="sku-facts/PRODUCT-1001",
+                    version="facts-v3",
+                    payload=brief.fact_snapshot,
+                    effective_at=utc_now() - timedelta(days=2),
+                    expires_at=utc_now() - timedelta(seconds=1),
+                )
+            ],
+        ),
+        user=workforce["supervisor"],
+    )
+    assert expire_creative_evidence_records(db) == 0
+    blocked = create_creative_delivery_checklist(
+        db,
+        request=CreativeDeliveryChecklistCreate(
+            tenant_id="tenant_demo", brief_id=brief.id, asset_version_ids=[approved.id]
+        ),
+        user=workforce["supervisor"],
+    )
+    assert blocked.status == "blocked"
+    assert any(item["code"] == "evidence_not_verified" for item in blocked.blockers)
+
+
+def test_creative_generation_provider_submission_is_idempotent(
+    db: Session, workforce: dict[str, User], resources: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    brief, _ = _brief_and_asset(db, workforce, resources)
+    monkeypatch.setattr(
+        "app.product_lifecycle.service.submit_generation_request",
+        lambda **_kwargs: {"external_request_id": "provider-request-1", "status": "submitted"},
+    )
+    request = CreativeGenerationSubmit(
+        tenant_id="tenant_demo",
+        brief_id=brief.id,
+        provider_key="http",
+        idempotency_key="generation-idempotency-1",
+        instructions={"style": "clean product photography"},
+    )
+    first = submit_creative_generation(db, request=request, user=workforce["designer"])
+    second = submit_creative_generation(db, request=request, user=workforce["designer"])
+    assert first.status == "submitted"
+    assert first.external_request_id == "provider-request-1"
+    assert second.id == first.id
 
 
 def test_procurement_is_explainable_and_never_creates_order(

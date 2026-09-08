@@ -40,6 +40,7 @@ from app.tiktok.service import (
     bootstrap_tiktok_organization,
     reconcile_casdoor_membership,
 )
+from scripts.verify_tiktok_skill_inventory import verify_skill_inventory
 
 
 def test_joukir_tiktok_skill_pack_has_registry_schema_and_evals() -> None:
@@ -62,6 +63,19 @@ def test_joukir_tiktok_skill_pack_has_registry_schema_and_evals() -> None:
                 "LICENSES.md",
             )
         )
+
+
+def test_joukir_tiktok_skill_pack_inventory_is_complete_and_no_clipcat_dependency() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    result = verify_skill_inventory(repo_root)
+    assert result == {
+        "ok": True,
+        "pack_id": "joukir-tiktok-pack",
+        "skill_count": 12,
+        "review_status": "approved_seed",
+        "external_write": False,
+        "clipcat_hard_dependency": False,
+    }
 
 
 def _session() -> Session:
