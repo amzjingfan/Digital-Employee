@@ -1,10 +1,20 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any, Optional
 from uuid import uuid4
 
-from sqlalchemy import JSON, CheckConstraint, Column, Index, Integer, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    Column,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    Numeric,
+    UniqueConstraint,
+)
 from sqlmodel import Field, SQLModel
 
 
@@ -3143,6 +3153,185 @@ class AdvertisingRecommendation(SQLModel, table=True):
     version: int = Field(default=0)
     created_at: datetime = Field(default_factory=utc_now, index=True)
     updated_at: datetime = Field(default_factory=utc_now, index=True)
+
+
+class PdcaSearchTermRun(SQLModel, table=True):
+    """Immutable rules-only diagnosis run over one tenant-scoped search-term input."""
+
+    __tablename__ = "pdca_search_term_runs"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_pdca_search_term_run_tenant_id"),
+        UniqueConstraint(
+            "tenant_id", "idempotency_key", name="uq_pdca_search_term_run_idempotency"
+        ),
+        CheckConstraint("mode = 'rules_only'", name="pdca_search_term_runs_mode_check"),
+        CheckConstraint("state = 'succeeded'", name="pdca_search_term_runs_state_check"),
+        CheckConstraint(
+            "external_execution_allowed = false",
+            name="pdca_search_term_runs_no_execution_check",
+        ),
+        CheckConstraint(
+            "quality_score >= 0 AND quality_score <= 100",
+            name="pdca_search_term_runs_quality_check",
+        ),
+        CheckConstraint(
+            "source_row_count > 0 AND fact_count > 0 AND action_count >= 0",
+            name="pdca_search_term_runs_counts_check",
+        ),
+        CheckConstraint(
+            "target_acos > 0 AND target_acos <= 1",
+            name="pdca_search_term_runs_target_check",
+        ),
+        Index(
+            "ix_pdca_search_term_runs_account_time",
+            "tenant_id",
+            "ad_account_resource_id",
+            "created_at",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("pdca_run"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    idempotency_key: str = Field(index=True)
+    ad_account_resource_id: str = Field(index=True)
+    store_resource_id: Optional[str] = Field(default=None, index=True)
+    source_type: str = Field(default="amazon_search_term_csv")
+    source_label: str = Field(default="local source file")
+    source_sha256: str = Field(index=True)
+    input_digest: str = Field(index=True)
+    mapping_version: str = Field(index=True)
+    rule_version: str = Field(index=True)
+    metric_definition_version: str = Field(index=True)
+    mode: str = Field(default="rules_only", index=True)
+    state: str = Field(default="succeeded", index=True)
+    target_acos: Decimal = Field(sa_column=Column(Numeric(12, 8), nullable=False))
+    currency: str = Field(default="USD")
+    source_row_count: int = Field(default=0)
+    fact_count: int = Field(default=0)
+    action_count: int = Field(default=0)
+    quality_score: int = Field(default=0)
+    mapping_snapshot_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    summary_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    warnings_json: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    external_execution_allowed: bool = Field(default=False)
+    created_by_user_id: str = Field(index=True)
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
+class PdcaFactSearchTerm(SQLModel, table=True):
+    """Frozen Amazon account facts aggregated at the documented search-term grain."""
+
+    __tablename__ = "pdca_fact_search_terms"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id"],
+            ["pdca_search_term_runs.tenant_id", "pdca_search_term_runs.id"],
+            ondelete="RESTRICT",
+            name="fk_pdca_fact_search_term_run_tenant",
+        ),
+        UniqueConstraint("tenant_id", "id", name="uq_pdca_fact_search_term_tenant_id"),
+        UniqueConstraint(
+            "tenant_id", "run_id", "grain_key", name="uq_pdca_fact_search_term_grain"
+        ),
+        CheckConstraint(
+            "impressions >= 0 AND clicks >= 0 AND orders >= 0 AND spend >= 0 AND sales >= 0",
+            name="pdca_fact_search_terms_metric_check",
+        ),
+        Index(
+            "ix_pdca_fact_search_terms_run",
+            "tenant_id",
+            "run_id",
+            "campaign_id",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("pdca_fact"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    run_id: str = Field(index=True)
+    grain_key: str = Field(index=True)
+    date_start: date
+    date_end: date
+    campaign_id: str = Field(index=True)
+    campaign_name: str
+    ad_group_id: str = Field(index=True)
+    ad_group_name: str
+    targeting: str
+    match_type: str = Field(index=True)
+    search_term: str
+    search_term_norm: str = Field(index=True)
+    impressions: int = Field(default=0)
+    clicks: int = Field(default=0)
+    spend: Decimal = Field(sa_column=Column(Numeric(20, 6), nullable=False))
+    sales: Decimal = Field(sa_column=Column(Numeric(20, 6), nullable=False))
+    orders: int = Field(default=0)
+    metric_snapshot_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    evidence_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    source_row_refs_json: list[int] = Field(default_factory=list, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
+class PdcaAction(SQLModel, table=True):
+    """Advice-only rule output with no foreign execution or approval binding."""
+
+    __tablename__ = "pdca_actions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id"],
+            ["pdca_search_term_runs.tenant_id", "pdca_search_term_runs.id"],
+            ondelete="RESTRICT",
+            name="fk_pdca_action_run_tenant",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "fact_id"],
+            ["pdca_fact_search_terms.tenant_id", "pdca_fact_search_terms.id"],
+            ondelete="RESTRICT",
+            name="fk_pdca_action_fact_tenant",
+        ),
+        UniqueConstraint(
+            "tenant_id", "run_id", "fact_id", "action_type", name="uq_pdca_action_rule_output"
+        ),
+        CheckConstraint(
+            "action_type IN ('manual_review', 'lower_bid', 'convert_exact', "
+            "'protect_scale', 'observe')",
+            name="pdca_actions_type_check",
+        ),
+        CheckConstraint(
+            "priority IN ('critical', 'high', 'medium', 'low')",
+            name="pdca_actions_priority_check",
+        ),
+        CheckConstraint("status = 'suggested'", name="pdca_actions_status_check"),
+        CheckConstraint(
+            "external_execution_allowed = false", name="pdca_actions_no_execution_check"
+        ),
+        CheckConstraint(
+            "must_do_score >= 0 AND must_do_score <= 100",
+            name="pdca_actions_score_check",
+        ),
+        CheckConstraint(
+            "verification_window_days > 0",
+            name="pdca_actions_window_check",
+        ),
+        Index("ix_pdca_actions_run_priority", "tenant_id", "run_id", "must_do_score"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("pdca_action"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    run_id: str = Field(index=True)
+    fact_id: str = Field(index=True)
+    action_type: str = Field(index=True)
+    priority: str = Field(index=True)
+    must_do_score: int = Field(default=0)
+    rationale: str
+    evidence_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    thresholds_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    current_values_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    expected_effect: str
+    risk_note: str
+    verification_window_days: int = Field(default=7)
+    execution_hint: str
+    status: str = Field(default="suggested", index=True)
+    external_execution_allowed: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=utc_now, index=True)
 
 
 class AdvertisingEffectFollowUp(SQLModel, table=True):

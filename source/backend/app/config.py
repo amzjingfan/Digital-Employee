@@ -146,6 +146,10 @@ class Settings(BaseSettings):
     creative_generation_base_url: str = ""
     creative_generation_api_key: str = ""
     creative_generation_timeout_seconds: float = 120.0
+    # Search-term reports are parsed in-process in the first PDCA slice. Bound
+    # both bytes and rows so malformed uploads cannot exhaust an API worker.
+    pdca_upload_max_bytes: int = 20 * 1024 * 1024
+    pdca_upload_max_rows: int = 100_000
     # 钉钉 emotion 接口的表情常量与所需权限尚未真机验证，验证通过前默认关闭：
     # 否则常量失效或权限未开时，每条入站消息都会留下一条失败的 reaction 投递。
     channel_dingtalk_reaction_enabled: bool = False

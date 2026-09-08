@@ -55,6 +55,39 @@ _AD_ACTIONS = {
 _RISK_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
 
+def authorize_advertising_scope(
+    db: Session,
+    *,
+    tenant_id: str,
+    user: User,
+    ad_account_resource_id: str | None = None,
+    store_resource_id: str | None = None,
+) -> None:
+    """Validate the shared tenant, role, ad-account and store read boundary."""
+
+    _require_tenant(tenant_id, user)
+    _require_role(user, _AD_ROLES)
+    set_tenant_context(db, tenant_id)
+    if ad_account_resource_id:
+        _authorized_resource(
+            db,
+            tenant_id=tenant_id,
+            resource_id=ad_account_resource_id,
+            resource_type="ad_account",
+            user=user,
+            action="READ",
+        )
+    if store_resource_id:
+        _authorized_resource(
+            db,
+            tenant_id=tenant_id,
+            resource_id=store_resource_id,
+            resource_type="store",
+            user=user,
+            action="READ",
+        )
+
+
 def create_advertising_recommendation(
     db: Session, *, request: AdvertisingRecommendationCreate, user: User
 ) -> AdvertisingRecommendationRead:

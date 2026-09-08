@@ -153,3 +153,59 @@ class AdvertisingOverview(BaseModel):
     effectiveness_reviews_pending: int
     automation_policies_active: int
     kill_switches_engaged: int
+
+
+class PdcaSearchTermActionRead(BaseModel):
+    id: str
+    fact_id: str
+    campaign_id: str
+    ad_group_id: str
+    search_term: str
+    match_type: str
+    action_type: Literal[
+        "manual_review",
+        "lower_bid",
+        "convert_exact",
+        "protect_scale",
+        "observe",
+    ]
+    priority: Literal["critical", "high", "medium", "low"]
+    must_do_score: int
+    rationale: str
+    evidence: dict[str, Any]
+    thresholds: dict[str, Any]
+    current_values: dict[str, Any]
+    expected_effect: str
+    risk_note: str
+    verification_window_days: int
+    execution_hint: str
+    status: Literal["suggested"]
+    external_execution_allowed: Literal[False]
+
+
+class PdcaSearchTermRunRead(BaseModel):
+    id: str
+    tenant_id: str
+    ad_account_resource_id: str
+    store_resource_id: str | None
+    source_type: Literal["amazon_search_term_csv"]
+    source_label: Literal["local source file"]
+    source_sha256: str
+    input_digest: str
+    mapping_version: str
+    rule_version: str
+    metric_definition_version: str
+    mode: Literal["rules_only"]
+    state: Literal["succeeded"]
+    target_acos: str
+    currency: str
+    source_row_count: int
+    fact_count: int
+    action_count: int
+    quality_score: int
+    mapping: dict[str, str]
+    summary: dict[str, Any]
+    warnings: list[str]
+    external_execution_allowed: Literal[False]
+    top_actions: list[PdcaSearchTermActionRead]
+    created_at: datetime

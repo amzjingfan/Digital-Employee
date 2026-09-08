@@ -3982,5 +3982,22 @@
   "尚未启动。启动后只记录读取与分析结果，不执行 TikTok 外部写操作。": "Not started. It records read and analysis results only and never performs TikTok external writes.",
   "次 · 错误": " observations · errors",
   "· 已观察": " observed",
-  "· 结束：": " Ends: "
+  "· 结束：": " Ends: ",
+  "请选择 CSV 并确认已授权广告账户": "Select a CSV file and confirm access to an ad account",
+  "目标 ACoS 必须大于 0% 且不超过 100%": "Target ACoS must be greater than 0% and no more than 100%",
+  "生成规则诊断": "Generate Rules Diagnosis",
+  "搜索词 PDCA": "Search Term PDCA",
+  "Amazon 搜索词规则诊断": "Amazon Search Term Rules Diagnosis",
+  "上传 UTF-8 CSV 后按活动、广告组、投放、匹配类型与搜索词聚合；金额使用 Decimal 口径。": "Upload a UTF-8 CSV to aggregate by campaign, ad group, targeting, match type, and search term; monetary values use Decimal precision.",
+  "rules_only · advice_only · 无 Amazon Ads 写入": "rules_only · advice_only · no Amazon Ads writes",
+  "搜索词 CSV": "Search Term CSV",
+  "目标 ACoS（%）": "Target ACoS (%)",
+  "上传并生成建议": "Upload and Generate Advice",
+  "规则运行": "Rules Run",
+  "· 质量分": "· Quality Score",
+  "源行": "Source Rows",
+  "聚合事实": "Aggregated Facts",
+  "建议": "Advice",
+  "花费": "Spend",
+  "暂无搜索词规则运行；上传合成或已授权的 Amazon 搜索词 CSV 开始诊断。": "No search-term rules runs yet. Upload a synthetic or authorized Amazon search-term CSV to begin."
 }
