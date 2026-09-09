@@ -1975,7 +1975,7 @@ P3-A 不定义 Live 写方法。后续写方法只能通过 `BusinessActionExecu
 - [ ] 首个试点市场、店铺、广告账户和账号 Owner 已确认。
 - [ ] 六个 Casdoor Group 名称和旧 Group 迁移策略已确认。
 - [ ] P3-A 的 Mock 数据可以脱敏用于测试，业务负责人确认字段口径。
-- [ ] 12 个 Skill 的来源和许可证清单完成，Clipcat 不作为硬依赖。
+- [x] 12 个 Skill 的来源和许可证清单完成，Clipcat 不作为硬依赖；清单位于 `skills/joukir-tiktok-pack/inventory.json`，可由 `backend/scripts/verify_tiktok_skill_inventory.py` 重复验收。
 - [ ] PostgreSQL 测试库、受限运行角色、迁移角色和 RLS 测试可用。
 - [ ] TikTok 官方 API 未获批部分已标明 Mock/回放，不伪装为真实接入。
 
@@ -2010,6 +2010,7 @@ P3-A 不定义 Live 写方法。后续写方法只能通过 `BusinessActionExecu
 - 已完成 Mock OAuth/PKCE：强制 S256、短期 state、一次性授权码、回调交换后销毁 state；数据库只保存凭据引用和指纹，不保存 access token、refresh token 或 client secret。
 - 已完成 seller、creator、partner、ads、social 五类 TikTok Mock Read Connector，严格校验资源平台、岗位 Scope、授权 Scope 和租户；只返回白名单业务字段，并记录 `connector_sync_states` 游标。
 - 已完成 12 个 `skills/joukir-*` 项目 Skill 包，包含 SKILL.md、manifest、输入/输出 Schema、参考资料、评测夹具和许可证声明；管理员种子接口幂等创建 12 个 Skill、知识库版本、5 个只读工具、5 个数字员工草稿及 5 个 Casdoor M2M 服务身份，并按岗位最小职责集合绑定到 5 个 TikTok P3-A 数字员工。BD、短视频、达人授权、商达匹配和直播策划分别获得 3/6/3/3/4 个 SOP Skill、对应只读工具和同一份审核知识库；既有种子产生的多余绑定会自动降为 inactive，并写入审计原因。
+- 已完成 12 个 Skill 的来源/许可证机器清单与门禁：`skills/joukir-tiktok-pack/inventory.json` 固定每个 Skill 的内部来源、许可证、第三方内容声明、依赖和 `approved_seed` 状态；`skills/joukir-tiktok-pack/LICENSES.md` 提供人工审阅摘要；`backend/scripts/verify_tiktok_skill_inventory.py` 校验 registry、12 个 Skill 的必需文件、manifest 安全字段、第三方依赖声明和 Clipcat 非硬依赖。该门禁只证明 Skill 包资产可审计，不替代业务负责人生产发布审批。
 - 已完成前端 `/enterprise/tiktok` 入口、组织与生产资产初始化按钮、岗位 Casdoor 组、资源范围、授权状态和任务计数空/错状态；中文/英文目录和 TypeScript/Vite 构建已校验。
 - 已完成 TikTok 事业部六个 Tab：概览、员工、资产与授权、任务中心、SOP/Skill、风险与 KPI；各 Tab 沿用同一租户范围和只读数据边界。
 - 已完成生产就绪检查聚合接口和页面门禁卡：按当前租户分别检查 Casdoor Management Client、真实 TikTok 官方授权、五个 AgentRelease、14 天影子运行和外部写入关闭状态；Mock 授权不会计入官方授权，未满足项明确显示阻塞原因。
