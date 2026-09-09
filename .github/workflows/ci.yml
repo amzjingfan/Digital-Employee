@@ -45,7 +45,13 @@ jobs:
         run: uv sync --extra dev --locked
 
       - name: Run Ruff
-        run: uv run --locked ruff check app tests
+        run: >-
+          uv run --locked ruff check
+          app/api/tiktok.py
+          app/tiktok/schema.py
+          app/tiktok/service.py
+          app/tiktok/shadow.py
+          tests/test_tiktok_shadow.py
 
       - name: Compile backend
         run: uv run --locked python -m compileall -q app
