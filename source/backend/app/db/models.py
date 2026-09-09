@@ -4,12 +4,25 @@ from datetime import UTC, datetime
 from typing import Any, Optional
 from uuid import uuid4
 
-from sqlalchemy import JSON, CheckConstraint, Column, Index, Integer, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    UniqueConstraint,
+)
 from sqlmodel import Field, SQLModel
 
 
 def utc_now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
+
+
+def utc_now_aware() -> datetime:
+    return datetime.now(UTC)
 
 
 def new_id(prefix: str) -> str:
@@ -48,6 +61,7 @@ class User(SQLModel, table=True):
     __tablename__ = "users"
     __table_args__ = (
         UniqueConstraint("tenant_id", "username", name="uq_user_tenant_username"),
+        UniqueConstraint("tenant_id", "id", name="uq_users_tenant_id_id"),
         Index("ix_users_tenant_id_display_name", "tenant_id", "display_name"),
     )
 
@@ -72,6 +86,166 @@ class User(SQLModel, table=True):
     preferred_timezone: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class Brand(SQLModel, table=True):
+    """Tenant-owned brand boundary shared by every commerce module."""
+
+    __tablename__ = "brands"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "code", name="uq_brands_tenant_code"),
+        UniqueConstraint("tenant_id", "id", name="uq_brands_tenant_id_id"),
+        CheckConstraint(
+            "status IN ('active', 'inactive', 'archived')",
+            name="brands_status_check",
+        ),
+        Index("ix_brands_tenant_status_name", "tenant_id", "status", "name"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("brand"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    code: str = Field(index=True)
+    name: str
+    timezone: str = Field(default="UTC")
+    status: str = Field(default="active", index=True)
+    revision: int = Field(default=1)
+    created_by_user_id: str = Field(index=True)
+    created_at: datetime = Field(
+        default_factory=utc_now_aware,
+        sa_column=Column(DateTime(timezone=True), nullable=False, index=True),
+    )
+    updated_at: datetime = Field(
+        default_factory=utc_now_aware,
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
+
+
+class BrandMembership(SQLModel, table=True):
+    """Explicit human access to a brand inside an already trusted tenant."""
+
+    __tablename__ = "brand_memberships"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "brand_id",
+            "user_id",
+            name="uq_brand_memberships_tenant_brand_user",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "brand_id"],
+            ["brands.tenant_id", "brands.id"],
+            name="fk_brand_memberships_tenant_brand",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "user_id"],
+            ["users.tenant_id", "users.id"],
+            name="fk_brand_memberships_tenant_user",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "access_level IN ('viewer', 'operator')",
+            name="brand_memberships_access_check",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'inactive')",
+            name="brand_memberships_status_check",
+        ),
+        Index("ix_brand_memberships_tenant_user_status", "tenant_id", "user_id", "status"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("brandmember"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    brand_id: str = Field(index=True)
+    user_id: str = Field(index=True)
+    access_level: str = Field(default="viewer", index=True)
+    status: str = Field(default="active", index=True)
+    created_by_user_id: str = Field(index=True)
+    created_at: datetime = Field(
+        default_factory=utc_now_aware,
+        sa_column=Column(DateTime(timezone=True), nullable=False, index=True),
+    )
+    updated_at: datetime = Field(
+        default_factory=utc_now_aware,
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
+
+
+class StoreAccess(SQLModel, table=True):
+    """Assign one tenant store resource to exactly one explicit brand scope."""
+
+    __tablename__ = "store_accesses"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "resource_id",
+            name="uq_store_accesses_tenant_resource",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "brand_id"],
+            ["brands.tenant_id", "brands.id"],
+            name="fk_store_accesses_tenant_brand",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "resource_id"],
+            ["business_resources.tenant_id", "business_resources.id"],
+            name="fk_store_accesses_tenant_resource",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'inactive')",
+            name="store_accesses_status_check",
+        ),
+        Index("ix_store_accesses_tenant_brand_status", "tenant_id", "brand_id", "status"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("storeaccess"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    brand_id: str = Field(index=True)
+    resource_id: str = Field(index=True)
+    status: str = Field(default="active", index=True)
+    created_by_user_id: str = Field(index=True)
+    created_at: datetime = Field(
+        default_factory=utc_now_aware,
+        sa_column=Column(DateTime(timezone=True), nullable=False, index=True),
+    )
+    updated_at: datetime = Field(
+        default_factory=utc_now_aware,
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
+
+
+class BrandAccessEvent(SQLModel, table=True):
+    """Append-only evidence for brand, membership, and store-scope changes."""
+
+    __tablename__ = "brand_access_events"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "brand_id"],
+            ["brands.tenant_id", "brands.id"],
+            name="fk_brand_access_events_tenant_brand",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "event_type IN ('brand_created', 'membership_changed', 'store_access_changed')",
+            name="brand_access_events_type_check",
+        ),
+        Index("ix_brand_access_events_tenant_brand_time", "tenant_id", "brand_id", "occurred_at"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("brand_event"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    brand_id: str = Field(index=True)
+    event_type: str = Field(index=True)
+    actor_user_id: str = Field(index=True)
+    subject_user_id: str | None = Field(default=None, index=True)
+    resource_id: str | None = Field(default=None, index=True)
+    detail_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    occurred_at: datetime = Field(
+        default_factory=utc_now_aware,
+        sa_column=Column(DateTime(timezone=True), nullable=False, index=True),
+    )
 
 
 class UserInvitation(SQLModel, table=True):
@@ -517,6 +691,7 @@ class BusinessResource(SQLModel, table=True):
     __tablename__ = "business_resources"
     __table_args__ = (
         UniqueConstraint("tenant_id", "resource_type", "code", name="uq_business_resource_code"),
+        UniqueConstraint("tenant_id", "id", name="uq_business_resources_tenant_id_id"),
         CheckConstraint(
             "resource_type IN ('store', 'carrier', 'ad_account', 'supplier', "
             "'creator_account', 'partner_account', 'social_account', 'live_room')",

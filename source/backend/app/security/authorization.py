@@ -40,6 +40,7 @@ ENTERPRISE_CAPABILITY_OBJECTS: dict[str, str] = {
     "runtime_settings": "/api/enterprise/ui-config",
     "identity_roles": "/api/enterprise/identity-role-mappings",
     "authorization": "/api/enterprise/authorization-decisions",
+    "brands": "/api/enterprise/brands",
     "business_resources": "/api/enterprise/business-resources",
     "operations_reports": "/api/enterprise/operations-reports",
     "work_tasks": "/api/enterprise/work-tasks",

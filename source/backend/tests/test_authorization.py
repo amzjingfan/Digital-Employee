@@ -136,7 +136,12 @@ def test_capability_manifest_is_derived_from_business_role_policy() -> None:
     assert supervisor["accounts"] == []
     assert listing["knowledge"] == ["view", "create", "update"]
     assert listing["business_resources"] == ["view"]
+    assert listing["brands"] == ["view"]
     assert supervisor["business_resources"] == ["view", "create", "update", "delete"]
+    assert supervisor["brands"] == ["view"]
+    assert enterprise_capabilities(
+        settings, user=_business_user("tiktok_content_specialist")
+    )["brands"] == ["view"]
     assert supervisor["operations_reports"] == ["view", "create"]
     assert "operations_reports" not in listing
     assert "channels" not in after_sales

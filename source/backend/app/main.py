@@ -15,6 +15,7 @@ from app.api import (
     app_updates,
     auth,
     authorization,
+    brands,
     business_executions,
     business_resources,
     channels,
@@ -198,6 +199,7 @@ app.include_router(traces.router, dependencies=enterprise_permissions)
 app.include_router(authorization.router, dependencies=enterprise_permissions)
 app.include_router(authorization.policy_router, dependencies=enterprise_permissions)
 app.include_router(identity_roles.router, dependencies=enterprise_permissions)
+app.include_router(brands.router, dependencies=enterprise_permissions)
 app.include_router(business_resources.resource_router, dependencies=enterprise_permissions)
 app.include_router(business_resources.request_router, dependencies=enterprise_permissions)
 app.include_router(business_resources.approval_router, dependencies=enterprise_permissions)

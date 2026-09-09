@@ -78,6 +78,10 @@ def init_db() -> None:
             "user_invitations",
             "account_lifecycle_events",
             "tenant_lifecycle_events",
+            "brands",
+            "brand_memberships",
+            "store_accesses",
+            "brand_access_events",
         }
         required.update(
             {
