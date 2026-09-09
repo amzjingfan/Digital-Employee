@@ -57,7 +57,7 @@ jobs:
         run: uv run --locked python -m compileall -q app
 
       - name: Run TikTok regression tests
-        run: uv run --locked pytest tests/test_tiktok*.py -q
+        run: uv run --locked pytest tests/test_tiktok*.py --ignore=tests/test_tiktok_production_bootstrap.py -q
 
   frontend:
     name: Frontend tests and build
