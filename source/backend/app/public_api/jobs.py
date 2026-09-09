@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterator
 from datetime import timedelta
-import json
 from time import sleep
 from typing import Any
 
@@ -13,12 +13,12 @@ from sqlmodel import Session, select
 
 from app.async_jobs import enqueue_async_job
 from app.config import get_settings
-from app.db import engine, get_session
+from app.db import engine, get_session, set_tenant_context
 from app.db.models import (
+    AgentEvent,
     APIIdempotencyRecord,
     APIJob,
     APIJobEvent,
-    AgentEvent,
     ChatSession,
     WebhookDelivery,
     new_id,
@@ -31,7 +31,6 @@ from app.public_api.webhooks import (
     enqueue_webhook_deliveries,
     stage_webhook_deliveries,
 )
-
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 JobHandler = Callable[[Session, APIJob], dict[str, Any]]
@@ -401,6 +400,10 @@ def run_job(job_id: str) -> None:
         job = _claim_job(db, job_id, owner)
         if job is None:
             return
+        # The claim is intentionally cross-tenant so one worker can drain the
+        # durable queue. Once the trusted job row is known, bind every later
+        # transaction (events, handler work, and terminalization) to its tenant.
+        set_tenant_context(db, job.tenant_id)
         generation = job.execution_generation
         handler = _handlers.get(job.kind)
         emit_job_event(db, job, f"{job.kind}.started", {"job_id": job.id})

@@ -21,6 +21,7 @@ from app.api.auth import (
     rotate_account_api_credential,
 )
 from app.db import get_session
+from app.db.database import set_tenant_context as bind_tenant_context
 from app.db.models import (
     AgentEvent,
     AgentProfile,
@@ -331,6 +332,53 @@ def test_successful_job_clears_stale_restart_error(monkeypatch) -> None:
         assert completed.stage == "completed"
         assert completed.error_json == {}
         assert completed.retryable is False
+
+
+def test_run_job_binds_claimed_tenant_before_handler_and_terminal_events(monkeypatch) -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    tenant_contexts: list[str] = []
+    captured: dict[str, object] = {}
+
+    with Session(engine) as db:
+        db.add(
+            APIJob(
+                id="apijob_tenant_context",
+                tenant_id="tenant_api",
+                credential_id="internal",
+                kind="test.tenant_context",
+            )
+        )
+        db.commit()
+
+    def record_tenant_context(db: Session, tenant_id: str) -> None:
+        tenant_contexts.append(tenant_id)
+        bind_tenant_context(db, tenant_id)
+
+    def handler(db: Session, job: APIJob) -> dict[str, bool]:
+        captured["session_tenant_context"] = db.info.get("staffdeck_tenant_id")
+        captured["job_tenant"] = job.tenant_id
+        return {"ok": True}
+
+    monkeypatch.setitem(public_jobs._handlers, "test.tenant_context", handler)
+    monkeypatch.setattr(public_jobs, "set_tenant_context", record_tenant_context)
+    monkeypatch.setattr(public_jobs, "engine", engine)
+
+    run_job("apijob_tenant_context")
+
+    with Session(engine) as db:
+        completed = db.get(APIJob, "apijob_tenant_context")
+
+    assert tenant_contexts == ["tenant_api"]
+    assert captured == {
+        "session_tenant_context": "tenant_api",
+        "job_tenant": "tenant_api",
+    }
+    assert completed is not None and completed.status == "succeeded"
 
 
 def test_failed_run_job_releases_session_and_emits_terminal_event(monkeypatch) -> None:
