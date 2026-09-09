@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { EnterpriseAuthUser } from '@/auth';
 import { I18nProvider } from '@/i18n';
@@ -20,6 +20,8 @@ const admin: EnterpriseAuthUser = {
 };
 
 describe('TikTokBusinessUnitPage', () => {
+  afterEach(cleanup);
+
   beforeEach(() => {
     vi.mocked(api.get).mockResolvedValue({
       root: { id: 'root', code: 'tiktok', name: 'TikTok 事业部', revision: 1, status: 'active', unit_type: 'business_unit' },
@@ -58,5 +60,33 @@ describe('TikTokBusinessUnitPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'SOP / Skill' }));
     expect(screen.getByText(/Skill 已绑定/)).toBeTruthy();
     expect(screen.getByText(/种子资产在业务负责人复核后才能发布/)).toBeTruthy();
+  });
+
+  it('records a task-linked shadow comparison and displays quality gates', async () => {
+    vi.mocked(api.get).mockImplementation(async (url) => {
+      if (url.includes('/shadow/status')) {
+        return {
+          id: 'shadow-1', status: 'running', started_at: '2026-09-01T00:00:00Z', ends_at: '2026-09-15T00:00:00Z', last_heartbeat_at: '2026-09-08T00:00:00Z', observation_count: 2, error_count: 0, baseline: { writes_enabled: false },
+          quality: { reviewed_count: 2, adopted_count: 2, needs_revision_count: 0, rejected_count: 0, guardrail_issue_count: 0, adoption_rate: 1, covered_sop_ids: ['TT-SOP-002'], missing_sop_ids: ['TT-SOP-003', 'TT-SOP-004', 'TT-SOP-007', 'TT-SOP-009'], minimum_reviewed_count: 30, passed: false },
+        };
+      }
+      if (url.includes('/overview')) return { root: null, departments: [], roles: [], resources: [], authorizations: [], task_counts: {} };
+      if (url.includes('/production-readiness')) return { ready: false, evaluated_at: '2026-09-08T00:00:00Z', gates: [] };
+      return { tenant_id: 'tenant_demo', ready: false, evaluated_at: '2026-09-08T00:00:00Z', items: [] };
+    });
+
+    render(<I18nProvider><TikTokBusinessUnitPage currentUser={admin} onLogout={vi.fn()} /></I18nProvider>);
+    await waitFor(() => expect(screen.getByText('风险与 KPI')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '风险与 KPI' }));
+    expect(screen.getByText(/人工对照 2\/30/)).toBeTruthy();
+    expect(screen.getByText(/待覆盖 TT-SOP-003/)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('TikTok 任务 ID'), { target: { value: 'task-tiktok-1' } });
+    fireEvent.change(screen.getByLabelText('脱敏人工对照摘要'), { target: { value: '人工结果一致' } });
+    fireEvent.click(screen.getByRole('button', { name: '追加不可变对照证据' }));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/enterprise/tiktok/shadow/evaluations', {
+      task_id: 'task-tiktok-1', verdict: 'adopted', issue_category: 'none', summary: '人工结果一致',
+    }));
   });
 });

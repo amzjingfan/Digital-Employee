@@ -51,3 +51,10 @@
 - 生产门禁：`verify_postgres_production_gate.py` 返回 `ok=true`，required tables、RLS/forced RLS 与角色均无缺失或 bypass。
 - TikTok 五授权域反例：在 `tenant_demo` 受限会话中临时构造 Seller/Creator/Partner/Ads/Social 与错误资产类型组合；五项均在 connector 外部调用前返回 `403 tiktok_authorization_type_mismatch`，未写入成功 SyncState；每项事务回滚，随后确认临时资源与授权残留均为 `0`。
 - 结论：本地隔离 PostgreSQL 的 RLS、受限角色权限和五授权域连接器前置门禁已得到真实数据库证据；这不替代真实 TikTok OAuth、远端权限撤销、14 天影子运行或业务/安全发布签字。
+
+## 2026-09-09 · 影子运行质量门禁（完成）
+
+- 实现：影子运行状态现在同时聚合不可变、任务绑定的人工对照证据；完成 14 天时间窗口不再自动等同于通过。通过条件为至少 30 条复核、采纳/修改后采纳率至少 70%、五条主 SOP 全覆盖，且严重漏检、越权访问、虚假声明、未审批外部写入均为零。
+- API/UI：新增管理员专用任务级人工对照接口，要求任务属于当前租户、处于复核/完成状态并明确 `external_writes=false`；重复请求幂等，不同结论不可覆盖；TikTok 页面展示质量统计并提供脱敏证据录入。
+- 验证：TikTok 后端专项 `40 passed`；前端全量 `63 files / 267 tests passed`；TypeScript/Vite build、变更范围 Ruff、compileall 通过。保留既有 React warning 与 chunk-size warning，不扩大修复范围。
+- 边界：本切片没有调用真实 TikTok API、没有启用外部写入，也没有把人工对照证据伪造为已完成的 14 天运行；真实 OAuth、远端撤销和业务/安全签字仍是独立发布门禁。
