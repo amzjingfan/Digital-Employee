@@ -1,5 +1,23 @@
 # workforce/platform-governance 开发日志
 
+## 2026-09-09 · 公共 Job 执行器租户上下文门禁（开始）
+
+- 基线：`8d2a8e2`；分支：`workforce/platform-governance`；开始时工作树干净。
+- 已核实现状：`run_job` 可跨租户扫描并 CAS claim 一个 `APIJob`，但 claim 后到 started 事件、handler、取消检查、终态写入和失败收尾期间未为该 Job 的独立 Session 绑定租户上下文；具体 Handler 只能各自补救。
+- 选定切片：在成功 claim 得到可信 `APIJob.tenant_id` 后立即调用 `set_tenant_context`，让公共执行器后续事务和所有 Handler 共享同一租户边界；保留跨租户队列 claim 能力，不改变 Job 状态机。
+- 业务意义：把租户门禁从单个 Handler 提升到统一执行边界，避免新增公共 Job 忘记设置上下文，也让 started、failed、cancelled 和 run 会话收尾审计遵循同一租户。
+- 非目标：不改变 CAS claim 条件、队列调度、Job 重试语义、公共 API 权限、前端、外部通知或生产凭据；不在本切片重构跨租户恢复扫描。
+- 风险：claim 事务本身必须继续支持跨租户 worker；上下文绑定失败时不能静默执行 Handler，现有 SQLite 测试需保持兼容。
+- 验证计划：先运行公共 Job 基线；实现后运行公共 API/Handler 回归、Ruff、compileall，并更新本分支开发日志记录结果。
+
+## 2026-09-09 · 公共 Job 执行器租户上下文门禁（完成）
+
+- 改动：`backend/app/public_api/jobs.py` 在跨租户 CAS claim 成功并获得可信 `APIJob.tenant_id` 后立即绑定 Session 租户上下文；started 事件、Handler、取消检查、终态写入和失败收尾均复用该上下文，跨租户队列扫描能力保持不变。
+- 回归：`backend/tests/test_public_api_v1.py` 新增执行器上下文测试，验证 Handler 在执行前观察到正确租户且 Job 正常完成。
+- 聚焦验证：`.venv\\Scripts\\python.exe -m pytest tests/test_public_api_v1.py -q` -> `18 passed`（1 个既有 Starlette 弃用警告）；合并反馈公共 Job 回归 -> `24 passed`；Ruff `--select I,E9,F`（公共 Job 与测试）通过；相关 `compileall` 通过。
+- 安全边界：未改变 claim CAS 条件、Job 状态机、权限、队列调度、前端或外部通知；未加入密钥、Token、真实外部载荷或生产写路径。
+- 剩余风险与门禁：claim 阶段仍需无租户上下文扫描 Job 表，这是为支持跨租户 worker 的明确边界；其他全量恢复/清理扫描入口及隔离 PostgreSQL 账号下的真实 RLS 验收仍待后续治理。
+
 ## 2026-09-08 · 异步反馈分析租户上下文门禁（开始）
 
 - 基线：`8f6e155`；分支：`workforce/platform-governance`；开始时工作树干净。
