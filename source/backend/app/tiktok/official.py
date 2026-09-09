@@ -92,6 +92,14 @@ class FileTokenStore:
         records[credential_ref] = row
         self._write(payload)
 
+    def delete(self, credential_ref: str) -> None:
+        payload = self._read()
+        records = payload.get("credentials", {})
+        if not isinstance(records, dict) or credential_ref not in records:
+            return
+        del records[credential_ref]
+        self._write(payload)
+
     def _read(self) -> dict[str, Any]:
         if not self.path.exists():
             return {}

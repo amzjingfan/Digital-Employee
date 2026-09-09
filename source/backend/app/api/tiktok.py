@@ -59,6 +59,7 @@ from app.tiktok.service import (
     get_tiktok_production_readiness,
     publish_tiktok_agent_releases,
     reconcile_casdoor_memberships,
+    revoke_tiktok_authorization,
     verify_tiktok_m2m_identities,
 )
 from app.tiktok.shadow import (
@@ -407,3 +408,15 @@ def connector_read(
         resource_id=resource_id,
         required_scope=required_scope,
     )
+
+
+@router.post(
+    "/authorizations/{authorization_id}/revoke",
+    response_model=TikTokAuthorizationRead,
+)
+def revoke_authorization(
+    authorization_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> TikTokAuthorizationRead:
+    return revoke_tiktok_authorization(db, current_user, authorization_id)

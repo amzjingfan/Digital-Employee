@@ -38,6 +38,7 @@ from app.db.models import (
 )
 from app.security.business_roles import BUSINESS_ROLE_BY_KEY, BusinessRoleDefinition
 from app.security.permissions import ensure_tenant_admin, is_admin_user
+from app.tiktok.official import FileTokenStore
 from app.tiktok.schema import (
     OrganizationUnitRead,
     TikTokAgentReleasePreflight,
@@ -376,6 +377,73 @@ def _authorizations(db: Session, user: User) -> list[TikTokAuthorizationRead]:
         )
         for row in sorted(rows, key=lambda item: (item.authorization_type, item.subject_id))
     ]
+
+
+def revoke_tiktok_authorization(
+    db: Session,
+    user: User,
+    authorization_id: str,
+) -> TikTokAuthorizationRead:
+    """Revoke one tenant-local authorization and fail closed for future reads."""
+
+    ensure_tenant_admin(user.tenant_id, user)
+    authorization = db.exec(
+        select(ExternalAuthorization).where(
+            ExternalAuthorization.id == authorization_id,
+            ExternalAuthorization.tenant_id == user.tenant_id,
+            ExternalAuthorization.provider == "tiktok",
+        )
+    ).first()
+    if authorization is None:
+        raise HTTPException(status_code=404, detail="TikTok authorization not found")
+
+    if authorization.status == "active":
+        credential_ref = str(authorization.credential_ref or "").strip()
+        authorization_flow = (authorization.metadata_json or {}).get("authorization_flow")
+        has_active_sibling = bool(
+            credential_ref
+            and db.exec(
+                select(ExternalAuthorization.id).where(
+                    ExternalAuthorization.tenant_id == user.tenant_id,
+                    ExternalAuthorization.provider == "tiktok",
+                    ExternalAuthorization.credential_ref == credential_ref,
+                    ExternalAuthorization.status == "active",
+                    ExternalAuthorization.id != authorization.id,
+                )
+            ).first()
+        )
+        if (
+            authorization_flow == "official"
+            and credential_ref.startswith("secret://tiktok/")
+            and not has_active_sibling
+        ):
+            token_store_path = get_settings().tiktok_token_store_file.strip()
+            if token_store_path:
+                FileTokenStore(token_store_path).delete(credential_ref)
+
+        now = utc_now()
+        authorization.status = "revoked"
+        authorization.revision += 1
+        authorization.updated_at = now
+        authorization.metadata_json = {
+            **(authorization.metadata_json or {}),
+            "revocation_source": "local_admin",
+            "revoked_at": now.isoformat(),
+            "revoked_by_user_id": user.id,
+        }
+        db.add(authorization)
+        db.commit()
+        db.refresh(authorization)
+
+    return TikTokAuthorizationRead(
+        id=authorization.id,
+        authorization_type=authorization.authorization_type,
+        subject_id=authorization.subject_id,
+        resource_id=authorization.resource_id,
+        scopes=list(authorization.scopes_json or []),
+        status=authorization.status,
+        expires_at=authorization.expires_at,
+    )
 
 
 def get_tiktok_overview(db: Session, user: User) -> TikTokOverview:

@@ -58,3 +58,10 @@
 - API/UI：新增管理员专用任务级人工对照接口，要求任务属于当前租户、处于复核/完成状态并明确 `external_writes=false`；重复请求幂等，不同结论不可覆盖；TikTok 页面展示质量统计并提供脱敏证据录入。
 - 验证：TikTok 后端专项 `40 passed`；前端全量 `63 files / 267 tests passed`；TypeScript/Vite build、变更范围 Ruff、compileall 通过。保留既有 React warning 与 chunk-size warning，不扩大修复范围。
 - 边界：本切片没有调用真实 TikTok API、没有启用外部写入，也没有把人工对照证据伪造为已完成的 14 天运行；真实 OAuth、远端撤销和业务/安全签字仍是独立发布门禁。
+
+## 2026-09-09 · 本地授权撤销闭环（完成）
+
+- 实现：新增管理员专用 `POST /api/enterprise/tiktok/authorizations/{authorization_id}/revoke`。撤销会将当前租户授权标记为 `revoked`、增加 revision、记录撤销来源/时间/操作者；后续 Connector 读取沿用 active 门禁并返回 409。
+- Token Store：官方授权仅在同一 `credential_ref` 没有其他 active 授权时删除本地 Token Store 记录；多店铺共享凭据不会因撤销单店误删，最后一个授权撤销时才清理。
+- 回归：覆盖 Token Store 单引用删除、单授权撤销后读取 fail-closed、共享凭据延迟清理；全 TikTok 后端专项 `43 passed`，相关 BusinessResource/Crossborder 回归 `11 passed`，Ruff 与 compileall 通过。
+- 边界：这是本地授权撤销，不代表 TikTok 远端 token revoke 已完成；真实远端撤销仍需官方 API 文档、凭据和受控 UAT 演练。
