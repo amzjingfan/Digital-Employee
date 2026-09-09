@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     tiktok_shadow_enabled: bool = False
     tiktok_shadow_tenant_ids: str = ""
     tiktok_shadow_interval_seconds: float = 15 * 60
+    # Release evidence is supplied by a separate trusted controller. The app
+    # receives only a public key and target-bound signed bundles.
+    tiktok_release_evidence_dir: str = ""
+    tiktok_release_evidence_public_key_file: str = ""
+    tiktok_release_evidence_key_id: str = ""
+    tiktok_release_target_commit: str = ""
+    tiktok_release_request_sha256: str = ""
     platform_admin_api_enabled: bool = False
     platform_admin_api_key: str = ""
     platform_database_url: str = ""

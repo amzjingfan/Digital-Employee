@@ -17,6 +17,7 @@ from app.db.models import (
 )
 from app.security.permissions import is_admin_user
 from app.tiktok.official import TikTokOfficialClient, TikTokOfficialError
+from app.tiktok.shadow import record_shadow_observation
 
 REQUIRED_SCOPE_BY_AUTHORIZATION = {
     "seller": "shop.read",
@@ -92,6 +93,11 @@ def read_tiktok_resource(
     resource_id: str,
     required_scope: str | None = None,
 ) -> TikTokConnectorRead:
+    settings = get_settings()
+    shadow_observation_enabled = bool(
+        settings.tiktok_shadow_enabled
+        and user.tenant_id in settings.tiktok_shadow_tenant_id_list
+    )
     expected_scope = REQUIRED_SCOPE_BY_AUTHORIZATION.get(authorization_type)
     if not expected_scope:
         raise HTTPException(status_code=422, detail="Unsupported TikTok authorization type")
@@ -135,13 +141,15 @@ def read_tiktok_resource(
     if authorization_flow == "official":
         if authorization_type not in OFFICIAL_READ_AUTHORIZATION_TYPES:
             raise HTTPException(status_code=503, detail="tiktok_connector_unavailable")
-        if get_settings().tiktok_connector_mode != "live":
+        if settings.tiktok_connector_mode != "live":
             raise HTTPException(status_code=503, detail="tiktok_connector_unavailable")
         try:
             permissions = TikTokOfficialClient().get_seller_permissions(
                 str(authorization.credential_ref or "")
             )
         except TikTokOfficialError as exc:
+            if shadow_observation_enabled:
+                record_shadow_observation(db, tenant_id=user.tenant_id, error=True)
             raise HTTPException(status_code=502, detail=exc.code) from exc
         connector_type = "tiktok.official.seller"
         data = {
@@ -157,7 +165,7 @@ def read_tiktok_resource(
             else 0,
         }
     else:
-        if get_settings().tiktok_connector_mode != "mock":
+        if settings.tiktok_connector_mode != "mock":
             raise HTTPException(status_code=503, detail="tiktok_connector_unavailable")
         connector_type = f"tiktok.mock.{authorization_type}"
         data = {
@@ -186,7 +194,10 @@ def read_tiktok_resource(
     sync.revision += 1
     sync.updated_at = now
     db.add(sync)
-    db.commit()
+    if authorization_flow == "official" and shadow_observation_enabled:
+        record_shadow_observation(db, tenant_id=user.tenant_id)
+    else:
+        db.commit()
     return TikTokConnectorRead(
         authorization_id=authorization.id,
         resource_id=resource.id,

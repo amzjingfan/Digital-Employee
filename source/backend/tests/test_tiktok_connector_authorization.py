@@ -17,6 +17,8 @@ from app.db.models import (
     utc_now,
 )
 from app.tiktok.connector import read_tiktok_resource
+from app.tiktok.official import TikTokOfficialError
+from app.tiktok.shadow import get_shadow_run, start_shadow_run
 
 
 def _session() -> Session:
@@ -304,3 +306,92 @@ def test_official_non_seller_read_fails_before_constructing_external_client(
         assert error.value.status_code == 503
         assert error.value.detail == "tiktok_connector_unavailable"
         _assert_no_successful_sync(db)
+
+
+def test_official_shadow_read_records_successful_observation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        _env_file=None,
+        tiktok_connector_mode="live",
+        tiktok_shadow_enabled=True,
+        tiktok_shadow_tenant_ids="tenant_demo",
+    )
+    monkeypatch.setattr("app.tiktok.connector.get_settings", lambda: settings)
+
+    class SuccessfulClient:
+        def get_seller_permissions(self, _credential_ref: str) -> dict[str, object]:
+            return {"permissions": ["shop.read"]}
+
+    monkeypatch.setattr("app.tiktok.connector.TikTokOfficialClient", SuccessfulClient)
+    with _session() as db:
+        admin = db.get(User, "admin")
+        assert admin is not None
+        resource = _resource(db, resource_type="store", resource_id="seller-shadow-success")
+        _authorization(
+            db,
+            authorization_type="seller",
+            resource_id=resource.id,
+            scope="shop.read",
+            expires_at=utc_now() + timedelta(hours=1),
+            flow="official",
+        )
+        start_shadow_run(db, admin)
+
+        result = read_tiktok_resource(
+            db,
+            user=admin,
+            authorization_type="seller",
+            resource_id=resource.id,
+        )
+
+        shadow = get_shadow_run(db, "tenant_demo")
+        assert result.source == "official"
+        assert shadow is not None
+        assert shadow.observation_count == 1
+        assert shadow.error_count == 0
+
+
+def test_official_shadow_read_records_connector_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        _env_file=None,
+        tiktok_connector_mode="live",
+        tiktok_shadow_enabled=True,
+        tiktok_shadow_tenant_ids="tenant_demo",
+    )
+    monkeypatch.setattr("app.tiktok.connector.get_settings", lambda: settings)
+
+    class FailingClient:
+        def get_seller_permissions(self, _credential_ref: str) -> dict[str, object]:
+            raise TikTokOfficialError("tiktok_test_failure", "test failure")
+
+    monkeypatch.setattr("app.tiktok.connector.TikTokOfficialClient", FailingClient)
+    with _session() as db:
+        admin = db.get(User, "admin")
+        assert admin is not None
+        resource = _resource(db, resource_type="store", resource_id="seller-shadow-error")
+        _authorization(
+            db,
+            authorization_type="seller",
+            resource_id=resource.id,
+            scope="shop.read",
+            expires_at=utc_now() + timedelta(hours=1),
+            flow="official",
+        )
+        start_shadow_run(db, admin)
+
+        with pytest.raises(HTTPException) as error:
+            read_tiktok_resource(
+                db,
+                user=admin,
+                authorization_type="seller",
+                resource_id=resource.id,
+            )
+
+        shadow = get_shadow_run(db, "tenant_demo")
+        assert error.value.status_code == 502
+        assert shadow is not None
+        assert shadow.observation_count == 1
+        assert shadow.error_count == 1

@@ -62,6 +62,7 @@ _EXPECTED_TIKTOK_PYTHON_FILES = {
     "backend/app/tiktok/mock_replay.py",
     "backend/app/tiktok/oauth.py",
     "backend/app/tiktok/official.py",
+    "backend/app/tiktok/release_evidence.py",
     "backend/app/tiktok/release_gate.py",
     "backend/app/tiktok/schema.py",
     "backend/app/tiktok/service.py",

@@ -20,3 +20,12 @@
 - 全量回归：后端为 2131 passed、22 failed、11 skipped；失败集中于既有广告执行禁用/配置、Windows symlink/process/timing、Bash/POSIX、harness/MCP/Markdown/runtime-lock 类别，未命中本次变更文件或 TikTok 测试。全量 Ruff 有 2168 个既有问题，变更范围 Ruff 为 clean。
 - 外部/环境门禁：i18n 检查因 87 个既有未翻译中文字符串失败；配置检查因净化快照缺少 `frontend-enterprise/.env.example` 失败；`npm ci` 报告 13 个既有依赖漏洞（1 low、3 moderate、9 high）。这些结果不由本切片绕过，且仍不构成真实 OAuth、MFA/TLS/密钥轮换、完整 14 个自然日影子运行、恢复演练或业务/产品/安全签字的替代证据。
 - 发布结论：本切片只提供“当前提交的可审计 TikTok 代码与 Skill 表面不含 Live 写入”的确定性证据；以上外部与组织验收完成前，P3-A 仍不可宣称生产放行。
+
+## 2026-09-09 · UAT 外部证据接入（完成）
+
+- 新增生产型运行配置检查：要求 PostgreSQL/RLS、关闭自动建表与 Demo Seed、关闭 Mock API、非默认应用密钥、全链路 HTTPS OIDC/Casdoor、Secure Cookie、TikTok Live 模式、受保护 Token Store 和显式影子租户。
+- 新增只读 Ed25519 证据验证器：证据包绑定租户、目标 Git commit、发布请求 SHA-256、签名 key id 和有效期；缺失、篡改、过期、错租户/错目标、符号链接或未知字段均失败关闭。
+- 证据包覆盖 Casdoor MFA 实测、TLS/证书实测、凭据轮换、PostgreSQL 恢复演练以及业务/安全/产品三方签核。应用只持有公钥，不提供签名私钥或本地“自助通过”接口。
+- 加固 14 天影子运行：仅官方 Live 读取计入观察，按 UTC 日期去重；必须覆盖至少 14 个日期、结束后有心跳、保持只读且零连接器错误。仅时间到期但证据不足的运行标记为 `expired`，不再自动完成。
+- 生产就绪卡消费上述配置与证据结果；真实 OAuth、14 个自然日影子运行和权威系统验真仍需在 UAT 环境执行，当前开发结果不构成生产放行。
+- 验证：TikTok 全域回归 60 passed；变更范围 Ruff、`compileall`、`git diff --check` 通过；Live-write-disabled CLI 仍为 `ok=true`（21 routes、12 Python files、12 read-only Skills）；未配置真实环境时新 CLI 以 exit 2 明确阻断。

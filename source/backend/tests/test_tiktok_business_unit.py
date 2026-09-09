@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from fastapi import HTTPException
 from sqlalchemy.pool import StaticPool
@@ -11,6 +13,7 @@ from app.db.models import (
     BusinessResourceScope,
     ExternalAuthorization,
     Tenant,
+    TikTokShadowRun,
     User,
 )
 from app.tiktok.service import (
@@ -157,10 +160,19 @@ def test_tiktok_production_readiness_does_not_count_mock_authorization(
     assert gates["casdoor_management"].status == "passed"
     assert gates["tiktok_official_authorization"].status == "blocked"
     assert "官方 App" in gates["tiktok_official_authorization"].detail
+    assert gates["runtime_security_config"].status == "blocked"
+    assert gates["identity_mfa"].status == "blocked"
+    assert gates["transport_tls"].status == "blocked"
+    assert gates["credential_rotation"].status == "blocked"
+    assert gates["postgres_restore"].status == "blocked"
+    assert gates["business_signoff"].status == "blocked"
+    assert gates["security_signoff"].status == "blocked"
+    assert gates["product_signoff"].status == "blocked"
     assert gates["agent_releases"].status == "waiting"
     assert gates["shadow_run"].status == "waiting"
     assert gates["external_writes"].status == "passed"
     assert "21 条冻结路由" in gates["external_writes"].detail
+    assert "12 个 TikTok Python 文件" in gates["external_writes"].detail
 
 
 def test_tiktok_production_readiness_blocks_when_live_write_audit_fails(
@@ -227,3 +239,29 @@ def test_tiktok_production_readiness_blocks_non_live_connector_mode(
     assert gates["tiktok_connector_mode"].status == "blocked"
     assert "live" in gates["tiktok_connector_mode"].detail
     assert gates["tiktok_official_authorization"].status == "passed"
+
+
+def test_tiktok_production_readiness_rejects_empty_completed_shadow_run() -> None:
+    started_at = datetime(2026, 8, 1, 3, 0, tzinfo=UTC).replace(tzinfo=None)
+    with _session() as db:
+        admin = _user("admin", "tenant_admin", account_role="admin")
+        db.add(admin)
+        db.add(
+            TikTokShadowRun(
+                tenant_id="tenant_demo",
+                status="completed",
+                started_at=started_at,
+                ends_at=started_at + timedelta(days=14),
+                last_heartbeat_at=started_at + timedelta(days=14),
+                started_by_user_id=admin.id,
+                baseline_json={"mode": "read_only", "writes_enabled": False},
+            )
+        )
+        db.commit()
+
+        readiness = get_tiktok_production_readiness(db, admin)
+
+    gate = {item.key: item for item in readiness.gates}["shadow_run"]
+    assert gate.status == "blocked"
+    assert "shadow_observation_count_below_14" in gate.detail
+    assert "shadow_observation_days_below_14" in gate.detail
