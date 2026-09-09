@@ -159,6 +159,44 @@ export async function uploadCreativeAsset<T>(
   return response.json() as Promise<T>;
 }
 
+export async function uploadPdcaSearchTermReport<T>(
+  options: {
+    tenantId: string;
+    adAccountResourceId: string;
+    storeResourceId?: string;
+    targetAcos: number;
+    currency: string;
+    idempotencyKey: string;
+    file: File;
+  },
+  signal?: AbortSignal,
+): Promise<T> {
+  const form = new FormData();
+  form.append('file', options.file);
+  const params = new URLSearchParams({
+    tenant_id: options.tenantId,
+    ad_account_resource_id: options.adAccountResourceId,
+    target_acos: String(options.targetAcos),
+    currency: options.currency,
+  });
+  if (options.storeResourceId) params.set('store_resource_id', options.storeResourceId);
+  const response = await fetch(`${API_BASE}/api/enterprise/work-tasks/advertising/pdca/search-term-runs?${params}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      ...authHeader(),
+      'Idempotency-Key': options.idempotencyKey,
+    },
+    body: form,
+    signal,
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new ApiError(response.status, text, response.statusText);
+  }
+  return response.json() as Promise<T>;
+}
+
 export async function streamChatTurn(
   body: Record<string, unknown>,
   onEvent: (item: StreamEvent) => void,

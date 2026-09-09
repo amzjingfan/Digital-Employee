@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { api, TENANT_ID } from '@/api/client';
+import { api, TENANT_ID, uploadPdcaSearchTermReport } from '@/api/client';
 import type { EnterpriseAuthUser } from '@/auth';
 import AppHeader from '@/components/AppHeader';
 import { notify } from '@/components/ui/app-toast';
@@ -73,7 +73,45 @@ type Usage = {
   reason: string;
   created_at: string;
 };
-type Tab = 'recommendations' | 'effects' | 'automation';
+type PdcaAction = {
+  id: string;
+  campaign_id: string;
+  ad_group_id: string;
+  search_term: string;
+  match_type: string;
+  action_type: string;
+  priority: string;
+  must_do_score: number;
+  rationale: string;
+  execution_hint: string;
+  status: 'suggested';
+  external_execution_allowed: false;
+};
+type PdcaRun = {
+  id: string;
+  attempt: number;
+  mode: 'rules_only';
+  state: 'succeeded';
+  target_acos: string;
+  currency: string;
+  source_row_count: number;
+  fact_count: number;
+  action_count: number;
+  quality_score: number;
+  mapping_version: string;
+  rule_version: string;
+  summary: {
+    spend?: string;
+    sales?: string;
+    orders?: number;
+    acos?: { value: string | null; reason: string | null };
+  };
+  warnings: string[];
+  external_execution_allowed: false;
+  top_actions: PdcaAction[];
+  created_at: string;
+};
+type Tab = 'pdca' | 'recommendations' | 'effects' | 'automation';
 
 const BASE = '/api/enterprise/work-tasks/advertising';
 const STATUS_STYLE: Record<string, string> = {
@@ -117,7 +155,13 @@ function number(value: number | undefined, digits = 2): string {
 }
 
 export default function AdvertisingGovernancePage({ currentUser, onLogout }: Props) {
-  const [tab, setTab] = useState<Tab>('recommendations');
+  const initialTab: Tab =
+    currentUser.role === 'admin' ||
+    currentUser.business_role === 'operations_supervisor' ||
+    currentUser.business_role === 'advertising_inspection_specialist'
+      ? 'pdca'
+      : 'recommendations';
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -126,6 +170,9 @@ export default function AdvertisingGovernancePage({ currentUser, onLogout }: Pro
   const [effects, setEffects] = useState<EffectFollowUp[]>([]);
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [usage, setUsage] = useState<Usage[]>([]);
+  const [pdcaRuns, setPdcaRuns] = useState<PdcaRun[]>([]);
+  const [pdcaFile, setPdcaFile] = useState<File | null>(null);
+  const [targetAcosPercent, setTargetAcosPercent] = useState('30');
   const tenantId = currentUser.tenant_id || TENANT_ID;
   const role = currentUser.business_role || '';
   const manager = currentUser.role === 'admin' || role === 'operations_supervisor';
@@ -151,15 +198,34 @@ export default function AdvertisingGovernancePage({ currentUser, onLogout }: Pro
       api.get(`${BASE}/automation-policies?tenant_id=${tenant}`),
       manager ? api.get(`${BASE}/automation-usage?tenant_id=${tenant}`) : Promise.resolve([]),
     ];
-    const [nextOverview, nextResources, nextRecommendations, nextEffects, nextPolicies, nextUsage] =
-      await Promise.all(calls);
+    const [
+      nextOverview,
+      nextResources,
+      nextRecommendations,
+      nextEffects,
+      nextPolicies,
+      nextUsage,
+    ] = await Promise.all(calls);
+    const scopedResources = nextResources.filter((item) =>
+      ['store', 'ad_account'].includes(item.resource_type),
+    );
+    const nextAdAccount = scopedResources.find((item) => item.resource_type === 'ad_account');
+    const nextStore = scopedResources.find((item) => item.resource_type === 'store');
+    const scope = new URLSearchParams({ tenant_id: tenantId });
+    if (nextAdAccount) scope.set('ad_account_resource_id', nextAdAccount.id);
+    if (nextStore) scope.set('store_resource_id', nextStore.id);
+    const nextPdcaRuns: PdcaRun[] =
+      canInspect && nextAdAccount
+        ? await api.get(`${BASE}/pdca/search-term-runs?${scope}`)
+        : [];
     setOverview(nextOverview);
-    setResources(nextResources.filter((item) => ['store', 'ad_account'].includes(item.resource_type)));
+    setResources(scopedResources);
     setRecommendations(nextRecommendations);
     setEffects(nextEffects);
     setPolicies(nextPolicies);
     setUsage(nextUsage);
-  }, [manager, tenantId]);
+    setPdcaRuns(nextPdcaRuns);
+  }, [canInspect, manager, tenantId]);
 
   useEffect(() => {
     void loadAll()
@@ -218,6 +284,41 @@ export default function AdvertisingGovernancePage({ currentUser, onLogout }: Pro
         recommendation_note: '在利润、价格、库存和促销约束内评估预算调整，并派发低效原因任务。',
       }),
     );
+  }
+
+  function createPdcaRun() {
+    if (!adAccount || !pdcaFile) {
+      notify.warning('请选择 CSV 并确认已授权广告账户');
+      return;
+    }
+    const targetAcos = Number(targetAcosPercent) / 100;
+    if (!Number.isFinite(targetAcos) || targetAcos <= 0 || targetAcos > 1) {
+      notify.warning('目标 ACoS 必须大于 0% 且不超过 100%');
+      return;
+    }
+    void mutate('生成规则诊断', async () => {
+      const digest = await crypto.subtle.digest('SHA-256', await pdcaFile.arrayBuffer());
+      const digestHex = Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join('');
+      const requestDigest = await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(
+          [tenantId, adAccount.id, store?.id || '', targetAcos, 'USD', digestHex].join('\n'),
+        ),
+      );
+      const requestDigestHex = Array.from(new Uint8Array(requestDigest), (value) =>
+        value.toString(16).padStart(2, '0'),
+      ).join('');
+      await uploadPdcaSearchTermReport<PdcaRun>({
+        tenantId,
+        adAccountResourceId: adAccount.id,
+        storeResourceId: store?.id,
+        targetAcos,
+        currency: 'USD',
+        idempotencyKey: `pdca-ui:${requestDigestHex}`,
+        file: pdcaFile,
+      });
+      setPdcaFile(null);
+    });
   }
 
   function requestAction(item: Recommendation) {
@@ -282,6 +383,12 @@ export default function AdvertisingGovernancePage({ currentUser, onLogout }: Pro
         : [],
     [overview],
   );
+  const tabs: Array<[Tab, string]> = [
+    ['recommendations', '巡检建议'],
+    ['effects', '效果复盘'],
+    ['automation', '自动化门禁'],
+  ];
+  if (canInspect) tabs.unshift(['pdca', '搜索词 PDCA']);
 
   return (
     <div className="min-h-screen bg-[#f6f7f9] text-[#252936]">
@@ -314,11 +421,7 @@ export default function AdvertisingGovernancePage({ currentUser, onLogout }: Pro
         </div>
 
         <div className="mt-5 flex flex-wrap gap-2">
-          {([
-            ['recommendations', '巡检建议'],
-            ['effects', '效果复盘'],
-            ['automation', '自动化门禁'],
-          ] as Array<[Tab, string]>).map(([key, label]) => (
+          {tabs.map(([key, label]) => (
             <button
               key={key}
               type="button"
@@ -334,6 +437,92 @@ export default function AdvertisingGovernancePage({ currentUser, onLogout }: Pro
         </div>
 
         {loading && <p className="py-20 text-center text-[13px] text-[#858b9c]">加载中…</p>}
+
+        {!loading && tab === 'pdca' && (
+          <section className="mt-5 rounded-[18px] border border-[#e6e8ee] bg-white p-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-[16px] font-semibold">Amazon 搜索词规则诊断</h2>
+                <p className="mt-1 text-[11px] text-[#858b9c]">
+                  上传 UTF-8 CSV 后按活动、广告组、投放、匹配类型与搜索词聚合；金额使用 Decimal 口径。
+                </p>
+              </div>
+              <div className="rounded-[10px] border border-[#b9c6dd] bg-[#f8faff] px-3 py-2 text-[10px] text-[#315ea8]">
+                rules_only · advice_only · 无 Amazon Ads 写入
+              </div>
+            </div>
+            {canInspect && (
+              <div className="mt-4 flex flex-wrap items-end gap-3 rounded-[14px] border border-dashed p-4">
+                <label className="text-[11px] text-[#505668]">
+                  搜索词 CSV
+                  <input
+                    className="mt-1 block max-w-[320px] text-[11px]"
+                    type="file"
+                    accept=".csv,text/csv"
+                    onChange={(event) => setPdcaFile(event.target.files?.[0] || null)}
+                  />
+                </label>
+                <label className="text-[11px] text-[#505668]">
+                  目标 ACoS（%）
+                  <input
+                    className="mt-1 block w-24 rounded-[8px] border px-3 py-2"
+                    type="number"
+                    min="0.01"
+                    max="100"
+                    step="0.01"
+                    value={targetAcosPercent}
+                    onChange={(event) => setTargetAcosPercent(event.target.value)}
+                  />
+                </label>
+                <Button disabled={Boolean(busy) || !pdcaFile || !adAccount} onClick={createPdcaRun}>
+                  上传并生成建议
+                </Button>
+              </div>
+            )}
+            <div className="mt-5 space-y-4">
+              {pdcaRuns.map((run) => (
+                <article key={run.id} className="rounded-[14px] border p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <strong className="text-[13px]">规则运行 {run.id}</strong>
+                      <p className="mt-1 text-[10px] text-[#858b9c]">
+                        {run.mapping_version} · {run.rule_version} · 第 {run.attempt} 次 · 质量分 {run.quality_score}
+                      </p>
+                    </div>
+                    <Pill value={run.state} />
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-center text-[10px] md:grid-cols-5">
+                    <div className="rounded-[8px] bg-[#f7f8fa] p-2">源行<br /><b>{run.source_row_count}</b></div>
+                    <div className="rounded-[8px] bg-[#f7f8fa] p-2">聚合事实<br /><b>{run.fact_count}</b></div>
+                    <div className="rounded-[8px] bg-[#f7f8fa] p-2">建议<br /><b>{run.action_count}</b></div>
+                    <div className="rounded-[8px] bg-[#f7f8fa] p-2">花费<br /><b>{run.summary.spend || '0'} {run.currency}</b></div>
+                    <div className="rounded-[8px] bg-[#f7f8fa] p-2">ACoS<br /><b>{run.summary.acos?.value ? `${number(Number(run.summary.acos.value) * 100, 1)}%` : run.summary.acos?.reason || '-'}</b></div>
+                  </div>
+                  <div className="mt-3 rounded-[10px] bg-[#fff9eb] p-3 text-[10px] text-[#805b12]">
+                    {run.warnings.join(' · ')}
+                  </div>
+                  <div className="mt-3 grid gap-2 lg:grid-cols-2">
+                    {run.top_actions.map((action) => (
+                      <div key={action.id} className="rounded-[10px] border p-3">
+                        <div className="flex justify-between gap-2">
+                          <strong className="text-[11px]">{action.search_term} · {action.action_type}</strong>
+                          <span className="text-[10px] text-[#667085]">{action.must_do_score}</span>
+                        </div>
+                        <p className="mt-2 text-[10px] text-[#667085]">{action.rationale}</p>
+                        <p className="mt-2 text-[10px] text-[#315ea8]">{action.execution_hint}</p>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+            {pdcaRuns.length === 0 && (
+              <p className="py-12 text-center text-[12px] text-[#858b9c]">
+                暂无搜索词规则运行；上传合成或已授权的 Amazon 搜索词 CSV 开始诊断。
+              </p>
+            )}
+          </section>
+        )}
 
         {!loading && tab === 'recommendations' && (
           <section className="mt-5 rounded-[18px] border border-[#e6e8ee] bg-white p-5">
