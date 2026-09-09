@@ -1,5 +1,23 @@
 # workforce/platform-governance 开发日志
 
+## 2026-09-09 · A2A 客户端恢复租户上下文门禁（开始）
+
+- 基线：`26b630b`；分支：`workforce/platform-governance`；开始时工作树干净。
+- 已核实现状：A2A 客户端恢复扫描会跨租户列出可恢复记录，随后每个 `_recover_one` 线程按 `run_id` 读取任务和工具并调用 `ToolExecutor`，但恢复 Session 未在识别任务租户后绑定 PostgreSQL RLS 上下文。
+- 选定切片：在 `_recover_one` 读取可信 `A2ATaskRun.tenant_id` 后立即绑定 Session 租户上下文，使工具读取、失败状态写入和恢复执行共享同一租户边界；保留跨租户恢复扫描能力。
+- 业务意义：避免应用重启后的 A2A 恢复线程因脱离原请求上下文而以无租户事务读取工具或写入任务状态。
+- 非目标：不改变 A2A 协议、恢复状态机、工具参数、外部请求、扫描调度或生产凭据；不在本切片覆盖 Codex A2A 服务端进程的全部 Session。
+- 风险：恢复扫描本身必须继续支持跨租户 worker；绑定必须发生在工具查询和任何失败写入前，测试不得触发真实外部工具。
+- 验证计划：先运行 A2A/Tool Executor 基线；实现后运行新增恢复回归、Tool Executor 套件、Ruff、compileall，并更新本分支开发日志记录结果。
+
+## 2026-09-09 · A2A 客户端恢复租户上下文门禁（完成）
+
+- 改动：`backend/app/tools/a2a_recovery.py` 在恢复线程读取 `A2ATaskRun` 后立即绑定 `run.tenant_id`；工具缺失或工具租户不一致时拒绝执行并写入失败状态，避免 SQLite 兼容路径绕过租户校验。
+- 回归：新增 `backend/tests/test_a2a_recovery.py`，覆盖恢复执行上下文绑定及跨租户工具拒绝，测试使用假的 `ToolExecutor`，不触发真实外部 A2A 请求。
+- 聚焦验证：`.venv\\Scripts\\python.exe -m pytest tests/test_a2a_recovery.py tests/test_tool_executor.py -q` -> `24 passed`；Ruff `--select I,E9,F`（A2A Recovery 与测试）通过；相关 `compileall` 与 `git diff --check` 通过。
+- 安全边界：未改变 A2A 协议、恢复调度、工具参数或外部网络调用；未加入密钥、Token、真实外部载荷或生产写路径。
+- 剩余风险与门禁：恢复扫描仍需跨租户列出待恢复记录，这是 worker 级明确边界；Codex A2A 服务端进程的多处 Session、团队唤醒扫描和隔离 PostgreSQL 真实 RLS 验收仍待后续治理。
+
 ## 2026-09-09 · 公共 Job 执行器租户上下文门禁（开始）
 
 - 基线：`8d2a8e2`；分支：`workforce/platform-governance`；开始时工作树干净。

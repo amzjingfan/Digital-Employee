@@ -4,11 +4,10 @@ import threading
 
 from sqlmodel import Session, select
 
-from app.db import engine
+from app.db import engine, set_tenant_context
 from app.db.models import A2ATaskRun, Tool, utc_now
 from app.tools.tool_executor import ToolExecutor
 from app.tools.tool_schema import ToolCall
-
 
 _RECOVERABLE_STATES = {"submitted", "working"}
 
@@ -39,6 +38,9 @@ def _recover_one(run_id: str) -> None:
         run = db.get(A2ATaskRun, run_id)
         if run is None or run.direction != "client" or run.status not in _RECOVERABLE_STATES:
             return
+        # Recovery threads are detached from the request Session. Bind the
+        # durable run's trusted tenant before reading its tool or writing state.
+        set_tenant_context(db, run.tenant_id)
         if not run.tool_id or not run.invocation_id:
             run.status = "failed"
             run.error_json = {
@@ -51,11 +53,12 @@ def _recover_one(run_id: str) -> None:
             db.commit()
             return
         tool = db.get(Tool, run.tool_id)
-        if tool is None:
+        if tool is None or tool.tenant_id != run.tenant_id:
             run.status = "failed"
             run.error_json = {
                 "code": "A2A_RECOVERY_TOOL_MISSING",
                 "message": "A2A 恢复记录关联的工具已不存在。",
+                "tool_tenant_mismatch": bool(tool and tool.tenant_id != run.tenant_id),
             }
             run.finished_at = utc_now()
             run.updated_at = utc_now()
