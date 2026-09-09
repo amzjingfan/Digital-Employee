@@ -31,6 +31,7 @@ p, operations_supervisor, *, /api/enterprise/brands*, GET, allow
 p, operations_supervisor, *, /api/enterprise/business-action-requests*, POST, allow
 p, operations_supervisor, *, /api/enterprise/business-approvals*, POST, allow
 p, operations_supervisor, *, /api/enterprise/business-executions*, (GET|POST), allow
+p, operations_supervisor, *, /api/enterprise/bi*, (GET|POST), allow
 p, operations_supervisor, *, /api/enterprise/operations-reports*, (GET|POST), allow
 p, operations_supervisor, *, /api/enterprise/work-tasks*, (GET|POST), allow
 p, operations_supervisor, *, /api/enterprise/work-tasks/advertising/automation-policies, PUT, allow
@@ -105,6 +106,11 @@ p, advertising_inspection_specialist, *, /api/enterprise/business-resources*, GE
 p, advertising_inspection_specialist, *, /api/enterprise/brands*, GET, allow
 p, advertising_inspection_specialist, *, /api/enterprise/business-action-requests*, (GET|POST), allow
 p, advertising_inspection_specialist, *, /api/enterprise/business-executions*, GET, allow
+p, advertising_inspection_specialist, *, /api/enterprise/bi*, GET, allow
+
+# Logistics and procurement specialists consume BI inventory and fulfillment metrics read-only.
+p, logistics_exception_specialist, *, /api/enterprise/bi*, GET, allow
+p, procurement_specialist, *, /api/enterprise/bi*, GET, allow
 
 # Designers curate visual knowledge assets and collaborate through team tasks.
 p, designer, *, /api/enterprise/agents*, GET, allow

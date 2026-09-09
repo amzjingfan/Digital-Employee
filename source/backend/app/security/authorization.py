@@ -42,6 +42,7 @@ ENTERPRISE_CAPABILITY_OBJECTS: dict[str, str] = {
     "authorization": "/api/enterprise/authorization-decisions",
     "brands": "/api/enterprise/brands",
     "business_resources": "/api/enterprise/business-resources",
+    "bi": "/api/enterprise/bi",
     "operations_reports": "/api/enterprise/operations-reports",
     "work_tasks": "/api/enterprise/work-tasks",
     "tiktok": "/api/enterprise/tiktok",

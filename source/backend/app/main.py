@@ -15,6 +15,7 @@ from app.api import (
     app_updates,
     auth,
     authorization,
+    bi,
     brands,
     business_executions,
     business_resources,
@@ -205,6 +206,7 @@ app.include_router(business_resources.request_router, dependencies=enterprise_pe
 app.include_router(business_resources.approval_router, dependencies=enterprise_permissions)
 app.include_router(tiktok.router, dependencies=enterprise_permissions)
 app.include_router(business_executions.router, dependencies=enterprise_permissions)
+app.include_router(bi.router, dependencies=enterprise_permissions)
 app.include_router(operations_reports.router, dependencies=enterprise_permissions)
 app.include_router(crossborder_operations.router, dependencies=enterprise_permissions)
 app.include_router(product_lifecycle.router, dependencies=enterprise_permissions)

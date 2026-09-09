@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -12,6 +13,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    Numeric,
     UniqueConstraint,
 )
 from sqlmodel import Field, SQLModel
@@ -1182,6 +1184,360 @@ class OperationsReportComment(SQLModel, table=True):
     body: str
     detail_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
+class BiIngestionBatch(SQLModel, table=True):
+    """Auditable BI payload attempt; exact payloads are idempotent within one source window."""
+
+    __tablename__ = "bi_ingestion_batches"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_bi_ingestion_batch_tenant_id"),
+        UniqueConstraint(
+            "tenant_id",
+            "id",
+            "source_key",
+            name="uq_bi_ingestion_batch_source_identity",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "source_key",
+            "window_start",
+            "window_end",
+            "input_digest",
+            name="uq_bi_ingestion_batch_payload",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'succeeded', 'rejected', 'superseded')",
+            name="bi_ingestion_batches_status_check",
+        ),
+        CheckConstraint(
+            "quality_status IN ('pending', 'passed', 'failed')",
+            name="bi_ingestion_batches_quality_status_check",
+        ),
+        CheckConstraint(
+            "snapshot_mode IN ('full_window', 'incremental')",
+            name="bi_ingestion_batches_snapshot_mode_check",
+        ),
+        CheckConstraint(
+            "window_end > window_start",
+            name="bi_ingestion_batches_window_check",
+        ),
+        CheckConstraint(
+            "row_count >= 0 AND accepted_count >= 0 AND rejected_count >= 0",
+            name="bi_ingestion_batches_count_check",
+        ),
+        Index(
+            "ix_bi_ingestion_batches_tenant_source_window",
+            "tenant_id",
+            "source_key",
+            "window_start",
+            "window_end",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("bibatch"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    source_key: str = Field(index=True)
+    window_start: datetime = Field(index=True)
+    window_end: datetime = Field(index=True)
+    business_timezone: str
+    snapshot_mode: str = Field(default="full_window", index=True)
+    input_digest: str = Field(index=True)
+    status: str = Field(default="pending", index=True)
+    quality_status: str = Field(default="pending", index=True)
+    row_count: int = Field(default=0)
+    accepted_count: int = Field(default=0)
+    rejected_count: int = Field(default=0)
+    expected_row_count: Optional[int] = None
+    expected_gross_sales: Optional[Decimal] = Field(
+        default=None,
+        sa_column=Column(Numeric(24, 6), nullable=True),
+    )
+    expected_ad_spend: Optional[Decimal] = Field(
+        default=None,
+        sa_column=Column(Numeric(24, 6), nullable=True),
+    )
+    actual_gross_sales: Decimal = Field(
+        default=Decimal("0"),
+        sa_column=Column(Numeric(24, 6), nullable=False),
+    )
+    actual_ad_spend: Decimal = Field(
+        default=Decimal("0"),
+        sa_column=Column(Numeric(24, 6), nullable=False),
+    )
+    reconciliation_tolerance: Decimal = Field(
+        default=Decimal("0.01"),
+        sa_column=Column(Numeric(24, 6), nullable=False),
+    )
+    metric_definition_version: str = Field(default="1.0.0")
+    latest_source_observed_at: Optional[datetime] = Field(default=None, index=True)
+    created_by_user_id: str = Field(index=True)
+    created_at: datetime = Field(default_factory=utc_now_aware, index=True)
+    completed_at: Optional[datetime] = Field(default=None, index=True)
+
+
+class BiDataQualityCheck(SQLModel, table=True):
+    """Append-only deterministic quality and reconciliation evidence for one BI batch."""
+
+    __tablename__ = "bi_data_quality_checks"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_bi_quality_check_tenant_id"),
+        UniqueConstraint(
+            "tenant_id",
+            "batch_id",
+            "check_code",
+            name="uq_bi_quality_check_batch_code",
+        ),
+        CheckConstraint(
+            "status IN ('passed', 'failed', 'skipped')",
+            name="bi_data_quality_checks_status_check",
+        ),
+        CheckConstraint(
+            "severity IN ('info', 'warning', 'error')",
+            name="bi_data_quality_checks_severity_check",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "batch_id"],
+            ["bi_ingestion_batches.tenant_id", "bi_ingestion_batches.id"],
+            name="bi_quality_checks_batch_fk",
+            ondelete="RESTRICT",
+        ),
+        Index("ix_bi_quality_checks_batch_status", "batch_id", "status"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("biquality"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    batch_id: str = Field(index=True)
+    check_code: str = Field(index=True)
+    status: str = Field(index=True)
+    severity: str = Field(default="error", index=True)
+    observed_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    expected_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    detail: str
+    created_at: datetime = Field(default_factory=utc_now_aware, index=True)
+
+
+class BiDailyCommerceFact(SQLModel, table=True):
+    """Versioned source fact at a declared daily business grain; prior versions remain traceable."""
+
+    __tablename__ = "bi_daily_commerce_facts"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_bi_daily_fact_tenant_id"),
+        UniqueConstraint(
+            "tenant_id",
+            "source_key",
+            "external_id",
+            "source_version",
+            name="uq_bi_daily_fact_source_version",
+        ),
+        CheckConstraint(
+            "entity_type IN ('store', 'asin', 'sku')",
+            name="bi_daily_facts_entity_type_check",
+        ),
+        CheckConstraint(
+            "gross_sales >= 0 AND refund_amount >= 0 AND ad_spend >= 0 "
+            "AND attributed_ad_sales >= 0",
+            name="bi_daily_facts_amount_check",
+        ),
+        CheckConstraint(
+            "impressions >= 0 AND clicks >= 0 AND orders >= 0 "
+            "AND available_inventory >= 0 AND rolling_units_sold >= 0 "
+            "AND rolling_window_days > 0",
+            name="bi_daily_facts_count_check",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "batch_id", "source_key"],
+            [
+                "bi_ingestion_batches.tenant_id",
+                "bi_ingestion_batches.id",
+                "bi_ingestion_batches.source_key",
+            ],
+            name="bi_daily_facts_batch_fk",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "replaces_fact_id"],
+            ["bi_daily_commerce_facts.tenant_id", "bi_daily_commerce_facts.id"],
+            name="bi_daily_facts_replaces_fk",
+            ondelete="RESTRICT",
+        ),
+        Index(
+            "ix_bi_daily_facts_current_grain",
+            "tenant_id",
+            "source_key",
+            "business_date",
+            "brand_id",
+            "store_id",
+            "is_current",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("bifact"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    batch_id: str = Field(index=True)
+    source_key: str = Field(index=True)
+    external_id: str = Field(index=True)
+    source_version: str = Field(index=True)
+    content_digest: str = Field(index=True)
+    replaces_fact_id: Optional[str] = Field(default=None, index=True)
+    is_current: bool = Field(default=True, index=True)
+    business_date: date = Field(index=True)
+    brand_id: str = Field(index=True)
+    store_id: str = Field(index=True)
+    platform: str = Field(index=True)
+    entity_type: str = Field(index=True)
+    entity_id: str = Field(index=True)
+    currency: str = Field(index=True)
+    gross_sales: Decimal = Field(sa_column=Column(Numeric(24, 6), nullable=False))
+    refund_amount: Decimal = Field(sa_column=Column(Numeric(24, 6), nullable=False))
+    ad_spend: Decimal = Field(sa_column=Column(Numeric(24, 6), nullable=False))
+    attributed_ad_sales: Decimal = Field(
+        sa_column=Column(Numeric(24, 6), nullable=False)
+    )
+    impressions: int = Field(default=0)
+    clicks: int = Field(default=0)
+    orders: int = Field(default=0)
+    available_inventory: int = Field(default=0)
+    rolling_units_sold: int = Field(default=0)
+    rolling_window_days: int = Field(default=30)
+    source_observed_at: datetime = Field(index=True)
+    created_at: datetime = Field(default_factory=utc_now_aware, index=True)
+
+
+class BiMetricDefinition(SQLModel, table=True):
+    """Tenant-scoped immutable version of a deterministic metric contract."""
+
+    __tablename__ = "bi_metric_definitions"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_bi_metric_definition_tenant_id"),
+        UniqueConstraint(
+            "tenant_id",
+            "id",
+            "code",
+            "version",
+            name="uq_bi_metric_definition_identity",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "code",
+            "version",
+            name="uq_bi_metric_definition_version",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'retired')",
+            name="bi_metric_definitions_status_check",
+        ),
+        CheckConstraint(
+            "attribution_window_days > 0",
+            name="bi_metric_definitions_attribution_check",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("bimetricdef"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    code: str = Field(index=True)
+    version: str = Field(index=True)
+    name: str
+    formula: str
+    grain: str
+    business_timezone: str
+    currency_policy: str
+    attribution_window_days: int = Field(default=7)
+    status: str = Field(default="active", index=True)
+    effective_from: datetime = Field(default_factory=utc_now_aware, index=True)
+    created_by_user_id: str = Field(index=True)
+    created_at: datetime = Field(default_factory=utc_now_aware, index=True)
+
+
+class BiDailyMetric(SQLModel, table=True):
+    """Rebuildable daily aggregate that retains batch, definition and fact selection evidence."""
+
+    __tablename__ = "bi_daily_metrics"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_bi_daily_metric_tenant_id"),
+        UniqueConstraint(
+            "tenant_id",
+            "batch_id",
+            "metric_definition_id",
+            "business_date",
+            "entity_type",
+            "entity_id",
+            "currency",
+            name="uq_bi_daily_metric_batch_grain",
+        ),
+        CheckConstraint(
+            "freshness_status IN ('fresh', 'stale', 'unknown')",
+            name="bi_daily_metrics_freshness_check",
+        ),
+        CheckConstraint(
+            "entity_type IN ('tenant', 'store')",
+            name="bi_daily_metrics_entity_type_check",
+        ),
+        CheckConstraint(
+            "(value IS NOT NULL AND null_reason IS NULL) "
+            "OR (value IS NULL AND null_reason IS NOT NULL)",
+            name="bi_daily_metrics_value_reason_check",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "batch_id", "source_key"],
+            [
+                "bi_ingestion_batches.tenant_id",
+                "bi_ingestion_batches.id",
+                "bi_ingestion_batches.source_key",
+            ],
+            name="bi_daily_metrics_batch_fk",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            [
+                "tenant_id",
+                "metric_definition_id",
+                "metric_code",
+                "metric_definition_version",
+            ],
+            [
+                "bi_metric_definitions.tenant_id",
+                "bi_metric_definitions.id",
+                "bi_metric_definitions.code",
+                "bi_metric_definitions.version",
+            ],
+            name="bi_daily_metrics_definition_fk",
+            ondelete="RESTRICT",
+        ),
+        Index(
+            "ix_bi_daily_metrics_current_query",
+            "tenant_id",
+            "business_date",
+            "metric_code",
+            "entity_type",
+            "is_current",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("bimetric"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    batch_id: str = Field(index=True)
+    metric_definition_id: str = Field(index=True)
+    metric_code: str = Field(index=True)
+    metric_definition_version: str = Field(index=True)
+    business_date: date = Field(index=True)
+    source_key: str = Field(index=True)
+    brand_id: str = Field(default="", index=True)
+    store_id: str = Field(default="", index=True)
+    platform: str = Field(default="", index=True)
+    entity_type: str = Field(index=True)
+    entity_id: str = Field(index=True)
+    currency: str = Field(default="")
+    value: Optional[Decimal] = Field(
+        default=None,
+        sa_column=Column(Numeric(24, 6), nullable=True),
+    )
+    null_reason: Optional[str] = None
+    freshness_status: str = Field(default="unknown", index=True)
+    latest_source_observed_at: Optional[datetime] = Field(default=None, index=True)
+    evidence_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    is_current: bool = Field(default=True, index=True)
+    created_at: datetime = Field(default_factory=utc_now_aware, index=True)
 
 
 class WorkTask(SQLModel, table=True):

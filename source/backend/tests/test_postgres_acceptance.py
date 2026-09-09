@@ -428,3 +428,93 @@ def test_advertising_governance_has_rls_and_immutable_decision_evidence() -> Non
             "automation_usage_ledger",
         ):
             assert unscoped.execute(text(f"SELECT count(*) FROM {table}")).scalar_one() == 0
+
+
+def test_bi_pipeline_has_composite_tenant_fks_rls_and_append_only_quality() -> None:
+    suffix = uuid4().hex[:12]
+    batch_id = f"bibatch_accept_{suffix}"
+    quality_id = f"biquality_accept_{suffix}"
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            connection.execute(text("SELECT set_config('app.tenant_id', 'tenant_demo', true)"))
+            user_id = connection.execute(
+                text("SELECT id FROM users ORDER BY created_at LIMIT 1")
+            ).scalar_one()
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO bi_ingestion_batches (
+                      id, tenant_id, source_key, window_start, window_end,
+                      business_timezone, input_digest, status, quality_status,
+                      row_count, accepted_count, created_by_user_id, created_at, completed_at
+                    ) VALUES (
+                      :id, 'tenant_demo', 'acceptance.manual', now() - interval '1 day', now(),
+                      'UTC', :digest, 'succeeded', 'passed', 0, 0, :user_id, now(), now()
+                    )
+                    """
+                ),
+                {"id": batch_id, "digest": f"sha256:{suffix}", "user_id": user_id},
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO bi_data_quality_checks (
+                      id, tenant_id, batch_id, check_code, status, severity,
+                      observed_json, expected_json, detail, created_at
+                    ) VALUES (
+                      :id, 'tenant_demo', :batch_id, 'acceptance_check', 'passed', 'info',
+                      '{}'::jsonb, '{}'::jsonb, 'acceptance evidence', now()
+                    )
+                    """
+                ),
+                {"id": quality_id, "batch_id": batch_id},
+            )
+            savepoint = connection.begin_nested()
+            with pytest.raises(DBAPIError, match="append-only"):
+                connection.execute(
+                    text(
+                        "UPDATE bi_data_quality_checks SET detail='tampered' WHERE id=:id"
+                    ),
+                    {"id": quality_id},
+                )
+            savepoint.rollback()
+
+            constraint_definitions = connection.execute(
+                text(
+                    """
+                    SELECT pg_get_constraintdef(oid)
+                    FROM pg_constraint
+                    WHERE conname IN (
+                      'bi_quality_checks_batch_fk',
+                      'bi_daily_facts_batch_fk',
+                      'bi_daily_facts_replaces_fk',
+                      'bi_daily_metrics_batch_fk',
+                      'bi_daily_metrics_definition_fk'
+                    )
+                    ORDER BY conname
+                    """
+                )
+            ).scalars().all()
+            assert len(constraint_definitions) == 5
+            assert all("tenant_id" in definition for definition in constraint_definitions)
+            assert connection.execute(
+                text(
+                    "SELECT count(*) FROM pg_indexes WHERE indexname IN ("
+                    "'uq_bi_ingestion_batches_succeeded_window', "
+                    "'uq_bi_daily_facts_current_external', "
+                    "'uq_bi_daily_metrics_current_grain') AND indexdef LIKE '%WHERE%'"
+                )
+            ).scalar_one() == 3
+        finally:
+            transaction.rollback()
+
+    with engine.connect() as unscoped:
+        for table in (
+            "bi_ingestion_batches",
+            "bi_data_quality_checks",
+            "bi_daily_commerce_facts",
+            "bi_metric_definitions",
+            "bi_daily_metrics",
+        ):
+            assert unscoped.execute(text(f"SELECT count(*) FROM {table}")).scalar_one() == 0
