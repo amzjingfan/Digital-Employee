@@ -3370,6 +3370,169 @@ class IntegrationHealthEvent(SQLModel, table=True):
     occurred_at: datetime = Field(default_factory=utc_now, index=True)
 
 
+class OffsiteChannelAsset(SQLModel, table=True):
+    """Tenant and store scoped offsite channel identity with reviewed lifecycle state."""
+
+    __tablename__ = "offsite_channel_assets"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "idempotency_key",
+            name="uq_offsite_channel_asset_idempotency",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "brand_key",
+            "asset_type",
+            "stable_external_digest",
+            name="uq_offsite_channel_asset_identity",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "id",
+            name="uq_offsite_channel_asset_tenant_id",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "brand_key",
+            "id",
+            name="uq_offsite_channel_asset_tenant_brand_id",
+        ),
+        CheckConstraint(
+            "asset_type IN ('facebook_group', 'deal_site', 'creator', "
+            "'media_outlet', 'author', 'affiliate', 'community')",
+            name="offsite_channel_assets_type_check",
+        ),
+        CheckConstraint(
+            "lifecycle_status IN ('discovered', 'candidate', 'verifying', 'verified', "
+            "'piloting', 'active', 'needs_review', 'paused', 'rejected', 'archived')",
+            name="offsite_channel_assets_status_check",
+        ),
+        CheckConstraint(
+            "tier IN ('unassigned', 'tier_1', 'tier_2', 'tier_3')",
+            name="offsite_channel_assets_tier_check",
+        ),
+        Index(
+            "ix_offsite_channel_assets_tenant_status_updated",
+            "tenant_id",
+            "lifecycle_status",
+            "updated_at",
+        ),
+        Index(
+            "ix_offsite_channel_assets_tenant_store",
+            "tenant_id",
+            "store_resource_id",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("offsite_channel"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    brand_key: str = Field(index=True)
+    store_resource_id: str = Field(index=True)
+    store_code: str = Field(index=True)
+    asset_type: str = Field(index=True)
+    canonical_name: str
+    stable_external_ref: str
+    stable_external_digest: str = Field(index=True)
+    region: str = Field(index=True)
+    language: str = Field(index=True)
+    categories_json: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    tier: str = Field(default="unassigned", index=True)
+    lifecycle_status: str = Field(default="discovered", index=True)
+    owner_user_id: str = Field(index=True)
+    idempotency_key: str = Field(index=True)
+    creation_digest: str = Field(index=True)
+    last_verified_at: Optional[datetime] = Field(default=None, index=True)
+    reviewed_by_user_id: Optional[str] = Field(default=None, index=True)
+    review_reason: Optional[str] = None
+    reviewed_at: Optional[datetime] = Field(default=None, index=True)
+    version: int = Field(default=0)
+    created_by_user_id: str = Field(index=True)
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+    updated_at: datetime = Field(default_factory=utc_now, index=True)
+
+
+class OffsiteChannelEvidence(SQLModel, table=True):
+    """Append-only sourced evidence used to review one offsite channel asset."""
+
+    __tablename__ = "offsite_channel_evidence"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "asset_id",
+            "idempotency_key",
+            name="uq_offsite_channel_evidence_idempotency",
+        ),
+        CheckConstraint(
+            "evidence_class IN ('observed_fact', 'source_claim', 'human_judgment')",
+            name="offsite_channel_evidence_class_check",
+        ),
+        CheckConstraint(
+            "source_type IN ('public_web', 'authorized_api', 'authorized_import', "
+            "'business_record', 'human_observation')",
+            name="offsite_channel_evidence_source_check",
+        ),
+        CheckConstraint(
+            "confidence >= 0 AND confidence <= 1",
+            name="offsite_channel_evidence_confidence_check",
+        ),
+        Index(
+            "ix_offsite_channel_evidence_asset_type_captured",
+            "asset_id",
+            "evidence_type",
+            "captured_at",
+        ),
+        Index(
+            "ix_offsite_channel_evidence_tenant_expiry",
+            "tenant_id",
+            "expires_at",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("offsite_evidence"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    brand_key: str = Field(index=True)
+    asset_id: str = Field(index=True)
+    evidence_type: str = Field(index=True)
+    evidence_class: str = Field(index=True)
+    value_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    source_type: str = Field(index=True)
+    source_record_id: str = Field(index=True)
+    ingestion_batch_id: Optional[str] = Field(default=None, index=True)
+    captured_at: datetime = Field(index=True)
+    expires_at: datetime = Field(index=True)
+    confidence: float
+    collector_type: str = Field(default="human", index=True)
+    collector_id: str = Field(index=True)
+    rule_version: str = Field(index=True)
+    raw_hash: str = Field(index=True)
+    idempotency_key: str = Field(index=True)
+    payload_digest: str = Field(index=True)
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
+class OffsiteChannelEvent(SQLModel, table=True):
+    """Append-only audit event for channel identity, evidence and human reviews."""
+
+    __tablename__ = "offsite_channel_events"
+    __table_args__ = (
+        Index("ix_offsite_channel_events_asset_time", "asset_id", "occurred_at"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("offsite_channel_event"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    brand_key: str = Field(index=True)
+    asset_id: str = Field(index=True)
+    event_type: str = Field(index=True)
+    actor_type: str = Field(default="human", index=True)
+    actor_id: Optional[str] = Field(default=None, index=True)
+    actor_business_role: Optional[str] = Field(default=None, index=True)
+    from_status: Optional[str] = Field(default=None, index=True)
+    to_status: Optional[str] = Field(default=None, index=True)
+    detail_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    occurred_at: datetime = Field(default_factory=utc_now, index=True)
+
+
 class ListingRuleSet(SQLModel, table=True):
     """Immutable, reviewed platform rule version used by listing checks."""
 
