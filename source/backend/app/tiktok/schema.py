@@ -59,6 +59,19 @@ class TikTokOfficialAuthorizationStart(BaseModel):
     return_to: str = Field(default="/enterprise/tiktok", max_length=200)
 
 
+class TikTokShadowQualityRead(BaseModel):
+    reviewed_count: int
+    adopted_count: int
+    needs_revision_count: int
+    rejected_count: int
+    guardrail_issue_count: int
+    adoption_rate: float
+    covered_sop_ids: list[str] = Field(default_factory=list)
+    missing_sop_ids: list[str] = Field(default_factory=list)
+    minimum_reviewed_count: int
+    passed: bool
+
+
 class TikTokShadowRunRead(BaseModel):
     id: str
     status: str
@@ -68,6 +81,30 @@ class TikTokShadowRunRead(BaseModel):
     observation_count: int
     error_count: int
     baseline: dict[str, Any]
+    quality: TikTokShadowQualityRead
+
+
+class TikTokShadowEvaluationCreate(BaseModel):
+    task_id: str = Field(min_length=3, max_length=100)
+    verdict: Literal["adopted", "needs_revision", "rejected"]
+    issue_category: Literal[
+        "none",
+        "severe_miss",
+        "unauthorized_access",
+        "false_claim",
+        "unapproved_external_write",
+        "other",
+    ] = "none"
+    summary: str = Field(min_length=3, max_length=500)
+
+
+class TikTokShadowEvaluationRead(BaseModel):
+    shadow_run_id: str
+    task_id: str
+    verdict: Literal["adopted", "needs_revision", "rejected"]
+    issue_category: str
+    recorded_at: datetime
+    quality: TikTokShadowQualityRead
 
 
 class TikTokProductionGateRead(BaseModel):

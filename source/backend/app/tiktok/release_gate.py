@@ -27,6 +27,7 @@ _APPROVED_TIKTOK_ROUTES = {
     ("GET", "/release-preflight"),
     ("GET", "/shadow/status"),
     ("POST", "/authorizations/exchange"),
+    ("POST", "/authorizations/{authorization_id}/revoke"),
     ("POST", "/authorizations/official/start"),
     ("POST", "/authorizations/start"),
     ("POST", "/bootstrap"),
@@ -36,6 +37,7 @@ _APPROVED_TIKTOK_ROUTES = {
     ("POST", "/mock-sop-replays/execute-sandbox"),
     ("POST", "/mock-sop-replays/run"),
     ("POST", "/releases/publish"),
+    ("POST", "/shadow/evaluations"),
     ("POST", "/shadow/heartbeat"),
     ("POST", "/shadow/start"),
 }

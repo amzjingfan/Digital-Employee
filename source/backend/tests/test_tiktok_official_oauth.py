@@ -4,6 +4,7 @@ import json
 
 import httpx
 import pytest
+from fastapi import HTTPException
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -26,6 +27,7 @@ from app.tiktok.official import (
     start_official_authorization,
 )
 from app.tiktok.schema import TikTokOfficialAuthorizationStart
+from app.tiktok.service import revoke_tiktok_authorization
 
 
 def _session() -> Session:
@@ -210,6 +212,114 @@ def test_file_token_store_round_trips_encrypted_values(tmp_path) -> None:
         "access_token": "access",
         "refresh_token": "refresh",
     }
+
+
+def test_file_token_store_deletes_one_credential_ref(tmp_path) -> None:
+    path = tmp_path / "tokens.json"
+    store = FileTokenStore(
+        path,
+        encrypt=lambda value: f"enc:{value}",
+        decrypt=lambda value: value.removeprefix("enc:"),
+    )
+    store.put("secret://tiktok/tenant/ref", {"access_token": "access"})
+    store.delete("secret://tiktok/tenant/ref")
+    store.delete("secret://tiktok/tenant/missing")
+    assert store.get("secret://tiktok/tenant/ref") is None
+
+
+def test_local_revoke_marks_authorization_and_deletes_last_official_credential(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    settings = _settings(str(tmp_path / "tokens.json"))
+    monkeypatch.setattr("app.tiktok.service.get_settings", lambda: settings)
+    store = FileTokenStore(settings.tiktok_token_store_file)
+    credential_ref = "secret://tiktok/tenant/revoke"
+    store.put(credential_ref, {"access_token": "access", "refresh_token": "refresh"})
+
+    with _session() as db:
+        admin = db.get(User, "admin")
+        assert admin is not None
+        resource = BusinessResource(
+            id="tiktok-revoke-shop",
+            tenant_id="tenant_demo",
+            resource_type="store",
+            code="revoke-shop",
+            name="Revoke Shop",
+            created_by_user_id=admin.id,
+            metadata_json={"platform": "tiktok", "market": "US"},
+        )
+        authorization = ExternalAuthorization(
+            tenant_id="tenant_demo",
+            provider="tiktok",
+            authorization_type="seller",
+            subject_id="revoke-seller",
+            resource_id=resource.id,
+            scopes_json=["shop.read"],
+            credential_ref=credential_ref,
+            token_fingerprint="sha256:revoke",
+            metadata_json={"authorization_flow": "official"},
+        )
+        db.add(resource)
+        db.add(authorization)
+        db.commit()
+        db.refresh(authorization)
+
+        revoked = revoke_tiktok_authorization(db, admin, authorization.id)
+
+        assert revoked.status == "revoked"
+        persisted = db.get(ExternalAuthorization, authorization.id)
+        assert persisted is not None
+        assert persisted.metadata_json["revocation_source"] == "local_admin"
+        assert store.get(credential_ref) is None
+
+        with pytest.raises(HTTPException) as error:
+            read_tiktok_resource(
+                db,
+                user=admin,
+                authorization_type="seller",
+                resource_id=resource.id,
+            )
+        assert error.value.status_code == 409
+        assert error.value.detail == "TikTok authorization is not active"
+
+
+def test_local_revoke_keeps_shared_official_credential_until_last_authorization(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    settings = _settings(str(tmp_path / "tokens.json"))
+    monkeypatch.setattr("app.tiktok.service.get_settings", lambda: settings)
+    store = FileTokenStore(settings.tiktok_token_store_file)
+    credential_ref = "secret://tiktok/tenant/shared"
+    store.put(credential_ref, {"access_token": "access", "refresh_token": "refresh"})
+
+    with _session() as db:
+        admin = db.get(User, "admin")
+        assert admin is not None
+        authorizations = [
+            ExternalAuthorization(
+                tenant_id="tenant_demo",
+                provider="tiktok",
+                authorization_type="seller",
+                subject_id=f"shared-seller-{index}",
+                resource_id=f"shared-shop-{index}",
+                scopes_json=["shop.read"],
+                credential_ref=credential_ref,
+                token_fingerprint=f"sha256:shared-{index}",
+                metadata_json={"authorization_flow": "official"},
+            )
+            for index in (1, 2)
+        ]
+        db.add_all(authorizations)
+        db.commit()
+        for row in authorizations:
+            db.refresh(row)
+
+        revoke_tiktok_authorization(db, admin, authorizations[0].id)
+        assert store.get(credential_ref) is not None
+        revoke_tiktok_authorization(db, admin, authorizations[1].id)
+        assert store.get(credential_ref) is None
 
 
 def test_official_connector_reads_only_sanitized_permission_summary(monkeypatch) -> None:

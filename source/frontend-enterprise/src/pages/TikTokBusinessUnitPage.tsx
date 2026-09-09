@@ -12,7 +12,8 @@ type Resource = { id: string; resource_type: string; code: string; name: string;
 type Authorization = { id: string; authorization_type: string; subject_id: string; resource_id?: string | null; scopes: string[]; status: string; expires_at?: string | null };
 type Overview = { root?: Unit | null; departments: Unit[]; roles: Role[]; resources: Resource[]; authorizations: Authorization[]; task_counts: Record<string, number> };
 type AssetBootstrap = { created_count: number; skill_ids: string[]; agent_ids: string[]; knowledge_base_ids: string[]; tool_ids: string[] };
-type ShadowRun = { id: string; status: string; started_at: string; ends_at: string; last_heartbeat_at: string; observation_count: number; error_count: number; baseline: Record<string, unknown> };
+type ShadowQuality = { reviewed_count: number; adopted_count: number; needs_revision_count: number; rejected_count: number; guardrail_issue_count: number; adoption_rate: number; covered_sop_ids: string[]; missing_sop_ids: string[]; minimum_reviewed_count: number; passed: boolean };
+type ShadowRun = { id: string; status: string; started_at: string; ends_at: string; last_heartbeat_at: string; observation_count: number; error_count: number; baseline: Record<string, unknown>; quality: ShadowQuality };
 type ProductionGate = { key: string; label: string; status: 'passed' | 'waiting' | 'blocked'; detail: string };
 type ProductionReadiness = { ready: boolean; evaluated_at: string; gates: ProductionGate[] };
 type ReleasePreflightItem = { slug: string; name: string; business_role: string; agent_id?: string | null; release_state?: string | null; ready: boolean; error?: string | null; snapshot_digest?: string | null };
@@ -52,6 +53,10 @@ export default function TikTokBusinessUnitPage({ currentUser, onLogout }: Props)
   const [sandboxReplay, setSandboxReplay] = useState<SandboxReplayReport | null>(null);
   const [exceptionMatrix, setExceptionMatrix] = useState<ExceptionMatrixReport | null>(null);
   const [m2mVerification, setM2mVerification] = useState<M2MVerificationReport | null>(null);
+  const [shadowTaskId, setShadowTaskId] = useState('');
+  const [shadowVerdict, setShadowVerdict] = useState<'adopted' | 'needs_revision' | 'rejected'>('adopted');
+  const [shadowIssueCategory, setShadowIssueCategory] = useState('none');
+  const [shadowSummary, setShadowSummary] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -129,6 +134,26 @@ export default function TikTokBusinessUnitPage({ currentUser, onLogout }: Props)
       notify.success('已启动 14 天只读影子运行');
     } catch (error) {
       notify.error(error instanceof Error ? error.message : '影子运行启动失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function recordShadowEvaluation() {
+    setBusy(true);
+    try {
+      await api.post('/api/enterprise/tiktok/shadow/evaluations', {
+        task_id: shadowTaskId.trim(),
+        verdict: shadowVerdict,
+        issue_category: shadowIssueCategory,
+        summary: shadowSummary.trim(),
+      });
+      setShadowTaskId('');
+      setShadowSummary('');
+      notify.success('人工对照证据已追加到任务 Trace');
+      await load();
+    } catch (error) {
+      notify.error(error instanceof Error ? error.message : '人工对照记录失败');
     } finally {
       setBusy(false);
     }
@@ -434,8 +459,28 @@ export default function TikTokBusinessUnitPage({ currentUser, onLogout }: Props)
           <p className="mt-2 text-[13px] leading-6 text-[#7a4b00]">当前 P3-A 仅支持读取、分析、草稿和内部派单。发布内容、修改商品、广告变更、佣金、消息和直播写操作均未注册；缺少证据时必须转人工。</p>
           <div className="mt-4 rounded-[12px] border border-[#ead6aa] bg-white/70 p-4 text-[12px] text-[#6f4500]">
             <strong className="block text-[13px]">14 天影子运行门禁</strong>
-            {shadowRun ? <span className="mt-1 block">状态：{shadowRun.status} · 结束：{new Date(shadowRun.ends_at).toLocaleString()} · 已观察 {shadowRun.observation_count} 次 · 错误 {shadowRun.error_count} 次</span> : <span className="mt-1 block">尚未启动。启动后只记录读取与分析结果，不执行 TikTok 外部写操作。</span>}
+            {shadowRun ? <>
+              <span className="mt-1 block">状态：{shadowRun.status} · 结束：{new Date(shadowRun.ends_at).toLocaleString()} · 人工对照 {shadowRun.quality.reviewed_count}/{shadowRun.quality.minimum_reviewed_count} · 采纳率 {(shadowRun.quality.adoption_rate * 100).toFixed(1)}% · 严重护栏问题 {shadowRun.quality.guardrail_issue_count}</span>
+              <span className="mt-1 block">主 SOP 覆盖：{shadowRun.quality.covered_sop_ids.length}/5{shadowRun.quality.missing_sop_ids.length ? ` · 待覆盖 ${shadowRun.quality.missing_sop_ids.join('、')}` : ''}</span>
+            </> : <span className="mt-1 block">尚未启动。启动后只记录读取与分析结果，不执行 TikTok 外部写操作。</span>}
           </div>
+          {currentUser.role === 'admin' && shadowRun?.status === 'running' && (
+            <div className="mt-4 rounded-[12px] border border-[#ead6aa] bg-white/70 p-4 text-[12px] text-[#6f4500]">
+              <strong className="block text-[13px]">追加任务级人工对照</strong>
+              <p className="mt-1">仅记录脱敏结论；证据追加后不可覆盖，任务必须处于复核或完成状态且明确关闭外部写入。</p>
+              <div className="mt-3 grid gap-2 lg:grid-cols-2">
+                <input value={shadowTaskId} onChange={(event) => setShadowTaskId(event.target.value)} placeholder="TikTok 任务 ID" aria-label="TikTok 任务 ID" className="h-9 rounded-[8px] border border-[#d7dce8] bg-white px-3 outline-none focus:border-[#315efb]" />
+                <select value={shadowVerdict} onChange={(event) => setShadowVerdict(event.target.value as typeof shadowVerdict)} aria-label="人工采纳结论" className="h-9 rounded-[8px] border border-[#d7dce8] bg-white px-3">
+                  <option value="adopted">采纳</option><option value="needs_revision">修改后采纳</option><option value="rejected">拒绝</option>
+                </select>
+                <select value={shadowIssueCategory} onChange={(event) => setShadowIssueCategory(event.target.value)} aria-label="问题分类" className="h-9 rounded-[8px] border border-[#d7dce8] bg-white px-3">
+                  <option value="none">无护栏问题</option><option value="severe_miss">严重漏检</option><option value="unauthorized_access">越权访问</option><option value="false_claim">虚假声明</option><option value="unapproved_external_write">未审批外部写入</option><option value="other">其他问题</option>
+                </select>
+                <input value={shadowSummary} onChange={(event) => setShadowSummary(event.target.value)} placeholder="脱敏人工对照摘要" aria-label="脱敏人工对照摘要" className="h-9 rounded-[8px] border border-[#d7dce8] bg-white px-3 outline-none focus:border-[#315efb]" />
+              </div>
+              <Button className="mt-3" onClick={() => void recordShadowEvaluation()} disabled={busy || shadowTaskId.trim().length < 3 || shadowSummary.trim().length < 3}>追加不可变对照证据</Button>
+            </div>
+          )}
         </section>
       )}
     </div>

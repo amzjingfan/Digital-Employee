@@ -37,6 +37,7 @@ from app.db.models import (
 )
 from app.security.business_roles import BUSINESS_ROLE_BY_KEY, BusinessRoleDefinition
 from app.security.permissions import ensure_tenant_admin, is_admin_user
+from app.tiktok.official import FileTokenStore
 from app.tiktok.release_evidence import (
     verify_tiktok_release_evidence,
     verify_tiktok_runtime_security_config,
@@ -57,7 +58,12 @@ from app.tiktok.schema import (
     TikTokResourceRead,
     TikTokRoleRead,
 )
-from app.tiktok.shadow import shadow_run_evidence_issues, shadow_run_is_release_ready
+from app.tiktok.shadow import (
+    MINIMUM_ADOPTION_RATE,
+    get_shadow_quality,
+    shadow_run_evidence_issues,
+    shadow_run_is_release_ready,
+)
 from app.work_tasks.m2m import (
     ServiceIdentityError,
     authenticate_service_identity,
@@ -72,9 +78,10 @@ def _configured_m2m_client_id(settings, credential_ref: str, fallback: str) -> s
         return fallback
     try:
         payload = json.loads(
-            Path(settings.work_task_m2m_secret_file).expanduser().resolve().read_text(
-                encoding="utf-8"
-            )
+            Path(settings.work_task_m2m_secret_file)
+            .expanduser()
+            .resolve()
+            .read_text(encoding="utf-8")
         )
     except (OSError, json.JSONDecodeError):
         return fallback
@@ -82,6 +89,7 @@ def _configured_m2m_client_id(settings, credential_ref: str, fallback: str) -> s
     row = records.get(credential_ref) if isinstance(records, dict) else None
     configured = str(row.get("client_id") or "").strip() if isinstance(row, dict) else ""
     return configured or fallback
+
 
 TIKTOK_ROLE_KEYS: tuple[str, ...] = (
     "tiktok_bd_specialist",
@@ -128,8 +136,18 @@ TIKTOK_SKILL_CATALOG: tuple[tuple[str, str, str], ...] = (
 
 TIKTOK_AGENT_CATALOG: tuple[tuple[str, str, str, str], ...] = (
     ("tiktok-bd-due-diligence", "TikTok 商家入驻尽调专员", "tiktok_bd_specialist", "tiktok-bd"),
-    ("tiktok-content-script", "TikTok Hook 与脚本专员", "tiktok_content_specialist", "tiktok-content"),
-    ("tiktok-creator-authorization", "TikTok 达人授权与入驻专员", "tiktok_tap_manager", "tiktok-tap"),
+    (
+        "tiktok-content-script",
+        "TikTok Hook 与脚本专员",
+        "tiktok_content_specialist",
+        "tiktok-content",
+    ),
+    (
+        "tiktok-creator-authorization",
+        "TikTok 达人授权与入驻专员",
+        "tiktok_tap_manager",
+        "tiktok-tap",
+    ),
     ("tiktok-creator-match", "TikTok 商达匹配专员", "tiktok_tap_manager", "tiktok-tap"),
     ("tiktok-live-planner", "TikTok 直播策划专员", "tiktok_live_operator", "tiktok-live"),
 )
@@ -162,21 +180,13 @@ TIKTOK_AGENT_SKILLS: dict[str, frozenset[str]] = {
 }
 
 TIKTOK_AGENT_TOOLS: dict[str, frozenset[str]] = {
-    "tiktok-bd-due-diligence": frozenset(
-        {"tiktok.mock.seller.read", "tiktok.mock.partner.read"}
-    ),
-    "tiktok-content-script": frozenset(
-        {"tiktok.mock.seller.read", "tiktok.mock.social.read"}
-    ),
+    "tiktok-bd-due-diligence": frozenset({"tiktok.mock.seller.read", "tiktok.mock.partner.read"}),
+    "tiktok-content-script": frozenset({"tiktok.mock.seller.read", "tiktok.mock.social.read"}),
     "tiktok-creator-authorization": frozenset(
         {"tiktok.mock.creator.read", "tiktok.mock.partner.read"}
     ),
-    "tiktok-creator-match": frozenset(
-        {"tiktok.mock.creator.read", "tiktok.mock.partner.read"}
-    ),
-    "tiktok-live-planner": frozenset(
-        {"tiktok.mock.seller.read", "tiktok.mock.social.read"}
-    ),
+    "tiktok-creator-match": frozenset({"tiktok.mock.creator.read", "tiktok.mock.partner.read"}),
+    "tiktok-live-planner": frozenset({"tiktok.mock.seller.read", "tiktok.mock.social.read"}),
 }
 
 TIKTOK_CONNECTOR_TOOLS: tuple[tuple[str, str], ...] = (
@@ -312,15 +322,22 @@ def _visible_resources(db: Session, user: User) -> list[TikTokResourceRead]:
         rows = [row for row in rows if row.id in allowed_ids]
     result: list[TikTokResourceRead] = []
     for row in sorted(rows, key=lambda item: (item.resource_type, item.name)):
-        access_level = "operator" if is_admin_user(user) or user.business_role == "operations_supervisor" else "viewer"
+        access_level = (
+            "operator"
+            if is_admin_user(user) or user.business_role == "operations_supervisor"
+            else "viewer"
+        )
         if access_level == "viewer":
-            access_level = db.exec(
-                select(BusinessResourceScope.access_level).where(
-                    BusinessResourceScope.tenant_id == user.tenant_id,
-                    BusinessResourceScope.resource_id == row.id,
-                    BusinessResourceScope.business_role == user.business_role,
-                )
-            ).first() or "viewer"
+            access_level = (
+                db.exec(
+                    select(BusinessResourceScope.access_level).where(
+                        BusinessResourceScope.tenant_id == user.tenant_id,
+                        BusinessResourceScope.resource_id == row.id,
+                        BusinessResourceScope.business_role == user.business_role,
+                    )
+                ).first()
+                or "viewer"
+            )
         result.append(
             TikTokResourceRead(
                 id=row.id,
@@ -371,6 +388,73 @@ def _authorizations(db: Session, user: User) -> list[TikTokAuthorizationRead]:
     ]
 
 
+def revoke_tiktok_authorization(
+    db: Session,
+    user: User,
+    authorization_id: str,
+) -> TikTokAuthorizationRead:
+    """Revoke one tenant-local authorization and fail closed for future reads."""
+
+    ensure_tenant_admin(user.tenant_id, user)
+    authorization = db.exec(
+        select(ExternalAuthorization).where(
+            ExternalAuthorization.id == authorization_id,
+            ExternalAuthorization.tenant_id == user.tenant_id,
+            ExternalAuthorization.provider == "tiktok",
+        )
+    ).first()
+    if authorization is None:
+        raise HTTPException(status_code=404, detail="TikTok authorization not found")
+
+    if authorization.status == "active":
+        credential_ref = str(authorization.credential_ref or "").strip()
+        authorization_flow = (authorization.metadata_json or {}).get("authorization_flow")
+        has_active_sibling = bool(
+            credential_ref
+            and db.exec(
+                select(ExternalAuthorization.id).where(
+                    ExternalAuthorization.tenant_id == user.tenant_id,
+                    ExternalAuthorization.provider == "tiktok",
+                    ExternalAuthorization.credential_ref == credential_ref,
+                    ExternalAuthorization.status == "active",
+                    ExternalAuthorization.id != authorization.id,
+                )
+            ).first()
+        )
+        if (
+            authorization_flow == "official"
+            and credential_ref.startswith("secret://tiktok/")
+            and not has_active_sibling
+        ):
+            token_store_path = get_settings().tiktok_token_store_file.strip()
+            if token_store_path:
+                FileTokenStore(token_store_path).delete(credential_ref)
+
+        now = utc_now()
+        authorization.status = "revoked"
+        authorization.revision += 1
+        authorization.updated_at = now
+        authorization.metadata_json = {
+            **(authorization.metadata_json or {}),
+            "revocation_source": "local_admin",
+            "revoked_at": now.isoformat(),
+            "revoked_by_user_id": user.id,
+        }
+        db.add(authorization)
+        db.commit()
+        db.refresh(authorization)
+
+    return TikTokAuthorizationRead(
+        id=authorization.id,
+        authorization_type=authorization.authorization_type,
+        subject_id=authorization.subject_id,
+        resource_id=authorization.resource_id,
+        scopes=list(authorization.scopes_json or []),
+        status=authorization.status,
+        expires_at=authorization.expires_at,
+    )
+
+
 def get_tiktok_overview(db: Session, user: User) -> TikTokOverview:
     root = db.exec(
         select(OrganizationUnit).where(
@@ -382,11 +466,13 @@ def get_tiktok_overview(db: Session, user: User) -> TikTokOverview:
     departments = []
     if root is not None:
         departments = db.exec(
-            select(OrganizationUnit).where(
+            select(OrganizationUnit)
+            .where(
                 OrganizationUnit.tenant_id == user.tenant_id,
                 OrganizationUnit.parent_id == root.id,
                 OrganizationUnit.status == "active",
-            ).order_by(OrganizationUnit.code)
+            )
+            .order_by(OrganizationUnit.code)
         ).all()
     return TikTokOverview(
         root=_unit_read(root) if root else None,
@@ -417,7 +503,9 @@ def get_tiktok_production_readiness(
         TikTokProductionGateRead(
             key="casdoor_management",
             label="Casdoor 管理同步",
-            status="passed" if settings.casdoor_management_enabled and management_configured else "blocked",
+            status="passed"
+            if settings.casdoor_management_enabled and management_configured
+            else "blocked",
             detail=(
                 "已启用独立 Management Client 和周期对账"
                 if settings.casdoor_management_enabled and management_configured
@@ -460,7 +548,9 @@ def get_tiktok_production_readiness(
     )
     if not official_configured:
         official_status = "blocked"
-        official_detail = "TikTok 官方 App（含 App Key/Secret）或独立 Service ID、回调、Token Store 尚未配置"
+        official_detail = (
+            "TikTok 官方 App（含 App Key/Secret）或独立 Service ID、回调、Token Store 尚未配置"
+        )
     elif official_authorization_count == 0:
         official_status = "waiting"
         official_detail = "配置已就绪，等待至少一个真实 TikTok 官方授权"
@@ -529,18 +619,58 @@ def get_tiktok_production_readiness(
         shadow_status = "waiting"
         shadow_detail = "尚未启动 14 天只读影子运行"
     elif shadow_run.status == "completed" and shadow_run_is_release_ready(shadow_run):
-        shadow_status = "passed"
-        shadow_detail = "14 天只读影子运行已完成，覆盖至少 14 个 UTC 日期且无错误"
+        quality = get_shadow_quality(db, shadow_run)
+        if quality.passed:
+            shadow_status = "passed"
+            shadow_detail = (
+                f"14 天只读影子运行完成并覆盖至少 14 个 UTC 日期；"
+                f"人工对照 {quality.reviewed_count} 条，"
+                f"采纳率 {quality.adoption_rate:.0%}，严重护栏问题 0"
+            )
+        else:
+            shadow_status = "blocked"
+            reasons: list[str] = []
+            if quality.reviewed_count < quality.minimum_reviewed_count:
+                reasons.append(
+                    f"人工对照 {quality.reviewed_count}/{quality.minimum_reviewed_count}"
+                )
+            if quality.adoption_rate < MINIMUM_ADOPTION_RATE:
+                reasons.append(
+                    f"采纳率 {quality.adoption_rate:.0%}，低于 {MINIMUM_ADOPTION_RATE:.0%}"
+                )
+            if quality.guardrail_issue_count:
+                reasons.append(f"严重护栏问题 {quality.guardrail_issue_count} 条")
+            if quality.missing_sop_ids:
+                reasons.append(f"缺少 SOP 覆盖：{', '.join(quality.missing_sop_ids)}")
+            shadow_detail = "14 天影子运行时间已满，但质量门禁未通过：" + "；".join(reasons)
     elif shadow_run.status == "running":
+        quality = get_shadow_quality(db, shadow_run)
         remaining_days = max(0, (shadow_run.ends_at - utc_now()).total_seconds() / 86400)
         shadow_status = "waiting"
-        shadow_detail = f"影子运行进行中，预计还需 {remaining_days:.1f} 天"
+        shadow_detail = (
+            f"影子运行进行中，预计还需 {remaining_days:.1f} 天；"
+            f"人工对照 {quality.reviewed_count}/{quality.minimum_reviewed_count}，"
+            f"采纳率 {quality.adoption_rate:.0%}"
+        )
     else:
         shadow_status = "blocked"
         evidence_issues = shadow_run_evidence_issues(shadow_run)
-        shadow_detail = (
-            f"影子运行状态为 {shadow_run.status}：" + ", ".join(evidence_issues)
-        )
+        quality = get_shadow_quality(db, shadow_run)
+        quality_issues: list[str] = []
+        if quality.reviewed_count < quality.minimum_reviewed_count:
+            quality_issues.append(
+                f"人工对照 {quality.reviewed_count}/{quality.minimum_reviewed_count}"
+            )
+        if quality.adoption_rate < MINIMUM_ADOPTION_RATE:
+            quality_issues.append(
+                f"采纳率 {quality.adoption_rate:.0%}，低于 {MINIMUM_ADOPTION_RATE:.0%}"
+            )
+        if quality.guardrail_issue_count:
+            quality_issues.append(f"严重护栏问题 {quality.guardrail_issue_count} 条")
+        if quality.missing_sop_ids:
+            quality_issues.append(f"缺少 SOP 覆盖：{', '.join(quality.missing_sop_ids)}")
+        reasons = evidence_issues + quality_issues
+        shadow_detail = f"影子运行状态为 {shadow_run.status}：" + "；".join(reasons)
     gates.append(
         TikTokProductionGateRead(
             key="shadow_run",
@@ -830,7 +960,10 @@ def _skill_content(skill_id: str, name: str, description: str) -> dict[str, obje
         "trigger_intents": [name],
         "goal": [description],
         "required_info": ["tenant_id", "task_scope"],
-        "response_rules": ["缺数据必须标记 degraded=true，不得把推断写成事实。", "只读阶段不得执行外部写操作。"],
+        "response_rules": [
+            "缺数据必须标记 degraded=true，不得把推断写成事实。",
+            "只读阶段不得执行外部写操作。",
+        ],
         "nodes": [
             {
                 "node_id": "collect_input",
@@ -867,7 +1000,9 @@ def _ensure_binding(
     ).first()
     if row is not None:
         if (row.metadata_json or {}).get("content_digest") != digest:
-            raise HTTPException(status_code=409, detail=f"TikTok binding drift detected: {resource_id}")
+            raise HTTPException(
+                status_code=409, detail=f"TikTok binding drift detected: {resource_id}"
+            )
         if row.status != "active":
             row.status = "active"
             row.updated_at = utc_now()
@@ -921,7 +1056,9 @@ def bootstrap_tiktok_assets(db: Session, user: User) -> TikTokAssetBootstrapResp
             db.add(skill)
             created_count += 1
         elif (skill.content_json or {}).get("skill_id") != skill_id:
-            raise HTTPException(status_code=409, detail=f"TikTok Skill content drift detected: {skill_id}")
+            raise HTTPException(
+                status_code=409, detail=f"TikTok Skill content drift detected: {skill_id}"
+            )
         version = db.exec(
             select(SkillVersion).where(
                 SkillVersion.tenant_id == tenant_id,
@@ -945,7 +1082,9 @@ def bootstrap_tiktok_assets(db: Session, user: User) -> TikTokAssetBootstrapResp
             )
             created_count += 1
         general = db.exec(
-            select(GeneralSkill).where(GeneralSkill.tenant_id == tenant_id, GeneralSkill.slug == skill_id)
+            select(GeneralSkill).where(
+                GeneralSkill.tenant_id == tenant_id, GeneralSkill.slug == skill_id
+            )
         ).first()
         if general is None:
             general = GeneralSkill(
@@ -956,19 +1095,28 @@ def bootstrap_tiktok_assets(db: Session, user: User) -> TikTokAssetBootstrapResp
                 description=description,
                 homepage="internal://skills/joukir-tiktok-pack",
                 skill_markdown=f"# {name}\n\n{description}\n\n只读执行；缺少证据时输出 degraded=true。",
-                metadata_json={"source": "joukir-tiktok-pack", "license": "MIT-methods-only", "review_status": "approved", "content_digest": digest},
+                metadata_json={
+                    "source": "joukir-tiktok-pack",
+                    "license": "MIT-methods-only",
+                    "review_status": "approved",
+                    "content_digest": digest,
+                },
                 status="published",
                 capability_scope="sop_specific",
             )
             db.add(general)
             created_count += 1
         elif (general.metadata_json or {}).get("content_digest") != digest:
-            raise HTTPException(status_code=409, detail=f"TikTok GeneralSkill drift detected: {skill_id}")
+            raise HTTPException(
+                status_code=409, detail=f"TikTok GeneralSkill drift detected: {skill_id}"
+            )
         skill_rows.append(skill)
         general_skill_rows.append(general)
 
     knowledge = db.exec(
-        select(KnowledgeBase).where(KnowledgeBase.tenant_id == tenant_id, KnowledgeBase.name == "TikTok 生产知识库")
+        select(KnowledgeBase).where(
+            KnowledgeBase.tenant_id == tenant_id, KnowledgeBase.name == "TikTok 生产知识库"
+        )
     ).first()
     if knowledge is None:
         knowledge = KnowledgeBase(
@@ -977,7 +1125,11 @@ def bootstrap_tiktok_assets(db: Session, user: User) -> TikTokAssetBootstrapResp
             name="TikTok 生产知识库",
             description="官方授权规则、企业产品事实、内容与经营审核口径。",
             capability_scope="sop_specific",
-            metadata_json={"provider": "tiktok", "review_status": "approved", "source_policy": "official_or_internal"},
+            metadata_json={
+                "provider": "tiktok",
+                "review_status": "approved",
+                "source_policy": "official_or_internal",
+            },
         )
         db.add(knowledge)
         created_count += 1
@@ -999,14 +1151,19 @@ def bootstrap_tiktok_assets(db: Session, user: User) -> TikTokAssetBootstrapResp
                 description="只读生产试点知识版本。",
                 status="active",
                 capability_scope="sop_specific",
-                metadata_json={"review_status": "approved", "content_digest": "sha256:tiktok-production-v1"},
+                metadata_json={
+                    "review_status": "approved",
+                    "content_digest": "sha256:tiktok-production-v1",
+                },
             )
         )
         created_count += 1
 
     tool_rows: list[Tool] = []
     for tool_name, display_name in TIKTOK_CONNECTOR_TOOLS:
-        tool = db.exec(select(Tool).where(Tool.tenant_id == tenant_id, Tool.name == tool_name)).first()
+        tool = db.exec(
+            select(Tool).where(Tool.tenant_id == tenant_id, Tool.name == tool_name)
+        ).first()
         if tool is None:
             tool = Tool(
                 id=f"tool_{tool_name.replace('.', '_')}",
@@ -1034,7 +1191,9 @@ def bootstrap_tiktok_assets(db: Session, user: User) -> TikTokAssetBootstrapResp
     jwks_uri = settings.oidc_jwks_uri or f"{issuer.rstrip('/')}/.well-known/jwks"
     for slug, name, business_role, department_code in TIKTOK_AGENT_CATALOG:
         agent = db.exec(
-            select(AgentProfile).where(AgentProfile.tenant_id == tenant_id, AgentProfile.name == name)
+            select(AgentProfile).where(
+                AgentProfile.tenant_id == tenant_id, AgentProfile.name == name
+            )
         ).first()
         if agent is None:
             agent = AgentProfile(
@@ -1043,7 +1202,12 @@ def bootstrap_tiktok_assets(db: Session, user: User) -> TikTokAssetBootstrapResp
                 name=name,
                 description=f"{name}，仅处理 TikTok {department_code} 岗位范围内的受控只读与草稿任务。",
                 persona_prompt="只引用已审核知识和授权数据；不执行 TikTok 外部写操作；缺少证据时转人工。",
-                metadata_json={"business_role": business_role, "department_code": department_code, "provider": "tiktok", "review_status": "approved"},
+                metadata_json={
+                    "business_role": business_role,
+                    "department_code": department_code,
+                    "provider": "tiktok",
+                    "review_status": "approved",
+                },
                 release_state="draft",
             )
             db.add(agent)
@@ -1117,12 +1281,26 @@ def bootstrap_tiktok_assets(db: Session, user: User) -> TikTokAssetBootstrapResp
         for skill in skill_rows:
             if skill.skill_id not in desired_skill_ids:
                 continue
-            if _ensure_binding(db, tenant_id=tenant_id, agent_id=agent.id, resource_type="skill", resource_id=skill.id, digest=_content_digest(skill.content_json)):
+            if _ensure_binding(
+                db,
+                tenant_id=tenant_id,
+                agent_id=agent.id,
+                resource_type="skill",
+                resource_id=skill.id,
+                digest=_content_digest(skill.content_json),
+            ):
                 created_count += 1
         for general in general_skill_rows:
             if general.slug not in desired_skill_ids:
                 continue
-            if _ensure_binding(db, tenant_id=tenant_id, agent_id=agent.id, resource_type="general_skill", resource_id=general.id, digest=str((general.metadata_json or {}).get("content_digest"))):
+            if _ensure_binding(
+                db,
+                tenant_id=tenant_id,
+                agent_id=agent.id,
+                resource_type="general_skill",
+                resource_id=general.id,
+                digest=str((general.metadata_json or {}).get("content_digest")),
+            ):
                 created_count += 1
         branch_before = db.exec(
             select(AgentKnowledgeBranch).where(
@@ -1148,7 +1326,14 @@ def bootstrap_tiktok_assets(db: Session, user: User) -> TikTokAssetBootstrapResp
         for tool in tool_rows:
             if tool.name not in desired_tool_names:
                 continue
-            if _ensure_binding(db, tenant_id=tenant_id, agent_id=agent.id, resource_type="tool", resource_id=tool.id, digest=_content_digest(tool.config_json)):
+            if _ensure_binding(
+                db,
+                tenant_id=tenant_id,
+                agent_id=agent.id,
+                resource_type="tool",
+                resource_id=tool.id,
+                digest=_content_digest(tool.config_json),
+            ):
                 created_count += 1
         agent_rows.append(agent)
     db.commit()
