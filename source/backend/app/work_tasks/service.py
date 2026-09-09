@@ -27,6 +27,7 @@ from app.work_tasks.schema import (
     WorkTaskCreate,
     WorkTaskEventRead,
     WorkTaskEvidenceRead,
+    WorkTaskEvidenceReference,
     WorkTaskListResponse,
     WorkTaskQueueSummary,
     WorkTaskRead,
@@ -199,6 +200,7 @@ def create_linked_task(
     due_at: Any | None = None,
     scope: dict[str, Any] | None = None,
     input_data: dict[str, Any] | None = None,
+    evidence: list[WorkTaskEvidenceReference] | None = None,
 ) -> tuple[WorkTask, bool]:
     """Create an idempotent task inside the caller's transaction."""
 
@@ -206,6 +208,14 @@ def create_linked_task(
     set_tenant_context(db, tenant_id)
     existing = _find_by_idempotency(db, tenant_id, idempotency_key)
     if existing:
+        append_task_evidence(
+            db,
+            task=existing,
+            evidence=evidence or [],
+            actor_type="human",
+            actor_id=assigned_by_user_id,
+            actor_business_role=assigned_by_business_role,
+        )
         return existing, False
     now = utc_now()
     agent = _resolve_role_agent(db, tenant_id, owner_business_role)
@@ -241,8 +251,79 @@ def create_linked_task(
             detail_json={"source_id": source_id, "assignee_agent_id": row.assignee_agent_id},
         )
     )
+    append_task_evidence(
+        db,
+        task=row,
+        evidence=evidence or [],
+        actor_type="human",
+        actor_id=assigned_by_user_id,
+        actor_business_role=assigned_by_business_role,
+    )
     db.flush()
     return row, True
+
+
+def append_task_evidence(
+    db: Session,
+    *,
+    task: WorkTask,
+    evidence: list[WorkTaskEvidenceReference],
+    actor_type: str | None = None,
+    actor_id: str | None = None,
+    actor_business_role: str | None = None,
+) -> int:
+    """Append safe, idempotent evidence references to an existing unified task."""
+
+    if not evidence:
+        return 0
+    set_tenant_context(db, task.tenant_id)
+    created_count = 0
+    created_sources: list[dict[str, str]] = []
+    for item in evidence:
+        existing = db.exec(
+            select(WorkTaskEvidence).where(
+                WorkTaskEvidence.tenant_id == task.tenant_id,
+                WorkTaskEvidence.task_id == task.id,
+                WorkTaskEvidence.source_type == item.source_type,
+                WorkTaskEvidence.source_id == item.source_id,
+            )
+        ).first()
+        if existing:
+            continue
+        db.add(
+            WorkTaskEvidence(
+                tenant_id=task.tenant_id,
+                task_id=task.id,
+                source_type=item.source_type,
+                source_id=item.source_id,
+                severity=item.severity,
+                label=item.label,
+                summary=item.summary,
+                source_route=item.source_route,
+                occurred_at=item.occurred_at,
+            )
+        )
+        created_count += 1
+        created_sources.append({"source_type": item.source_type, "source_id": item.source_id})
+    if created_count and actor_type:
+        db.add(
+            WorkTaskEvent(
+                tenant_id=task.tenant_id,
+                task_id=task.id,
+                event_type="evidence_linked",
+                actor_type=actor_type,
+                actor_id=actor_id,
+                actor_business_role=actor_business_role,
+                from_status=task.status,
+                to_status=task.status,
+                detail_json={
+                    "evidence_count": created_count,
+                    "sources": created_sources,
+                },
+            )
+        )
+    db.flush()
+    return created_count
 
 
 def create_report_follow_up(

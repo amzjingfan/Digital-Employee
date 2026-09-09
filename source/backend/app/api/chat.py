@@ -521,22 +521,35 @@ def _apply_handoff_reply(
     )
     db.commit()
     db.refresh(row)
-    _resume_human_handoff_async(row.id)
+    _resume_human_handoff_async(row.tenant_id, row.id)
 
 
-def _resume_human_handoff_async(handoff_id: str) -> None:
-    thread = threading.Thread(target=_resume_human_handoff_worker, args=(handoff_id,), daemon=True)
+def _resume_human_handoff_async(tenant_id: str, handoff_id: str) -> None:
+    """Resume an answered handoff under the tenant verified by the reply path."""
+
+    thread = threading.Thread(
+        target=_resume_human_handoff_worker,
+        args=(tenant_id, handoff_id),
+        daemon=True,
+    )
     thread.start()
 
 
-def _resume_human_handoff_worker(handoff_id: str) -> None:
+def _resume_human_handoff_worker(tenant_id: str, handoff_id: str) -> None:
+    """Run handoff continuation with PostgreSQL RLS bound to the trusted tenant."""
+
     try:
-        with Session(engine) as db:
+        with _tenant_session(tenant_id) as db:
             handoff = db.get(HumanHandoffRequest, handoff_id)
-            if not handoff or handoff.status != "answered" or not handoff.human_reply:
+            if (
+                not handoff
+                or handoff.tenant_id != tenant_id
+                or handoff.status != "answered"
+                or not handoff.human_reply
+            ):
                 return
             chat_session = db.get(ChatSession, handoff.session_id)
-            if not chat_session or chat_session.tenant_id != handoff.tenant_id:
+            if not chat_session or chat_session.tenant_id != tenant_id:
                 return
             metadata = dict(handoff.metadata_json or {})
             if metadata.get("resume_started_at"):
@@ -578,9 +591,9 @@ def _resume_human_handoff_worker(handoff_id: str) -> None:
             # _inject_handoff_context 已改为用 request.channel == "human_handoff_resume"
             # 判定 resume turn,时序可靠,无需事后标记。
     except Exception as exc:
-        with Session(engine) as db:
+        with _tenant_session(tenant_id) as db:
             handoff = db.get(HumanHandoffRequest, handoff_id)
-            if not handoff:
+            if not handoff or handoff.tenant_id != tenant_id:
                 return
             metadata = dict(handoff.metadata_json or {})
             metadata["resume_failed_at"] = utc_now().isoformat()

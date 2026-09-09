@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy.pool import StaticPool
@@ -13,6 +13,7 @@ from app.tiktok.shadow import (
     get_shadow_run,
     heartbeat_shadow_run,
     record_shadow_observation,
+    shadow_run_is_release_ready,
     start_shadow_run,
 )
 
@@ -61,6 +62,7 @@ def test_shadow_run_is_idempotent_and_observations_are_read_only() -> None:
         assert observed.observation_count == 1
         assert observed.error_count == 1
         assert observed.baseline_json["writes_enabled"] is False
+        assert len(observed.baseline_json["observation_days_utc"]) == 1
         assert get_shadow_run(db, "tenant_demo").id == first.id
 
 
@@ -72,7 +74,7 @@ def test_shadow_run_requires_tenant_admin() -> None:
             start_shadow_run(db, member)
 
 
-def test_expired_shadow_run_is_completed_by_heartbeat() -> None:
+def test_shadow_run_without_observations_expires_instead_of_passing() -> None:
     with _session() as db:
         admin = db.get(User, "admin")
         assert admin is not None
@@ -80,9 +82,36 @@ def test_expired_shadow_run_is_completed_by_heartbeat() -> None:
         run.ends_at = run.started_at
         db.add(run)
         db.commit()
+        expired = heartbeat_shadow_run(db, "tenant_demo")
+        assert expired is not None
+        assert expired.status == "expired"
+        assert shadow_run_is_release_ready(expired) is False
+
+
+def test_shadow_run_requires_fourteen_observation_days_and_final_heartbeat(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started_at = datetime(2026, 8, 1, 3, 0, tzinfo=UTC).replace(tzinfo=None)
+    current = started_at
+    monkeypatch.setattr("app.tiktok.shadow.utc_now", lambda: current)
+    with _session() as db:
+        admin = db.get(User, "admin")
+        assert admin is not None
+        run = start_shadow_run(db, admin)
+        for day in range(14):
+            current = started_at + timedelta(days=day)
+            observed = record_shadow_observation(db, tenant_id="tenant_demo")
+            assert observed is not None
+
+        assert shadow_run_is_release_ready(run) is False
+        current = started_at + timedelta(days=14)
         completed = heartbeat_shadow_run(db, "tenant_demo")
+
         assert completed is not None
         assert completed.status == "completed"
+        assert completed.observation_count == 14
+        assert len(completed.baseline_json["observation_days_utc"]) == 14
+        assert shadow_run_is_release_ready(completed) is True
 
 
 def test_shadow_worker_tenant_list_is_explicit_for_rls() -> None:

@@ -29,3 +29,12 @@
 - 14 天影子运行：未宣称完成。代码支持 14 天结束时间与周期心跳，但当前没有配置真实租户、生产级 PostgreSQL runtime URL、连续 14 个自然日的心跳/观察记录，因此不能用模拟或缩短时长替代。
 - 备份/恢复演练：未宣称完成。`verify_sqlite_postgres_migration.py` 已具备只读核验，但当前环境缺少 `STAFFDECK_POSTGRES_MIGRATOR_URL`、`STAFFDECK_POSTGRES_RESTORE_URL` 和 PostgreSQL 客户端；需在隔离数据库完成行数、校验和、RLS、迁移标记及应用启动证据。
 - 业务、产品、安全签字：未完成，需在上述证据包评审后由对应责任人签署；代码提交不能代替组织审批。
+
+## 2026-09-09 · UAT 外部证据接入（完成）
+
+- 新增生产型运行配置检查：要求 PostgreSQL/RLS、关闭自动建表与 Demo Seed、关闭 Mock API、非默认应用密钥、全链路 HTTPS OIDC/Casdoor、Secure Cookie、TikTok Live 模式、受保护 Token Store 和显式影子租户。
+- 新增只读 Ed25519 证据验证器：证据包绑定租户、目标 Git commit、发布请求 SHA-256、签名 key id 和有效期；缺失、篡改、过期、错租户/错目标、符号链接或未知字段均失败关闭。
+- 证据包覆盖 Casdoor MFA 实测、TLS/证书实测、凭据轮换、PostgreSQL 恢复演练以及业务/安全/产品三方签核。应用只持有公钥，不提供签名私钥或本地“自助通过”接口。
+- 加固 14 天影子运行：仅官方 Live 读取计入观察，按 UTC 日期去重；必须覆盖至少 14 个日期、结束后有心跳、保持只读且零连接器错误。仅时间到期但证据不足的运行标记为 `expired`，不再自动完成。
+- 生产就绪卡消费上述配置与证据结果；真实 OAuth、14 个自然日影子运行和权威系统验真仍需在 UAT 环境执行，当前开发结果不构成生产放行。
+- 验证：TikTok 全域回归 60 passed；变更范围 Ruff、`compileall`、`git diff --check` 通过；Live-write-disabled CLI 仍为 `ok=true`（21 routes、12 Python files、12 read-only Skills）；未配置真实环境时新 CLI 以 exit 2 明确阻断。

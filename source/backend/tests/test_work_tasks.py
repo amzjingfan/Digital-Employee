@@ -7,14 +7,17 @@ from fastapi import HTTPException
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.db.models import Tenant, User, WorkTask, WorkTaskEvent, utc_now
+from app.db.models import Tenant, User, WorkTask, WorkTaskEvent, WorkTaskEvidence, utc_now
 from app.work_tasks.schema import (
     WorkTaskBatchCreate,
     WorkTaskBatchItem,
     WorkTaskCreate,
+    WorkTaskEvidenceReference,
     WorkTaskTransition,
 )
 from app.work_tasks.service import (
+    append_task_evidence,
+    create_linked_task,
     create_task,
     create_tasks_batch,
     get_task,
@@ -71,6 +74,68 @@ def test_manager_creates_idempotent_role_queue_task() -> None:
         )
         assert logistics_queue.overdue == 1
         assert db.exec(select(WorkTaskEvent)).one().event_type == "created"
+
+
+def test_linked_task_evidence_is_append_only_and_idempotent() -> None:
+    with _session() as db:
+        manager = _user("operations_supervisor")
+        db.add(Tenant(id="tenant_demo", name="Demo"))
+        db.add(manager)
+        db.commit()
+        reference = WorkTaskEvidenceReference(
+            source_type="logistics_anomaly",
+            source_id="anomaly-001",
+            severity="high",
+            label="物流异常 · stalled",
+            summary="脱敏的异常摘要",
+            source_route="/enterprise/crossborder-operations?anomaly_id=anomaly-001",
+            occurred_at=utc_now(),
+        )
+
+        task, created = create_linked_task(
+            db,
+            tenant_id="tenant_demo",
+            idempotency_key="logistics-escalation:anomaly-001:operations",
+            source_type="logistics_escalation",
+            source_id="anomaly-001",
+            title="复核物流异常",
+            description="请运营主管统筹处理",
+            owner_business_role="operations_supervisor",
+            assigned_by_user_id=manager.id,
+            assigned_by_business_role=manager.business_role or "operations_supervisor",
+            evidence=[reference],
+        )
+        repeated, repeated_created = create_linked_task(
+            db,
+            tenant_id="tenant_demo",
+            idempotency_key="logistics-escalation:anomaly-001:operations",
+            source_type="logistics_escalation",
+            source_id="anomaly-001",
+            title="复核物流异常",
+            description="请运营主管统筹处理",
+            owner_business_role="operations_supervisor",
+            assigned_by_user_id=manager.id,
+            assigned_by_business_role=manager.business_role or "operations_supervisor",
+            evidence=[reference],
+        )
+        appended = append_task_evidence(db, task=task, evidence=[reference])
+        db.commit()
+
+        assert created is True
+        assert repeated_created is False
+        assert repeated.id == task.id
+        assert appended == 0
+        stored = db.exec(select(WorkTaskEvidence)).one()
+        assert stored.task_id == task.id
+        assert stored.source_id == "anomaly-001"
+        assert [
+            event.event_type
+            for event in db.exec(
+                select(WorkTaskEvent)
+                .where(WorkTaskEvent.task_id == task.id)
+                .order_by(WorkTaskEvent.created_at)
+            ).all()
+        ] == ["created_from_logistics_escalation", "evidence_linked"]
 
 
 def test_specialist_only_sees_and_transitions_own_queue() -> None:

@@ -17,6 +17,7 @@ from app.db.models import (
     HighRiskActionRequest,
     Tenant,
     User,
+    WorkTaskEvidence,
     utc_now,
 )
 from app.product_lifecycle.schema import (
@@ -868,6 +869,17 @@ def test_launch_gate_binds_approved_versions_and_only_requests_publish_approval(
     )
     assert gate.status == "ready"
     assert gate.blockers == []
+    gate_evidence = db.exec(
+        select(WorkTaskEvidence).where(WorkTaskEvidence.task_id == gate.task_id)
+    ).all()
+    assert {(item.source_type, item.source_id) for item in gate_evidence} == {
+        ("listing_compliance_check", check.id),
+        ("listing_rule_set", rule.id),
+        ("creative_asset_version", approved_asset.id),
+        ("procurement_recommendation", reviewed_procurement.id),
+    }
+    assert all(item.source_route.startswith("/enterprise/product-lifecycle") for item in gate_evidence)
+    assert all("sku_facts" not in item.summary and "content" not in item.summary for item in gate_evidence)
     submitted = submit_product_launch(
         db,
         launch_gate_id=gate.id,
@@ -947,6 +959,15 @@ def test_launch_gate_blocks_missing_certification_and_unconfirmed_lead_time(
     assert {item["code"] for item in gate.blockers} == {
         "certification_missing",
         "supplier_lead_time_unavailable",
+    }
+    blocked_evidence = db.exec(
+        select(WorkTaskEvidence).where(WorkTaskEvidence.task_id == gate.task_id)
+    ).all()
+    assert {(item.source_type, item.source_id) for item in blocked_evidence} == {
+        ("listing_compliance_check", check.id),
+        ("listing_rule_set", rule.id),
+        ("creative_asset_version", approved_asset.id),
+        ("procurement_recommendation", recommendation.id),
     }
     with pytest.raises(HTTPException) as submit_blocked:
         submit_product_launch(

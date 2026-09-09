@@ -1,7 +1,10 @@
+import pytest
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
-from app.db.models import ChatSession, Message, MessageFeedback, ModelConfig, Tenant, User
+from app.db.database import set_tenant_context as bind_tenant_context
+from app.db.models import APIJob, ChatSession, Message, MessageFeedback, ModelConfig, Tenant, User
+from app.feedback import jobs as feedback_jobs
 from app.feedback.service import FeedbackAnalysisService, feedback_summary
 from app.llm.client import LLMClient
 
@@ -82,6 +85,137 @@ def test_feedback_summary_buckets_downvotes() -> None:
     assert summary["bucket_counts"][0]["bucket"] == "model_issue"
     assert summary["bucket_counts"][0]["count"] == 2
     assert "模型问题" in summary["summary"]
+
+
+def test_feedback_analysis_tenant_filter_rejects_cross_tenant_feedback() -> None:
+    with _test_session() as db:
+        db.add(
+            MessageFeedback(
+                id="feedback_other_tenant",
+                tenant_id="tenant_other",
+                session_id="session_other",
+                message_id="message_other",
+                user_id="user_other",
+                rating="down",
+            )
+        )
+        db.commit()
+
+        assert (
+            FeedbackAnalysisService(db).analyze_feedback(
+                "feedback_other_tenant", tenant_id="tenant_demo"
+            )
+            is None
+        )
+
+
+def test_feedback_analysis_job_binds_request_tenant_before_analysis(monkeypatch) -> None:
+    tenant_contexts: list[str] = []
+    captured: dict[str, object] = {}
+
+    def record_tenant_context(db: Session, tenant_id: str) -> None:
+        tenant_contexts.append(tenant_id)
+        bind_tenant_context(db, tenant_id)
+
+    with _test_session() as db:
+        feedback = _seed_feedback(db, with_model=False)
+        monkeypatch.setattr(feedback_jobs, "engine", db.get_bind())
+
+        def fake_analyze(self, feedback_id: str, *, tenant_id: str | None = None):
+            captured.update(
+                {
+                    "session_tenant_context": self.db.info.get("staffdeck_tenant_id"),
+                    "feedback_id": feedback_id,
+                    "tenant_id": tenant_id,
+                }
+            )
+            return feedback
+
+        monkeypatch.setattr(feedback_jobs, "set_tenant_context", record_tenant_context)
+        monkeypatch.setattr(FeedbackAnalysisService, "analyze_feedback", fake_analyze)
+
+        feedback_jobs.run_feedback_analysis_job(
+            {
+                "tenant_id": "tenant_demo",
+                "feedback_id": feedback.id,
+                "session_id": feedback.session_id,
+            }
+        )
+
+    assert tenant_contexts == ["tenant_demo"]
+    assert captured == {
+        "session_tenant_context": "tenant_demo",
+        "feedback_id": feedback.id,
+        "tenant_id": "tenant_demo",
+    }
+
+
+def test_feedback_job_handler_rejects_payload_tenant_mismatch() -> None:
+    with _test_session() as db:
+        job = APIJob(
+            id="job_feedback_mismatch",
+            tenant_id="tenant_demo",
+            credential_id="internal",
+            kind="feedback.analyze",
+            request_json={
+                "tenant_id": "tenant_other",
+                "feedback_id": "feedback_other",
+                "session_id": "session_other",
+            },
+        )
+
+        with pytest.raises(LookupError, match="tenant mismatch"):
+            feedback_jobs.handle_feedback_analysis_job(db, job)
+
+
+def test_feedback_job_handler_binds_job_tenant_before_analysis(monkeypatch) -> None:
+    tenant_contexts: list[str] = []
+    captured: dict[str, object] = {}
+
+    def record_tenant_context(db: Session, tenant_id: str) -> None:
+        tenant_contexts.append(tenant_id)
+        bind_tenant_context(db, tenant_id)
+
+    with _test_session() as db:
+        feedback = _seed_feedback(db, with_model=False)
+        job = APIJob(
+            id="job_feedback_valid",
+            tenant_id="tenant_demo",
+            credential_id="internal",
+            kind="feedback.analyze",
+            request_json={
+                "tenant_id": "tenant_demo",
+                "feedback_id": feedback.id,
+                "session_id": feedback.session_id,
+            },
+        )
+
+        def fake_analyze(self, feedback_id: str, *, tenant_id: str | None = None):
+            captured.update(
+                {
+                    "session_tenant_context": self.db.info.get("staffdeck_tenant_id"),
+                    "feedback_id": feedback_id,
+                    "tenant_id": tenant_id,
+                }
+            )
+            return feedback
+
+        monkeypatch.setattr(feedback_jobs, "set_tenant_context", record_tenant_context)
+        monkeypatch.setattr(FeedbackAnalysisService, "analyze_feedback", fake_analyze)
+
+        result = feedback_jobs.handle_feedback_analysis_job(db, job)
+
+    assert tenant_contexts == ["tenant_demo"]
+    assert captured == {
+        "session_tenant_context": "tenant_demo",
+        "feedback_id": feedback.id,
+        "tenant_id": "tenant_demo",
+    }
+    assert result == {
+        "feedback_id": feedback.id,
+        "analysis_status": feedback.analysis_status,
+        "analysis_bucket": feedback.analysis_bucket,
+    }
 
 
 def _seed_feedback(db: Session, with_model: bool) -> MessageFeedback:

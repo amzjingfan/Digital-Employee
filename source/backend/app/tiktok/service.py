@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import timedelta
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -38,6 +37,10 @@ from app.db.models import (
 )
 from app.security.business_roles import BUSINESS_ROLE_BY_KEY, BusinessRoleDefinition
 from app.security.permissions import ensure_tenant_admin, is_admin_user
+from app.tiktok.release_evidence import (
+    verify_tiktok_release_evidence,
+    verify_tiktok_runtime_security_config,
+)
 from app.tiktok.release_gate import verify_tiktok_live_write_disabled
 from app.tiktok.schema import (
     OrganizationUnitRead,
@@ -54,6 +57,7 @@ from app.tiktok.schema import (
     TikTokResourceRead,
     TikTokRoleRead,
 )
+from app.tiktok.shadow import shadow_run_evidence_issues, shadow_run_is_release_ready
 from app.work_tasks.m2m import (
     ServiceIdentityError,
     authenticate_service_identity,
@@ -422,6 +426,20 @@ def get_tiktok_production_readiness(
         )
     )
 
+    connector_mode_ready = settings.tiktok_connector_mode == "live"
+    gates.append(
+        TikTokProductionGateRead(
+            key="tiktok_connector_mode",
+            label="TikTok 连接器执行模式",
+            status="passed" if connector_mode_ready else "blocked",
+            detail=(
+                "官方只读连接器已显式启用 live 模式"
+                if connector_mode_ready
+                else "生产就绪要求 tiktok_connector_mode=live；mock/replay 仅可用于本地或回放验证"
+            ),
+        )
+    )
+
     official_configured = bool(
         settings.tiktok_official_enabled
         and settings.tiktok_app_key.strip()
@@ -458,6 +476,26 @@ def get_tiktok_production_readiness(
         )
     )
 
+    runtime_security = verify_tiktok_runtime_security_config(settings, user.tenant_id)
+    gates.append(
+        TikTokProductionGateRead(
+            key=runtime_security.key,
+            label=runtime_security.label,
+            status=runtime_security.status,
+            detail=runtime_security.detail,
+        )
+    )
+    release_evidence = verify_tiktok_release_evidence(settings, user.tenant_id)
+    gates.extend(
+        TikTokProductionGateRead(
+            key=gate.key,
+            label=gate.label,
+            status=gate.status,
+            detail=gate.detail,
+        )
+        for gate in release_evidence.gates
+    )
+
     agent_names = [name for _, name, _, _ in TIKTOK_AGENT_CATALOG]
     published_count = len(
         db.exec(
@@ -490,16 +528,19 @@ def get_tiktok_production_readiness(
     if shadow_run is None:
         shadow_status = "waiting"
         shadow_detail = "尚未启动 14 天只读影子运行"
-    elif shadow_run.status == "completed" and shadow_run.ends_at - shadow_run.started_at >= timedelta(days=14):
+    elif shadow_run.status == "completed" and shadow_run_is_release_ready(shadow_run):
         shadow_status = "passed"
-        shadow_detail = "14 天只读影子运行已完成"
+        shadow_detail = "14 天只读影子运行已完成，覆盖至少 14 个 UTC 日期且无错误"
     elif shadow_run.status == "running":
         remaining_days = max(0, (shadow_run.ends_at - utc_now()).total_seconds() / 86400)
         shadow_status = "waiting"
         shadow_detail = f"影子运行进行中，预计还需 {remaining_days:.1f} 天"
     else:
         shadow_status = "blocked"
-        shadow_detail = f"影子运行状态为 {shadow_run.status}，需要重新检查"
+        evidence_issues = shadow_run_evidence_issues(shadow_run)
+        shadow_detail = (
+            f"影子运行状态为 {shadow_run.status}：" + ", ".join(evidence_issues)
+        )
     gates.append(
         TikTokProductionGateRead(
             key="shadow_run",
@@ -519,6 +560,7 @@ def get_tiktok_production_readiness(
             detail=(
                 "P3-A Live 写入表面审计通过："
                 f"{live_write_audit['route_count']} 条冻结路由、"
+                f"{live_write_audit['python_file_count']} 个 TikTok Python 文件、"
                 f"{live_write_audit['skill_count']} 个只读 Skill"
                 if live_write_audit["ok"]
                 else "P3-A Live 写入表面审计阻断：" + "; ".join(live_write_issues[:3])
