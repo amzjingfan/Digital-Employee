@@ -46,6 +46,7 @@ ENTERPRISE_CAPABILITY_OBJECTS: dict[str, str] = {
     "operations_reports": "/api/enterprise/operations-reports",
     "work_tasks": "/api/enterprise/work-tasks",
     "tiktok": "/api/enterprise/tiktok",
+    "social": "/api/v1/social",
 }
 
 _CAPABILITY_ACTIONS: tuple[tuple[str, str, str], ...] = (
@@ -455,8 +456,8 @@ def _parse_policy_rules(
             raise ValueError(f"Unsupported policy subject at line {line_number}: {subject}")
         if tenant_id is not None and domain not in {"*", tenant_id}:
             raise ValueError(f"Policy domain escapes the current tenant at line {line_number}")
-        if not object_path.startswith("/api/enterprise/"):
-            raise ValueError(f"Policy object must be an enterprise API path at line {line_number}")
+        if not object_path.startswith(("/api/enterprise/", "/api/v1/social")):
+            raise ValueError(f"Policy object must be an approved business API path at line {line_number}")
         try:
             re.compile(action_pattern)
         except re.error as exc:

@@ -906,6 +906,208 @@ class ConnectorSyncState(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class SocialCreator(SQLModel, table=True):
+    """Tenant-owned canonical creator profile without private contact details."""
+
+    __tablename__ = "social_creators"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_social_creator_tenant_id"),
+        UniqueConstraint(
+            "tenant_id", "idempotency_key", name="uq_social_creator_idempotency"
+        ),
+        CheckConstraint(
+            "status IN ('active', 'needs_review', 'archived')",
+            name="social_creators_status_check",
+        ),
+        Index("ix_social_creators_tenant_status", "tenant_id", "status", "updated_at"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("social_creator"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    canonical_name: str
+    status: str = Field(default="active", index=True)
+    idempotency_key: str = Field(index=True)
+    request_digest: str = Field(index=True)
+    created_by_user_id: str = Field(index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), index=True)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class SocialPlatformIdentity(SQLModel, table=True):
+    """Public platform identity separated from the tenant-local creator profile."""
+
+    __tablename__ = "social_platform_identities"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_social_identity_tenant_id"),
+        UniqueConstraint(
+            "tenant_id", "id", "creator_id", name="uq_social_identity_creator"
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "platform",
+            "provider_identity_id",
+            name="uq_social_identity_provider",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'needs_review', 'archived')",
+            name="social_platform_identities_status_check",
+        ),
+        Index(
+            "ix_social_identities_tenant_creator",
+            "tenant_id",
+            "creator_id",
+            "platform",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("social_identity"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    creator_id: str = Field(index=True)
+    platform: str = Field(index=True)
+    provider_identity_id: str = Field(index=True)
+    public_handle: str
+    profile_url: Optional[str] = None
+    verified: bool = False
+    status: str = Field(default="active", index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), index=True)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class SocialCreatorEvidence(SQLModel, table=True):
+    """Versioned, rights-aware evidence used for creator filtering decisions."""
+
+    __tablename__ = "social_creator_evidence"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "idempotency_key", name="uq_social_evidence_idempotency"
+        ),
+        CheckConstraint("followers_count >= 0", name="social_evidence_followers_check"),
+        CheckConstraint(
+            "engagement_rate_bps >= 0 AND engagement_rate_bps <= 10000",
+            name="social_evidence_engagement_check",
+        ),
+        CheckConstraint(
+            "estimated_cost_minor IS NULL OR estimated_cost_minor >= 0",
+            name="social_evidence_cost_check",
+        ),
+        CheckConstraint(
+            "quality_score >= 0 AND quality_score <= 100",
+            name="social_evidence_quality_check",
+        ),
+        CheckConstraint(
+            "data_rights_basis IN ('contract_authorized', 'public_business', 'user_provided')",
+            name="social_evidence_rights_check",
+        ),
+        CheckConstraint(
+            "contact_basis IN ('none', 'contract_authorized', 'public_business')",
+            name="social_evidence_contact_basis_check",
+        ),
+        CheckConstraint("expires_at > observed_at", name="social_evidence_time_check"),
+        CheckConstraint(
+            "(estimated_cost_minor IS NULL AND currency IS NULL) OR "
+            "(estimated_cost_minor IS NOT NULL AND currency IS NOT NULL)",
+            name="social_evidence_cost_currency_check",
+        ),
+        Index(
+            "ix_social_evidence_tenant_identity_observed",
+            "tenant_id",
+            "identity_id",
+            "observed_at",
+        ),
+        Index("ix_social_evidence_tenant_expiry", "tenant_id", "expires_at"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("social_evidence"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    creator_id: str = Field(index=True)
+    identity_id: str = Field(index=True)
+    country_code: Optional[str] = Field(default=None, index=True)
+    language_code: Optional[str] = Field(default=None, index=True)
+    category: Optional[str] = Field(default=None, index=True)
+    followers_count: int = Field(default=0, index=True)
+    engagement_rate_bps: int = Field(default=0, index=True)
+    audience_country_code: Optional[str] = Field(default=None, index=True)
+    estimated_cost_minor: Optional[int] = Field(default=None, index=True)
+    currency: Optional[str] = Field(default=None, index=True)
+    quality_score: int = Field(default=0, index=True)
+    source_ref: str
+    data_rights_basis: str = Field(index=True)
+    contact_basis: str = Field(default="none", index=True)
+    observed_at: datetime = Field(index=True)
+    expires_at: datetime = Field(index=True)
+    idempotency_key: str = Field(index=True)
+    request_digest: str = Field(index=True)
+    created_by_user_id: str = Field(index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), index=True)
+
+
+class SocialAudienceSnapshot(SQLModel, table=True):
+    """Immutable brand-scoped result set; freezing it never authorizes outreach."""
+
+    __tablename__ = "social_audience_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "brand_id",
+            "idempotency_key",
+            name="uq_social_audience_idempotency",
+        ),
+        CheckConstraint("status = 'frozen'", name="social_audience_status_check"),
+        CheckConstraint("creator_count >= 0", name="social_audience_count_check"),
+        Index(
+            "ix_social_audiences_tenant_brand_created",
+            "tenant_id",
+            "brand_id",
+            "created_at",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("social_audience"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    brand_id: str = Field(index=True)
+    status: str = Field(default="frozen", index=True)
+    filters_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    creator_ids_json: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    identity_ids_json: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    evidence_ids_json: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    creator_count: int = Field(default=0)
+    audience_hash: str = Field(index=True)
+    idempotency_key: str = Field(index=True)
+    request_digest: str = Field(index=True)
+    created_by_user_id: str = Field(index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), index=True)
+
+
+class SocialDomainEvent(SQLModel, table=True):
+    """Append-only, secret-free audit evidence for social creator decisions."""
+
+    __tablename__ = "social_domain_events"
+    __table_args__ = (
+        CheckConstraint(
+            "aggregate_type IN ('creator', 'creator_evidence', 'audience_snapshot')",
+            name="social_domain_events_aggregate_check",
+        ),
+        Index(
+            "ix_social_events_tenant_aggregate_time",
+            "tenant_id",
+            "aggregate_type",
+            "aggregate_id",
+            "occurred_at",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("social_event"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    brand_id: Optional[str] = Field(default=None, index=True)
+    aggregate_type: str = Field(index=True)
+    aggregate_id: str = Field(index=True)
+    event_type: str = Field(index=True)
+    actor_user_id: str = Field(index=True)
+    request_id: str = Field(index=True)
+    detail_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    occurred_at: datetime = Field(default_factory=lambda: datetime.now(UTC), index=True)
+
+
 class BusinessResourceScope(SQLModel, table=True):
     """A role grant to one business resource; tenant RLS remains the outer boundary."""
 

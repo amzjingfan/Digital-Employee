@@ -41,6 +41,7 @@ from app.api import (
     scheduled_tasks,
     sessions,
     skills,
+    social,
     teams,
     tiktok,
     tools,
@@ -204,6 +205,7 @@ app.include_router(brands.router, dependencies=enterprise_permissions)
 app.include_router(business_resources.resource_router, dependencies=enterprise_permissions)
 app.include_router(business_resources.request_router, dependencies=enterprise_permissions)
 app.include_router(business_resources.approval_router, dependencies=enterprise_permissions)
+app.include_router(social.router, dependencies=enterprise_permissions)
 app.include_router(tiktok.router, dependencies=enterprise_permissions)
 app.include_router(business_executions.router, dependencies=enterprise_permissions)
 app.include_router(bi.router, dependencies=enterprise_permissions)
