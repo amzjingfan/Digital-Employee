@@ -36,7 +36,6 @@ GUARDRAIL_ISSUE_CATEGORIES = {
     "false_claim",
     "unapproved_external_write",
 }
-
 SHADOW_DURATION = timedelta(days=14)
 MINIMUM_OBSERVATION_DAYS = 14
 
