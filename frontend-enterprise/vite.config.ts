@@ -13,9 +13,23 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': path.resolve(__dirname, './src'),
       },
+      dedupe: [
+        '@testing-library/react',
+        '@testing-library/user-event',
+        'cytoscape',
+        'react',
+        'react-dom',
+        'react-router-dom',
+        'sonner',
+        'vitest',
+      ],
     },
     base: '/',
     test: {
+      include: [
+        '../tests/frontend/**/*.test.ts',
+        '../tests/frontend/**/*.test.tsx',
+      ],
       setupFiles: ['./src/test/setup.ts'],
       environmentOptions: {
         jsdom: {
@@ -24,6 +38,12 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      fs: {
+        allow: [
+          path.resolve(__dirname),
+          path.resolve(__dirname, '../tests/frontend'),
+        ],
+      },
       port: 5173,
       proxy: {
         '/api': {

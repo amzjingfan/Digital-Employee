@@ -1,0 +1,17 @@
+{
+  "extends": "../../frontend-enterprise/tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "../../frontend-enterprise",
+    "paths": {
+      "@/*": ["src/*"],
+      "*": ["node_modules/*"]
+    },
+    "typeRoots": ["../../frontend-enterprise/node_modules/@types"]
+  },
+  "include": [
+    "../../frontend-enterprise/src",
+    "./**/*.test.ts",
+    "./**/*.test.tsx"
+  ],
+  "exclude": []
+}
