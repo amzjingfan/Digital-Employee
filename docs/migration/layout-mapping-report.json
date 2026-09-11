@@ -1,0 +1,49 @@
+{
+  "report": "Task 2 root-layout promotion",
+  "baseline": {
+    "sourceIndex": "docs/migration/source-index-before-layout.tsv",
+    "baseCommit": "e8a3affcbe80ecdea1c184e3004f55751c8a0b91",
+    "indexedPaths": 1154,
+    "sourcePathsMoved": 1124,
+    "alreadyRootedPathsRetained": 30
+  },
+  "mapping": {
+    "rule": "Strip the leading source/ component from source paths; retain already-rooted paths unchanged.",
+    "caseInsensitiveCollisionGroups": 0,
+    "caseInsensitiveCollisions": [],
+    "sourceDirectoryPresentAfterMigration": false,
+    "gitMvUsedForTrackedSourcePaths": true
+  },
+  "blobVerification": {
+    "verifiedPaths": 1154,
+    "matchingBlobs": 1153,
+    "missingPaths": [],
+    "expectedContentChanges": [
+      {
+        "originalPath": "source/.gitignore",
+        "destination": ".gitignore",
+        "originalBlob": "5b6b0d57f22a1c04804a284212f8b785826bd573",
+        "reason": "Removed only the /docs/ ignore rule so promoted and carry-over documentation remains trackable."
+      }
+    ],
+    "unexpectedMismatches": []
+  },
+  "carryOverDocuments": [
+    {
+      "path": "docs/DEVELOPMENT_LOG.md",
+      "source": "joukir-enterprise/source/docs/DEVELOPMENT_LOG.md",
+      "status": "added"
+    },
+    {
+      "path": "docs/DATABASE_RESTORE_20260909.md",
+      "source": "joukir-enterprise/docs/DATABASE_RESTORE_20260909.md",
+      "status": "added"
+    },
+    {
+      "path": "docs/LOCAL_STARTUP_20260909.md",
+      "source": "joukir-enterprise/docs/LOCAL_STARTUP_20260909.md",
+      "status": "added"
+    }
+  ],
+  "addedReport": "docs/migration/layout-mapping-report.json"
+}
