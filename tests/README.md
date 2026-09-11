@@ -56,7 +56,10 @@ backend\.venv\Scripts\python.exe tests\check_test_layout.py
 ```
 
 Place executable repository tests under the matching `tests/` category. Python test
-modules use `test_*.py` or `*_test.py`; JavaScript and TypeScript tests use `.test.*`
-or `.spec.*`. Support setup such as `frontend-enterprise/src/test/setup.ts` remains
-with production tooling. Skill evaluation data at `skills/*/evals/cases.json` remains
-with each published skill package because it is runtime data, not an executable test.
+modules use `test_*.py` or `*_test.py`; frontend tests use `*.test.ts` or
+`*.test.tsx`, matching both Vitest collection and the test TypeScript project.
+`.spec.*` files and JavaScript variants such as `*.test.js`, `*.test.mjs`, and
+`*.test.cjs` are rejected because this repository does not collect or type-check them.
+Support setup such as `frontend-enterprise/src/test/setup.ts` remains with production
+tooling. Skill evaluation data at `skills/*/evals/cases.json` remains with each
+published skill package because it is runtime data, not an executable test.

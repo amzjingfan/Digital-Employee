@@ -9,12 +9,14 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ALLOWED_SKILL_EVAL = re.compile(r"^skills/[^/]+/evals/cases\.json$")
 SKILL_EVAL_PREFIX = re.compile(r"^skills/[^/]+/evals/")
+SUPPORTED_FRONTEND_TEST = re.compile(r"^.*\.test\.(?:ts|tsx)$")
+FRONTEND_TEST_CANDIDATE = re.compile(
+    r"^.*\.(?:test|spec)\.(?:js|jsx|ts|tsx|mjs|mts|cjs|cts)$"
+)
+UNSUPPORTED_FRONTEND_TEST = "unsupported frontend test filename"
 TEST_PATTERNS = (
     ("Python test module", re.compile(r"^(?:test_.*|.*_test)\.py$")),
-    (
-        "JavaScript/TypeScript test module",
-        re.compile(r"^.*\.(?:test|spec)\.(?:js|jsx|ts|tsx|mjs|mts|cjs|cts)$"),
-    ),
+    ("frontend test module", SUPPORTED_FRONTEND_TEST),
     (
         "smoke runner",
         re.compile(r"^smoke[_-].*\.(?:py|sh|ps1|js|ts|mjs|cjs|bat|cmd)$"),
@@ -48,6 +50,10 @@ def _kind(path: str) -> str | None:
     if SKILL_EVAL_PREFIX.match(path):
         return "skill evaluation asset"
     basename = path.rsplit("/", 1)[-1]
+    if FRONTEND_TEST_CANDIDATE.fullmatch(basename) and not SUPPORTED_FRONTEND_TEST.fullmatch(
+        basename
+    ):
+        return UNSUPPORTED_FRONTEND_TEST
     for kind, pattern in TEST_PATTERNS:
         if pattern.fullmatch(basename):
             return kind
@@ -58,14 +64,17 @@ def main() -> int:
     tracked = _tracked_paths()
     violations: list[tuple[str, str]] = []
     for path in tracked:
-        if path.startswith("tests/") or ALLOWED_SKILL_EVAL.fullmatch(path):
+        if ALLOWED_SKILL_EVAL.fullmatch(path):
             continue
         kind = _kind(path)
-        if kind:
-            violations.append((path, kind))
+        if kind is None:
+            continue
+        if path.startswith("tests/") and kind != UNSUPPORTED_FRONTEND_TEST:
+            continue
+        violations.append((path, kind))
 
     if violations:
-        print("Executable tests must be tracked under tests/:")
+        print("Test layout violations:")
         for path, kind in violations:
             print(f"- {path} ({kind})")
         return 1

@@ -345,12 +345,12 @@ def command_up(detach_flag: bool) -> int:
         print(f"Started StaffDeck supervisor ({pid})")
         print(f"  app        {base}/chat/")
         print(f"  enterprise {base}/enterprise/dashboard")
-        print(f"  api docs   {base}/docs")
+        print(f"  health     {base}/api/health")
     else:
         backend = f"http://{supervisor.url_host(supervisor.BACKEND_HOST)}:{supervisor.BACKEND_PORT}"
         frontend = f"http://{supervisor.url_host(supervisor.ENTERPRISE_HOST)}:{supervisor.ENTERPRISE_PORT}"
         print(f"Started StaffDeck supervisor ({pid})")
-        print(f"  backend    {backend}/docs")
+        print(f"  backend    {backend}/api/health")
         print(f"  enterprise {frontend}/enterprise/dashboard")
         print(f"  chat       {frontend}/chat/")
     print(f"Logs: {LOG_DIR}")

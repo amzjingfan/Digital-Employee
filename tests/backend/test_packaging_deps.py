@@ -1,13 +1,64 @@
 import importlib
+import importlib.util
 from pathlib import Path
 
 # 渠道(微信/企微)打包必需依赖:PyInstaller hiddenimports 防回归删漏
 REQUIRED_MODULES = ("aibot", "websockets", "aiohttp", "pyee", "dotenv", "cryptography")
 
 
+def _load_test_layout_guard():
+    script = Path(__file__).resolve().parents[1] / "check_test_layout.py"
+    spec = importlib.util.spec_from_file_location("joukir_test_layout_guard", script)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_packaging_dependencies_importable() -> None:
     for module in REQUIRED_MODULES:
         importlib.import_module(module)
+
+
+def test_test_layout_accepts_only_collected_frontend_test_suffixes(
+    monkeypatch,
+    capsys,
+) -> None:
+    guard = _load_test_layout_guard()
+    monkeypatch.setattr(
+        guard,
+        "_tracked_paths",
+        lambda: [
+            "tests/frontend/example.test.ts",
+            "tests/frontend/example.test.tsx",
+        ],
+    )
+
+    assert guard.main() == 0
+    assert "Test layout violations" not in capsys.readouterr().out
+
+
+def test_test_layout_rejects_uncollected_frontend_test_suffixes(
+    monkeypatch,
+    capsys,
+) -> None:
+    guard = _load_test_layout_guard()
+    unsupported = [
+        *(
+            f"tests/frontend/example.spec.{suffix}"
+            for suffix in ("js", "jsx", "ts", "tsx", "mjs", "mts", "cjs", "cts")
+        ),
+        *(
+            f"tests/frontend/example.test.{suffix}"
+            for suffix in ("js", "jsx", "mjs", "mts", "cjs", "cts")
+        ),
+    ]
+    monkeypatch.setattr(guard, "_tracked_paths", lambda: unsupported)
+
+    assert guard.main() == 1
+    output = capsys.readouterr().out
+    for path in unsupported:
+        assert path in output
 
 
 def test_pyinstaller_spec_keeps_channel_hiddenimports() -> None:

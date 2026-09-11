@@ -1,33 +1,59 @@
 # Backend
 
-FastAPI backend for the Skill Agent Loop MVP.
+FastAPI backend for Joukir's StaffDeck application.
 
-## Run
+## Install and run
 
-From the repository root, prefer:
-
-```bash
-scripts/dev_up.sh
-```
-
-For backend-only debugging:
+Run commands from the repository root. Install the locked backend dependencies with:
 
 ```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-cp .env.example .env
-.venv/bin/uvicorn single_port_app:app --host 127.0.0.1 --port 5173
+uv sync --project backend --locked --extra dev
 ```
 
-Swagger UI: `http://localhost:5173/docs`
+Start the complete single-port development application with the wrapper for the
+current platform:
 
-The current production schema migration path supports SQLite only. Non-SQLite
-database URLs are not a supported deployment configuration.
+```bash
+# macOS, Linux, or WSL
+scripts/dev_up.sh --detach
+```
 
-`CORS_ORIGINS` controls the allowed frontend origins. The root `scripts/dev_up.sh`
-sets the local single-port origin by default and can add a public tunnel origin with
-`PUBLIC_APP_ORIGIN`.
+```powershell
+# Windows PowerShell
+.\scripts\dev_up.ps1 --detach
+```
+
+For backend-only debugging, point the settings loader at the ignored backend
+configuration and start the API directly:
+
+```bash
+ULTRARAG_DOTENV=backend/.env backend/.venv/bin/python -m uvicorn \
+  --app-dir backend app.main:app --host 127.0.0.1 --port 8000
+```
+
+```powershell
+$env:ULTRARAG_DOTENV = "backend/.env"
+backend\.venv\Scripts\python.exe -m uvicorn `
+  --app-dir backend app.main:app --host 127.0.0.1 --port 8000
+```
+
+The repository does not provide `.env.example`. Obtain `backend/.env` through the
+approved secure deployment handoff, or supply the required settings through the
+process environment. Do not commit deployment configuration or secrets.
+
+PostgreSQL is authoritative for the current restored development environment and
+for production schema work. Apply reviewed schema changes from `backend/migrations/`
+and preserve the configured tenant RLS and least-privilege roles. SQLite remains a
+local default for isolated demos and tests that explicitly use it; it does not
+represent the restored PostgreSQL/Casdoor environment.
+
+Use `http://127.0.0.1:8000/api/health` for the backend-only health check. The main
+application deliberately disables Swagger, ReDoc, and the OpenAPI schema, so
+`/docs`, `/redoc`, and `/openapi.json` are unavailable.
+
+`CORS_ORIGINS` controls the allowed frontend origins. The lifecycle wrappers supply
+the local single-port origins by default; set the variable explicitly when another
+trusted frontend origin is required.
 
 ## Agent process sandbox
 

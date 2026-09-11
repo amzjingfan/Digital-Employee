@@ -6,7 +6,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 ROOT_DIR = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = ROOT_DIR / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
@@ -86,6 +85,44 @@ def test_dev_cli_refreshes_incomplete_frontend_dependencies(monkeypatch) -> None
 
     assert len(calls) == 2
     assert calls[1][-3:] == ["ci", "--no-audit", "--no-fund"]
+
+
+def test_dev_cli_prints_existing_health_endpoint_instead_of_disabled_docs(
+    monkeypatch,
+    capsys,
+) -> None:
+    class Supervisor:
+        APP_HOST = "127.0.0.1"
+        APP_PORT = 5173
+        BACKEND_HOST = "127.0.0.1"
+        BACKEND_PORT = 8000
+        ENTERPRISE_HOST = "127.0.0.1"
+        ENTERPRISE_PORT = 5173
+        validate_prerequisites = staticmethod(lambda: None)
+        build_services = staticmethod(list)
+        url_host = staticmethod(lambda host: host)
+
+    for single_port, health_url in (
+        (True, "http://127.0.0.1:5173/api/health"),
+        (False, "http://127.0.0.1:8000/api/health"),
+    ):
+        dev = _load_script("dev")
+        supervisor = Supervisor()
+        supervisor.SINGLE_PORT = single_port
+        monkeypatch.setenv("FORCE_PORTS", "1")
+        monkeypatch.setattr(dev, "_load_supervisor", lambda current=supervisor: current)
+        monkeypatch.setattr(dev, "_ensure_frontend_dependencies", lambda: None)
+        monkeypatch.setattr(dev, "_ensure_sandbox_runtime", lambda: None)
+        monkeypatch.setattr(dev, "stop_services", lambda verbose=False: None)
+        monkeypatch.setattr(dev, "_ensure_port_available", lambda *_args: None)
+        monkeypatch.setattr(dev, "_build_frontend", lambda: None)
+        monkeypatch.setattr(dev, "_start_detached", lambda _supervisor: 1234)
+        monkeypatch.setattr(dev, "_wait_for_url", lambda *_args: None)
+
+        assert dev.command_up(True) == 0
+        output = capsys.readouterr().out
+        assert health_url in output
+        assert "/docs" not in output
 
 
 def test_supervisor_does_not_restart_during_startup_grace(monkeypatch) -> None:
