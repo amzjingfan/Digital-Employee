@@ -1963,7 +1963,7 @@ P3-A 不定义 Live 写方法。后续写方法只能通过 `BusinessActionExecu
 | WP-05 Skill Pack | `skills/joukir-tiktok-*`、导入脚本、评测夹具 | Schema、来源、许可证、Prompt Injection、版本漂移 |
 | WP-06 Agent/SOP 种子 | 新增幂等 bootstrap 服务和数据清单 | 重复执行、内容漂移、M2M 缺失、发布快照 |
 | WP-07 前端 | `frontend-enterprise/src/enums/routes.ts`、`auth.ts`、`App.tsx`、`AppSidebar.tsx`、新增 `TikTokBusinessUnitPage.tsx` | 路由权限、六 Tab、错误/空状态、i18n、构建 |
-| WP-08 端到端 | `backend/tests/test_tiktok_*.py`、前端同名测试、验证脚本 | 双租户、五授权域、五主 SOP、Trace、备份和回滚 |
+| WP-08 端到端 | `tests/backend/test_tiktok_*.py`、前端同名测试、验证脚本 | 双租户、五授权域、五主 SOP、Trace、备份和回滚 |
 
 新代码沿用现有模块结构：`schema.py` 定义 API 模型，`service.py` 管理事务和状态，`connectors/` 隔离远程依赖，API 层只做认证、参数转换和错误映射。禁止在 React 页面、Skill Markdown 或 API 路由中直接访问 TikTok HTTP 接口。
 
