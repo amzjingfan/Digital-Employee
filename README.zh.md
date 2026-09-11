@@ -71,13 +71,11 @@ URL。配置按用户保存，并在下次启动时生效。
 `ULTRARAG_HOST`、`ULTRARAG_PORT` 和 `STAFFDECK_PUBLIC_URL` 覆盖启动参数：
 
 ```text
-阅读 https://raw.githubusercontent.com/OpenBMB/StaffDeck/main/README.zh.md。
-克隆 OpenBMB/StaffDeck 私有仓库，准备 Python 3.11 或更高版本和 Node.js 20，创建
-backend/.venv，安装前后端依赖，将 backend/.env.example 复制为
-backend/.env；缺少 OpenAI 兼容模型地址或 API Key 时向我询问，并严格使用当前
-系统对应的文档命令。macOS/Linux/WSL 运行 scripts/dev_up.sh --detach，Windows
-PowerShell 运行 .\scripts\dev_up.ps1 --detach；验证 /api/health 和
-/workspace/gallery 后再报告完成。
+在授权的 Joukir 工作区中先阅读 README.zh.md、AGENTS.md、
+docs/PROJECT_MEMORY.md 和 docs/SESSION_HANDOFF.md。准备 Python 3.11 或更高版本、
+uv 和 Node.js 20，按锁文件安装前后端依赖，并通过批准的安全交接取得被忽略的
+backend/.env。缺少部署专用配置时向我询问，不得打印或提交配置值。严格使用当前
+系统对应的文档命令，最后验证 /api/health 和 /workspace/gallery 后再报告完成。
 ```
 
 
@@ -96,6 +94,7 @@ PowerShell 运行 .\scripts\dev_up.ps1 --detach；验证 /api/health 和
     - [4. 验证安装](#4-验证安装)
     - [常用命令](#常用命令)
       - [统一 Python 入口](#统一-python-入口)
+      - [验证代码改动](#验证代码改动)
   - [核心流程](#核心流程)
   - [项目结构](#项目结构)
   - [常见问题](#常见问题)
@@ -113,40 +112,34 @@ PowerShell 运行 .\scripts\dev_up.ps1 --detach；验证 /api/health 和
 
 - 支持 macOS、Linux、WSL 或 Windows PowerShell
 - Python **3.11+**
+- [uv](https://docs.astral.sh/uv/)
 - Node.js **20+** 与 npm
 - OpenAI Chat Completions 兼容的模型接口和 API Key
 - 应用本身不要求 CUDA；硬件要求由所选择的模型服务决定
 
 ### 1. 克隆并安装
 
-首先克隆仓库：
-
-```bash
-git clone https://github.com/OpenBMB/StaffDeck.git
-cd StaffDeck
-```
+迁移后的 Joukir 仓库在维护者提供真实 GitHub URL 前不会配置远程地址。请使用已授权的工作区，并从仓库根目录执行以下命令。
 
 macOS、Linux 或 WSL：
 
 ```bash
-python3 -m venv backend/.venv
-backend/.venv/bin/python -m pip install -e "backend[dev]"
+uv sync --project backend --locked --extra dev
 npm --prefix frontend-enterprise ci
-cp backend/.env.example backend/.env
 ```
 
 Windows PowerShell：
 
 ```powershell
-py -3 -m venv backend\.venv
-.\backend\.venv\Scripts\python.exe -m pip install -e "backend[dev]"
+uv sync --project backend --locked --extra dev
 npm --prefix frontend-enterprise ci
-Copy-Item backend\.env.example backend\.env
 ```
 
 ### 2. 配置模型
 
-首次启动前编辑 `backend/.env`：
+`backend/.env` 已被 Git 忽略，仓库没有跟踪示例文件。只能通过批准的部署配置或安全交接创建，并将读取权限限制给运行服务的账号。使用已恢复的 PostgreSQL/Casdoor 开发环境时，请先阅读[本地启动记录](docs/LOCAL_STARTUP_20260909.md)、[数据库恢复记录](docs/DATABASE_RESTORE_20260909.md)和当前[会话交接](docs/SESSION_HANDOFF.md)，不要用通用样例覆盖该环境。
+
+单独创建新环境时，请在首次启动前于被忽略的文件中配置模型：
 
 ```dotenv
 APP_SECRET="请替换为足够长的随机字符串"
@@ -164,7 +157,9 @@ API Key 用于创建初始模型配置，存入数据库前会被加密。请勿
 | macOS、Linux 或 WSL | `scripts/dev_up.sh --detach` |
 | Windows PowerShell | `.\scripts\dev_up.ps1 --detach` |
 
-两套包装脚本最终都会调用同一个跨平台 Python 生命周期入口 `scripts/dev.py`。启动过程会构建 StaffDeck 前端，并由一个 FastAPI 进程在 `5173` 端口同时提供 UI、API 与 Swagger 文档。默认管理员账号为 `admin` / `admin`，请在首次登录后通过账号配置修改密码。
+两套包装脚本最终都会调用同一个跨平台 Python 生命周期入口 `scripts/dev.py`。启动过程会构建 StaffDeck 前端，并由一个 FastAPI 进程在 `5173` 端口同时提供 UI 与 API。应用明确关闭了交互式 Swagger、ReDoc 和 OpenAPI Schema 路由。
+
+已恢复的 Joukir 开发环境使用企业 SSO 和原有 Casdoor 账号。请从应用内发起登录，不要假定存在默认管理员凭据。
 
 ### 4. 验证安装
 
@@ -215,6 +210,20 @@ curl.exe http://127.0.0.1:5173/api/health
 | 查看服务状态 | `status` |
 | 停止本地服务 | `down` |
 
+#### 验证代码改动
+
+从仓库根目录运行标准测试。CI 的精确专项节点见 [CONTRIBUTING.md](CONTRIBUTING.md)，集成和平台打包测试命令见 [tests/README.md](tests/README.md)。
+
+```bash
+uv run --project backend --locked python tests/check_test_layout.py
+uv run --project backend --locked pytest -c pytest.ini tests/backend
+npm --prefix frontend-enterprise run config:check
+npm --prefix frontend-enterprise run i18n:check
+npm --prefix frontend-enterprise run test:typecheck
+npm --prefix frontend-enterprise test
+npm --prefix frontend-enterprise run build
+```
+
 > 完整说明 → [StaffDeck 使用教程](https://staffdeck.openbmb.cn/#/docs/introduce?lang=zh)
 
 
@@ -262,17 +271,23 @@ curl.exe http://127.0.0.1:5173/api/health
 
 ## 开放 API
 
-外部业务系统可以通过员工级 API Key 调用数字员工、持续会话、Harness v2 Run、SOP、知识、技能、工具和定时任务。完整的鉴权边界、接口清单、SSE、Webhook 与调用示例见 [数字员工开放 API v1](docs/open-api-v1.md)。
+外部业务系统可以通过员工级 API Key 调用数字员工、持续会话、Harness v2 Run、SOP、知识、技能、工具和定时任务。鉴权边界、接口、SSE、Webhook 与调用示例由[文档索引中的 API 技能参考](docs/README.md)维护；公开 API 受运行配置开关控制，请先核对实际部署。
 
 ## 项目结构
 
 ```text
-StaffDeck/
+joukir/
+├── .github/                  # CI、CodeQL、依赖、发布与 PR 工作流
 ├── backend/                  # FastAPI 接口、Agent 运行时、存储与任务 Worker
+├── deploy/                   # PostgreSQL、Casdoor、Casbin 与 RLS 部署资源
 ├── frontend-enterprise/      # React/TypeScript StaffDeck 工作台
-├── docs/                     # 教程、API、Schema 与示例流程
-├── scripts/                  # 单端口服务生命周期与校验脚本
+├── docs/                     # 产品文档、运行手册、记忆、交接与 ADR
 ├── packaging/                # macOS、Linux 与 Windows 打包资源
+├── scripts/                  # 单端口服务生命周期与校验脚本
+├── skills/                   # Joukir 与 StaffDeck 发布技能包
+├── tests/                    # 后端、前端、集成与打包测试
+├── AGENTS.md                 # 开发 Agent 仓库规则
+├── CONTRIBUTING.md           # GitHub Flow 与本地验证
 ├── README.md                 # English
 └── README.zh.md              # 简体中文
 ```
@@ -283,7 +298,7 @@ StaffDeck/
 <details>
 <summary><strong>页面可以打开，但数字员工不回答。</strong></summary>
 
-检查所选模型配置、API Key、模型名和模型服务网络。随后查看执行记录与 `.dev/logs/app.log`，定位模型服务返回的具体错误。
+检查所选模型配置、API Key、模型名和模型服务网络。随后查看执行记录，以及生命周期命令或当前会话交接所报告的日志位置，定位模型服务返回的具体错误。
 </details>
 
 <details>
@@ -337,7 +352,7 @@ StaffDeck/
 - 提交范围清晰、包含测试与浏览器校验的 PR
 - 改进文档和中英翻译
 
-请保留工作区中与任务无关的修改，根据影响范围补充测试，并在 PR 中写明完成 UI 校验的路由与用户角色。
+请保留工作区中与任务无关的修改，根据影响范围补充测试，并在 PR 中写明完成 UI 校验的路由与用户角色。GitHub Flow 与完整本地验证命令见 [CONTRIBUTING.md](CONTRIBUTING.md)；项目记忆、当前交接、运行手册、ADR 与 API 技能参考见[文档索引](docs/README.md)。
 
 ## 风险与限制
 

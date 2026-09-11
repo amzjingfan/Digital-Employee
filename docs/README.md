@@ -1,0 +1,76 @@
+# Joukir documentation index
+
+Start a development session with the durable memory and current handoff below. Dated handover and development-branch records are evidence snapshots: they may use the former `source/` layout or describe service state that has since changed. Use current commands from the root README, `CONTRIBUTING.md`, and `tests/README.md`.
+
+## Development context and governance
+
+- [Stable project memory](PROJECT_MEMORY.md)
+- [Current session handoff](SESSION_HANDOFF.md)
+- [Append-only development log](DEVELOPMENT_LOG.md)
+- [Architecture decision records](adr/README.md)
+- [ADR 0001: main repository layout and history preservation](adr/0001-main-repository-layout.md)
+- [Repository agent rules](../AGENTS.md)
+- [Contribution and GitHub Flow guide](../CONTRIBUTING.md)
+- [Repository test guide](../tests/README.md)
+- [Agent documentation domain policy](agents/domain.md)
+- [Agent issue tracker policy](agents/issue-tracker.md)
+- [Agent triage label policy](agents/triage-labels.md)
+
+## Product requirements
+
+- [Cross-border digital workforce PRD (2026)](prd/crossborder-digital-workforce-prd-2026.md)
+- [Cross-border digital workforce integrated plan (2026)](prd/crossborder-digital-workforce-integrated-plan-2026.md)
+
+Both PRDs refer to `prd/lan-multiuser-codex-memory-2026.md`. That LAN multiuser/Codex memory research document was absent from the inherited repository, so this migration records the gap instead of fabricating its contents.
+
+## Operations and restoration
+
+- [TikTok live-write release gate runbook](runbooks/tiktok-live-write-release-gate.md)
+- [StaffDeck platform deployment guide](../deploy/staffdeck-platform/README.md)
+- [StaffDeck platform source manifest](../deploy/staffdeck-platform/SOURCE_MANIFEST.md)
+- [PostgreSQL and Casdoor restoration record, 2026-09-09](DATABASE_RESTORE_20260909.md) — dated handover evidence; verify live state before using it.
+- [Joukir analysis and local startup record, 2026-09-09](LOCAL_STARTUP_20260909.md) — dated source-layout/startup snapshot; current cutover commands will be finalized by migration verification.
+- [Portable development handover, 2026-09-09](PORTABLE_DEVELOPMENT_20260909.md) — dated handover snapshot.
+- [Backup scope](../BACKUP_SCOPE.md) — inherited scope record; backup data itself remains outside Git.
+
+## Repository migration
+
+- [Approved main-repository migration design](superpowers/specs/2026-09-11-joukir-main-repository-migration-design.md)
+- [Main-repository migration implementation plan](superpowers/plans/2026-09-11-joukir-main-repository-migration.md)
+- [Pre-layout tracked source index](migration/source-index-before-layout.tsv) — immutable handover path/blob evidence.
+- [Flat-layout mapping report](migration/layout-mapping-report.json)
+- Final functional verification: `migration/VERIFICATION_20260911.md` will be created after Task 8 completes; do not treat it as available yet.
+
+## Historical architecture and implementation records
+
+These files preserve design or branch evidence from the inherited development period. They are not current runbooks.
+
+- [Model API protocol design](../design-model-api-protocols.md)
+- [Multi-agent team decisions](../design-multi-agent-team-decisions.md)
+- [Design QA record](../design-qa.md)
+- [Feishu channel development record](../development-feishu-channel.md)
+- [Cross-border capabilities agent report, 2026-09-02](../.agent/reports/agent_report_crossborder_capabilities_20260902.md)
+- [Cross-border gallery agent report, 2026-09-02](../.agent/reports/agent_report_crossborder_gallery_20260902.md)
+- [StaffDeck snapshots/M2M agent report, 2026-09-02](../.agent/reports/agent_report_staffdeck_snapshots_m2m_20260902.md)
+- [Amazon Ads PDCA branch](development-branches/amazon-ads-pdca.md)
+- [BI analytics branch](development-branches/bi-analytics.md)
+- [Portable integration branch](development-branches/integration-portable-20260909.md)
+- [Offsite channels branch](development-branches/offsite-channels.md)
+- [Platform foundation branch](development-branches/platform-foundation.md)
+- [Social operations branch](development-branches/social-operations.md)
+- [Workforce connectors/assets branch](development-branches/workforce-connectors-assets.md)
+- [Workforce platform governance branch](development-branches/workforce-platform-governance.md)
+- [Seven-role workforce workflows branch](development-branches/workforce-seven-role-workflows.md)
+- [TikTok department branch](development-branches/workforce-tiktok-department.md)
+- [Workforce UAT/release branch](development-branches/workforce-uat-release.md)
+
+## API skill references
+
+The application intentionally disables FastAPI's interactive Swagger, ReDoc, and OpenAPI schema routes. The tracked StaffDeck API skills provide maintained authentication and endpoint guidance:
+
+- [API authentication skill](../skills/staffdeck-api-auth/SKILL.md) and [authentication endpoint reference](../skills/staffdeck-api-auth/references/endpoints.md)
+- [Agent execution skill](../skills/staffdeck-api-run-agent/SKILL.md) and [run API reference](../skills/staffdeck-api-run-agent/references/run-api.md)
+- [Resource management skill](../skills/staffdeck-api-manage-resources/SKILL.md) and [resource API reference](../skills/staffdeck-api-manage-resources/references/resources-api.md)
+- [SOP management skill](../skills/staffdeck-api-manage-sops/SKILL.md) and [SOP API reference](../skills/staffdeck-api-manage-sops/references/sop-api.md)
+
+Public API routes are feature-gated and may be disabled in a deployment. Validate configuration, authentication scope, tenant context, and the actual route before relying on an example.

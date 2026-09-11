@@ -70,14 +70,13 @@ deployments, you can also override the launch at runtime with
 `ULTRARAG_HOST`, `ULTRARAG_PORT`, and `STAFFDECK_PUBLIC_URL`:
 
 ```text
-Read https://raw.githubusercontent.com/OpenBMB/StaffDeck/main/README.md.
-Clone the OpenBMB/StaffDeck repository, prepare Python 3.11 or newer and Node.js 20,
-create backend/.venv, install the backend and frontend dependencies, copy
-backend/.env.example to backend/.env, ask me for the OpenAI-compatible model
-endpoint and API key if they are missing, and use the commands documented for
-the current OS. Start with scripts/dev_up.sh --detach on macOS/Linux/WSL or
-.\scripts\dev_up.ps1 --detach on Windows PowerShell, then verify /api/health
-plus /workspace/gallery before reporting success.
+Read README.md, AGENTS.md, docs/PROJECT_MEMORY.md, and docs/SESSION_HANDOFF.md in
+the authorized Joukir checkout. Prepare Python 3.11 or newer, uv, and Node.js 20,
+install the locked backend and frontend dependencies, and obtain an ignored
+backend/.env through the approved secure deployment handoff. Ask me for missing
+deployment-specific settings without printing or committing their values. Use the
+commands documented for the current OS, then verify /api/health and
+/workspace/gallery before reporting success.
 ```
 
 
@@ -96,6 +95,7 @@ plus /workspace/gallery before reporting success.
     - [4. Verify the Installation](#4-verify-the-installation)
     - [Useful Commands](#useful-commands)
       - [Unified Python Entry](#unified-python-entry)
+      - [Validate Changes](#validate-changes)
   - [Core Workflows](#core-workflows)
   - [Project Structure](#project-structure)
   - [FAQ](#faq)
@@ -113,40 +113,34 @@ plus /workspace/gallery before reporting success.
 
 - macOS, Linux, WSL, or Windows PowerShell
 - Python **3.11+**
+- [uv](https://docs.astral.sh/uv/)
 - Node.js **20+** and npm
 - An OpenAI-compatible Chat Completions endpoint and API key
 - No CUDA requirement for the application itself; hardware requirements depend on the selected model service
 
 ### 1. Clone and Install
 
-Clone the repository first:
-
-```bash
-git clone https://github.com/OpenBMB/StaffDeck.git
-cd StaffDeck
-```
+The migrated Joukir repository intentionally has no configured remote until a maintainer supplies its real GitHub URL. Use an authorized checkout and run these commands from its root.
 
 On macOS, Linux, or WSL:
 
 ```bash
-python3 -m venv backend/.venv
-backend/.venv/bin/python -m pip install -e "backend[dev]"
+uv sync --project backend --locked --extra dev
 npm --prefix frontend-enterprise ci
-cp backend/.env.example backend/.env
 ```
 
 On Windows PowerShell:
 
 ```powershell
-py -3 -m venv backend\.venv
-.\backend\.venv\Scripts\python.exe -m pip install -e "backend[dev]"
+uv sync --project backend --locked --extra dev
 npm --prefix frontend-enterprise ci
-Copy-Item backend\.env.example backend\.env
 ```
 
 ### 2. Configure a Model
 
-Edit `backend/.env` before the first startup:
+`backend/.env` is ignored and no tracked example file is provided. Create it only from approved deployment-specific configuration and restrict access to the account running the service. For the restored PostgreSQL/Casdoor development environment, follow the [local startup record](docs/LOCAL_STARTUP_20260909.md), [database restoration record](docs/DATABASE_RESTORE_20260909.md), and current [session handoff](docs/SESSION_HANDOFF.md). Do not replace that environment with a generic sample.
+
+For a separate new environment, configure the model settings in the ignored file before the first startup:
 
 ```dotenv
 APP_SECRET="replace-with-a-long-random-secret"
@@ -164,9 +158,9 @@ The API key is used to create the initial model configuration and is encrypted b
 | macOS, Linux, or WSL | `scripts/dev_up.sh --detach` |
 | Windows PowerShell | `.\scripts\dev_up.ps1 --detach` |
 
-Both wrappers call the same cross-platform Python lifecycle entry, `scripts/dev.py`. The startup process builds the StaffDeck frontend and serves the UI, API, and Swagger documentation from one FastAPI process on port `5173`.
+Both wrappers call the same cross-platform Python lifecycle entry, `scripts/dev.py`. The startup process builds the StaffDeck frontend and serves the UI and API from one FastAPI process on port `5173`. Interactive Swagger, ReDoc, and OpenAPI schema routes are intentionally disabled by the application.
 
-Initial administrator credentials: username `admin`, password `admin`. Please change the password after first login.
+The restored Joukir development environment uses enterprise SSO and the existing Casdoor accounts. Start sign-in from the application and do not assume default administrator credentials.
 
 ### 4. Verify the Installation
 
@@ -217,6 +211,20 @@ Replace `up --detach` with another lifecycle argument when needed:
 | Inspect service status | `status` |
 | Stop the local service | `down` |
 
+#### Validate Changes
+
+Run the standard suites from the repository root. See [CONTRIBUTING.md](CONTRIBUTING.md) for the exact focused CI nodes and [tests/README.md](tests/README.md) for integration and platform smoke commands.
+
+```bash
+uv run --project backend --locked python tests/check_test_layout.py
+uv run --project backend --locked pytest -c pytest.ini tests/backend
+npm --prefix frontend-enterprise run config:check
+npm --prefix frontend-enterprise run i18n:check
+npm --prefix frontend-enterprise run test:typecheck
+npm --prefix frontend-enterprise test
+npm --prefix frontend-enterprise run build
+```
+
 > Full guide → [StaffDeck Tutorial](https://staffdeck.openbmb.cn/#/docs/introduce?lang=en)
 
 
@@ -265,12 +273,18 @@ Digital employees can serve users directly over IM channels: users chat with emp
 ## Project Structure
 
 ```text
-StaffDeck/
+joukir/
+├── .github/                  # CI, CodeQL, dependency, release, and PR workflow
 ├── backend/                  # FastAPI APIs, agent runtime, storage, and task workers
+├── deploy/                   # PostgreSQL, Casdoor, Casbin, and RLS deployment assets
 ├── frontend-enterprise/      # React/TypeScript StaffDeck workspace
-├── docs/                     # Tutorials, APIs, schemas, and example flows
-├── scripts/                  # Single-port service lifecycle and validation scripts
+├── docs/                     # Product docs, runbooks, memory, handoff, and ADRs
 ├── packaging/                # macOS, Linux, and Windows packaging assets
+├── scripts/                  # Single-port service lifecycle and validation scripts
+├── skills/                   # Joukir and StaffDeck published skill packages
+├── tests/                    # Backend, frontend, integration, and packaging tests
+├── AGENTS.md                 # Repository rules for development agents
+├── CONTRIBUTING.md           # GitHub Flow and local validation
 ├── README.md                 # English
 └── README.zh.md              # Simplified Chinese
 ```
@@ -281,7 +295,7 @@ StaffDeck/
 <details>
 <summary><strong>The page opens, but the digital employee does not answer.</strong></summary>
 
-Check the selected model configuration, API key, model name, and model service network. Then inspect the execution record and `.dev/logs/app.log` to identify the exact error returned by the model service.
+Check the selected model configuration, API key, model name, and model service network. Then inspect the execution record and the log location reported by the lifecycle command or current session handoff to identify the exact error returned by the model service.
 </details>
 
 <details>
@@ -336,7 +350,7 @@ Contributions from collaborators with repository access are welcome:
 - Submit focused pull requests with tests and browser validation
 - Improve documentation and Chinese/English translations
 
-Keep unrelated worktree changes intact, add tests proportional to the affected behavior, and state the routes and user roles used for UI verification in each pull request.
+Keep unrelated worktree changes intact, add tests proportional to the affected behavior, and state the routes and user roles used for UI verification in each pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for GitHub Flow and exact validation commands, and use the [documentation index](docs/README.md) for project memory, current handoff, runbooks, ADRs, and API skill references.
 
 ## Risks and Limitations
 
