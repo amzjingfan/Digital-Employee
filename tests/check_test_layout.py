@@ -7,25 +7,25 @@ import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_EVAL = re.compile(r"^skills/[^/]+/evals/cases\.json$")
-SKILL_EVAL_CANDIDATE = re.compile(r"^skills/[^/]+/evals/[^/]+$")
+ALLOWED_SKILL_EVAL = re.compile(r"^skills/[^/]+/evals/cases\.json$")
+SKILL_EVAL_PREFIX = re.compile(r"^skills/[^/]+/evals/")
 TEST_PATTERNS = (
-    ("Python test module", re.compile(r"(?:^|/)(?:test_.+|.+_test)\.py$")),
+    ("Python test module", re.compile(r"^(?:test_.*|.*_test)\.py$")),
     (
         "JavaScript/TypeScript test module",
-        re.compile(r"\.(?:test|spec)\.(?:js|jsx|ts|tsx|mjs|mts|cjs|cts)$"),
+        re.compile(r"^.*\.(?:test|spec)\.(?:js|jsx|ts|tsx|mjs|mts|cjs|cts)$"),
     ),
     (
         "smoke runner",
-        re.compile(r"(?:^|/)smoke[_-].+\.(?:py|sh|ps1|js|ts|mjs|cjs|bat|cmd)$"),
+        re.compile(r"^smoke[_-].*\.(?:py|sh|ps1|js|ts|mjs|cjs|bat|cmd)$"),
     ),
     (
         "Docker test script",
-        re.compile(r"(?:^|/)_?docker[_-]test[^/]*\.(?:py|sh|ps1|bat|cmd)$"),
+        re.compile(r"^_?docker[_-]test.*\.(?:py|sh|ps1|bat|cmd)$"),
     ),
     (
         "integration runner",
-        re.compile(r"(?:^|/)run_.+_(?:e2e|replay)\.py$"),
+        re.compile(r"^run_.*_(?:e2e|replay)\.py$"),
     ),
 )
 
@@ -45,10 +45,11 @@ def _tracked_paths() -> list[str]:
 
 
 def _kind(path: str) -> str | None:
-    if SKILL_EVAL_CANDIDATE.fullmatch(path):
+    if SKILL_EVAL_PREFIX.match(path):
         return "skill evaluation asset"
+    basename = path.rsplit("/", 1)[-1]
     for kind, pattern in TEST_PATTERNS:
-        if pattern.search(path):
+        if pattern.fullmatch(basename):
             return kind
     return None
 
@@ -57,7 +58,7 @@ def main() -> int:
     tracked = _tracked_paths()
     violations: list[tuple[str, str]] = []
     for path in tracked:
-        if path.startswith("tests/") or SKILL_EVAL.fullmatch(path):
+        if path.startswith("tests/") or ALLOWED_SKILL_EVAL.fullmatch(path):
             continue
         kind = _kind(path)
         if kind:
