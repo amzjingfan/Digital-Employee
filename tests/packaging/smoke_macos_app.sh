@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 APP="${1:-$REPO/packaging/out/StaffDeck.app}"
 EXECUTABLE="$APP/Contents/MacOS/staffdeck"
 PORT="${STAFFDECK_SMOKE_PORT:-}"

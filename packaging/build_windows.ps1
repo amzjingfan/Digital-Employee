@@ -132,7 +132,7 @@ if (Test-Path packaging\out\staffdeck\sandbox) { Remove-Item -Recurse -Force pac
 & $PY.Command @($PY.PrefixArgs) packaging\fetch_sandbox_runtime.py packaging\sandbox_runtime
 Assert-NativeCommandSucceeded "SRT runtime preparation"
 Copy-Item -Recurse -Force packaging\sandbox_runtime packaging\out\staffdeck\sandbox
-& $PY.Command @($PY.PrefixArgs) packaging\smoke_sandbox_bundle.py packaging\out\staffdeck\sandbox
+& $PY.Command @($PY.PrefixArgs) tests\packaging\smoke_sandbox_bundle.py packaging\out\staffdeck\sandbox
 Assert-NativeCommandSucceeded "Final SRT bundle smoke test"
 
 if ($signingConfigured) {

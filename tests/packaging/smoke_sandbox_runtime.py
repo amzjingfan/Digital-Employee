@@ -1,6 +1,6 @@
 """Run repeatable, real-process sandbox acceptance checks.
 
-Usage: python3 packaging/smoke_sandbox_runtime.py /path/to/sandbox_runtime
+Usage: python3 tests/packaging/smoke_sandbox_runtime.py /path/to/sandbox_runtime
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ def main() -> int:
     runtime = args.runtime.resolve()
     os.environ["STAFFDECK_SRT_RUNTIME"] = str(runtime)
 
-    repo_root = Path(__file__).resolve().parent.parent
+    repo_root = Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(repo_root / "backend"))
 
     with tempfile.TemporaryDirectory(prefix="staffdeck-sandbox-smoke-") as raw_root:

@@ -112,7 +112,7 @@ echo "==> [5b/8] Bundling SRT + Node runtime"
 rm -rf packaging/sandbox_runtime packaging/out/staffdeck/sandbox
 python3 packaging/fetch_sandbox_runtime.py packaging/sandbox_runtime
 cp -a packaging/sandbox_runtime packaging/out/staffdeck/sandbox
-python3 packaging/smoke_sandbox_bundle.py packaging/out/staffdeck/sandbox
+python3 tests/packaging/smoke_sandbox_bundle.py packaging/out/staffdeck/sandbox
 
 echo "==> [6/8] Building Debian package"
 STAGE="packaging/out/deb"

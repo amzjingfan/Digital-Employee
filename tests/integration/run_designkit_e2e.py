@@ -12,11 +12,16 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
 from sqlmodel import Session, select
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+BACKEND_ROOT = REPO_ROOT / "backend"
+sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.db import engine
 from app.db.database import set_tenant_context

@@ -3,11 +3,24 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
 
-import fetch_sandbox_runtime as fetch
+
+def _load_fetch_module():
+    script = Path(__file__).resolve().parents[2] / "packaging" / "fetch_sandbox_runtime.py"
+    spec = importlib.util.spec_from_file_location("joukir_fetch_sandbox_runtime", script)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"Unable to load sandbox runtime helper: {script}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+fetch = _load_fetch_module()
 
 
 def main() -> int:
