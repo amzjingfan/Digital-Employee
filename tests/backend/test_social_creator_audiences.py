@@ -466,7 +466,8 @@ def test_social_api_enforces_policy_auth_idempotency_and_audit() -> None:
 
 def test_postgres_migration_enforces_rls_tenant_links_and_append_only_records() -> None:
     migration = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
+        / "backend"
         / "migrations"
         / "20260908_social_creator_audiences_v1.sql"
     ).read_text(encoding="utf-8")

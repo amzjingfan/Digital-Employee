@@ -724,4 +724,9 @@ def _test_session():
 
 
 def _mock_mcp_server_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "mock_servers" / "mcp_stdio_server.py"
+    return (
+        Path(__file__).resolve().parents[2]
+        / "backend"
+        / "mock_servers"
+        / "mcp_stdio_server.py"
+    )

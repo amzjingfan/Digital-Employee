@@ -34,7 +34,7 @@ def auth_matrix_url() -> str:
     port = 18081
     process = subprocess.Popen(
         [sys.executable, "-m", "mock_servers.auth_matrix_service", "--port", str(port)],
-        cwd=Path(__file__).parents[1],
+        cwd=Path(__file__).parents[2] / "backend",
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )

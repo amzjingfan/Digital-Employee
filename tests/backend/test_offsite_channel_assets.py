@@ -499,7 +499,8 @@ def test_cross_tenant_bola_and_wrong_role_are_rejected(
 
 def test_postgres_migration_has_rls_append_only_and_composite_tenant_fks() -> None:
     migration = (
-        Path(__file__).parents[1]
+        Path(__file__).parents[2]
+        / "backend"
         / "migrations"
         / "20260908_offsite_channel_assets_v1.sql"
     ).read_text(encoding="utf-8")

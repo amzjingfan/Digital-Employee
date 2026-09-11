@@ -740,7 +740,8 @@ def test_pdca_database_and_postgres_migration_forbid_execution(setup) -> None:
     db.rollback()
 
     migration = (
-        Path(__file__).parents[1]
+        Path(__file__).parents[2]
+        / "backend"
         / "migrations"
         / "20260908_pdca_search_term_rules_v1.sql"
     ).read_text(encoding="utf-8")

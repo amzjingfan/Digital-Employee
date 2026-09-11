@@ -332,7 +332,7 @@ def test_assignment_updates_are_idempotent_and_audited(db: Session) -> None:
 
 
 def test_postgres_migration_declares_composite_scope_rls_and_rollback() -> None:
-    migrations = Path(__file__).resolve().parents[1] / "migrations"
+    migrations = Path(__file__).resolve().parents[2] / "backend" / "migrations"
     up = (migrations / "20260908_brand_access_v1.sql").read_text(encoding="utf-8")
     down = (migrations / "20260908_brand_access_v1.down.sql").read_text(encoding="utf-8")
 

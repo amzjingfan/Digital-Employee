@@ -5,7 +5,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 from app.capabilities.errors import CapabilityErrorInfo
 
-SCHEMA_DIR = Path(__file__).parents[1] / "app" / "capabilities" / "schemas"
+SCHEMA_DIR = Path(__file__).parents[2] / "backend" / "app" / "capabilities" / "schemas"
 
 
 def load_schema(name: str) -> dict[str, object]:

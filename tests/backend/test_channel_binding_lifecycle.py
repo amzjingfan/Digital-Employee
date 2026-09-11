@@ -89,7 +89,7 @@ def test_connector_process_lock_rejects_second_process(monkeypatch, tmp_path) ->
     try:
         result = subprocess.run(
             [sys.executable, "-c", code],
-            cwd=Path(__file__).resolve().parents[1],
+            cwd=Path(__file__).resolve().parents[2] / "backend",
             env=env,
             capture_output=True,
             text=True,
@@ -134,7 +134,7 @@ def test_shutdown_keeps_connector_lock_until_consumers_exit(monkeypatch, tmp_pat
     def child_result() -> str:
         result = subprocess.run(
             [sys.executable, "-c", code],
-            cwd=Path(__file__).resolve().parents[1],
+            cwd=Path(__file__).resolve().parents[2] / "backend",
             env=env,
             capture_output=True,
             text=True,

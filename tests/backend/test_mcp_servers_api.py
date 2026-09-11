@@ -840,11 +840,21 @@ def test_delete_mcp_server_in_employee_scope_without_tools_returns_404() -> None
 
 
 def _mock_mcp_server_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "mock_servers" / "mcp_stdio_server.py"
+    return (
+        Path(__file__).resolve().parents[2]
+        / "backend"
+        / "mock_servers"
+        / "mcp_stdio_server.py"
+    )
 
 
 def _mock_mcp_apps_server_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "mock_servers" / "mcp_apps_stdio_server.py"
+    return (
+        Path(__file__).resolve().parents[2]
+        / "backend"
+        / "mock_servers"
+        / "mcp_apps_stdio_server.py"
+    )
 
 
 def _test_session():

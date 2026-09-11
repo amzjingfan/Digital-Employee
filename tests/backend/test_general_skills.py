@@ -1229,7 +1229,7 @@ def test_non_overall_agent_delete_hides_general_skill_only_in_branch() -> None:
 
 
 def test_scene_layer_prompt_contract_mentions_general_skill_tools() -> None:
-    prompt_dir = Path(__file__).resolve().parents[1] / "app" / "llm" / "prompts"
+    prompt_dir = Path(__file__).resolve().parents[2] / "backend" / "app" / "llm" / "prompts"
 
     router_prompt = (prompt_dir / "router_prompt.md").read_text(encoding="utf-8")
     step_prompt = (prompt_dir / "step_agent_general_skill_rules.md").read_text(encoding="utf-8")
@@ -1522,7 +1522,8 @@ def test_general_skill_runner_has_requests_in_runtime(monkeypatch) -> None:
 
 def test_general_skill_prompt_rejects_unlisted_external_apis() -> None:
     prompt = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
+        / "backend"
         / "app"
         / "llm"
         / "prompts"
@@ -1535,7 +1536,8 @@ def test_general_skill_prompt_rejects_unlisted_external_apis() -> None:
 
 def test_general_skill_repair_prompt_uses_artifact_directory_contract() -> None:
     prompt = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
+        / "backend"
         / "app"
         / "llm"
         / "prompts"
