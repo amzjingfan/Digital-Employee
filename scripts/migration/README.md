@@ -23,7 +23,8 @@ under `.dev/`. A later feature commit does not change this historical map.
 The security scanner compares the immutable handover tag with the current
 working tree or `HEAD`. It prints only category counts and stores candidate
 locations in ignored `.dev/` output. A zero new-candidate count is a migration
-delta check, not a credential audit of the original handover contents.
+delta check, not a credential audit of the original handover contents. The
+scanner exits nonzero if a new candidate or tracked runtime artifact appears.
 
 To repeat the legacy backend suite, supply the old checkout explicitly:
 

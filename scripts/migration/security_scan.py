@@ -123,7 +123,7 @@ def artifact_candidates(paths: set[str]) -> list[str]:
     return candidates
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--worktree", action="store_true")
     args = parser.parse_args()
@@ -168,7 +168,8 @@ def main() -> None:
             separators=(",", ":"),
         )
     )
+    return 0 if not any(new_candidates.values()) and not summary["artifactViolations"] else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -45,7 +45,6 @@ finally {
     Set-Content -LiteralPath $afterPath -Encoding utf8
 $before = Get-Content -LiteralPath $beforePath -Raw
 $after = Get-Content -LiteralPath $afterPath -Raw
-Get-Content -LiteralPath $logPath -Tail 80
 "PYTEST_OLD_EXIT=$testExit"
 "OLD_STATUS_UNCHANGED=$($before -ceq $after)"
 "PYTEST_OLD_LOG=$logPath"

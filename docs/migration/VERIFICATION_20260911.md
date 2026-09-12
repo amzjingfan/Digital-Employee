@@ -4,7 +4,7 @@
 
 ## 结论
 
-本地主仓库迁移与 5173 Web 切换已完成。交接快照的 1,154 个路径全部映射到新目录，Git 历史及备份保留；前端、集成、PostgreSQL 门禁、在线健康和无凭据 OIDC/PKCE 检查通过。后端全量套件并非全绿，但新旧仓库在 2,241 项历史基线上得到完全相同的 21 个失败和 9 个跳过，未见迁移独有回归。新目录是后续开发的本地 `main`；真正的 GitHub remote 和人工账号/业务验收仍需维护者提供条件。
+新目录的源码迁移和 5173 Web 切换已完成。交接快照的 1,154 个路径全部映射到新目录，Git 历史及备份保留；前端、集成、PostgreSQL 门禁、在线健康和无凭据 OIDC/PKCE 检查通过。后端全量套件并非全绿，但新旧仓库在 2,241 项历史基线上得到完全相同的 21 个失败和 9 个跳过，未见迁移独有回归。此证据提交时本地 `main` 快进仍待最终复审，真正的 GitHub remote 和人工账号/业务验收仍需维护者提供条件。
 
 ## Git 历史和源码完整性
 
@@ -164,7 +164,7 @@ Compose 项目 `joukir-restored-20260909` 的 PostgreSQL 与 Casdoor 在迁移�
 
 ## 最终仓库状态
 
-本地 `main` 经复审后以 `git merge --ff-only chore/main-repository-migration` 快进至最终迁移证据提交，功能分支保留并与 `main` 指向同一提交。工作树干净，交接标签仍可解引用到原提交，`git fsck --full` 退出 0（只报告无引用 blob），无 object alternates、无 remote，未发生外部 push。新增的 8 个 `scripts/migration/` 文件是可复现审计和一次性切换工具，不会进入测试收集；当前后端收集 2,244 项，其中相对 2,241 项对照基线新增的 3 项为已定向通过的开发工作流回归测试。
+在此记录提交且最终复审尚未完成时，功能分支 `chore/main-repository-migration` 包含验证证据，本地 `main` 仍为设计基线 `9cc0327b7ac84c0d277293cf347fea2ccd40a8cb`；复审通过后执行 `git merge --ff-only chore/main-repository-migration`，并另行核验两个分支指针。交接标签仍可解引用到原提交，`git fsck --full` 退出 0（只报告无引用 blob），无 object alternates、无 remote，未发生外部 push。新增的 8 个 `scripts/migration/` 文件是可复现审计和一次性切换工具，不会进入测试收集；当前后端收集 2,244 项，其中相对 2,241 项对照基线新增的 3 项为已定向通过的开发工作流回归测试。
 
 交接仓库和备份目录均未删除。加密包 `Joukir-Casdoor-PostgreSQL-20260909.tar.enc` 为 217,915,841 字节，SHA-256 为 `7eaf0859d8662486e9ec9b33b0670e3270cd1db4a611721dee834229d08635b4`，与交接清单一致。独立 key 仍位于外部备份目录，为 43 字节；仅用 `Test-Path`、`Get-Item`、`Get-Acl` 检查存在性、大小和 ACL，未读取、打印、复制进 Git 或人工展示其内容；权限仅允许当前 Administrator 与 SYSTEM，且未继承。
 

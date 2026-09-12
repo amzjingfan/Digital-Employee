@@ -8,7 +8,7 @@ This file is mutable operational context. Re-check every process, port, branch, 
 
 - Working repository: `E:\develop\数字员工\joukir`.
 - The migration feature branch is `chore/main-repository-migration`; its final functional-source commit is `fc1dd456445a0eccbe053fa0d19987a4b37102d9`.
-- Local `main` and the retained feature branch point to the same final migration evidence commit after the reviewed fast-forward; inspect `git rev-parse main` for the current SHA. No GitHub remote is configured yet.
+- At this evidence commit, the retained migration branch contains the completed source/runtime work while local `main` still points to the design baseline `9cc0327b7ac84c0d277293cf347fea2ccd40a8cb`. The reviewed fast-forward is the final integration step; inspect `git rev-parse main` after it runs. No GitHub remote is configured yet.
 - Annotated tag `handover-20260909` targets `e0cb8df042b3a5f856c60b45cf7e9c2bafbc23b5`. The clone has no object alternates and no configured remote.
 - The old `E:\develop\数字员工\joukir-enterprise` source remains intact for rollback and will be removed manually by the user after acceptance.
 
