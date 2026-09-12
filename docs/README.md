@@ -4,6 +4,7 @@ Start a development session with the durable memory and current handoff below. D
 
 ## Development context and governance
 
+- [Current project functional audit and handover report, 2026-09-12](../报告.md)
 - [Stable project memory](PROJECT_MEMORY.md)
 - [Current session handoff](SESSION_HANDOFF.md)
 - [Append-only development log](DEVELOPMENT_LOG.md)

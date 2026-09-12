@@ -7,8 +7,7 @@ This file is mutable operational context. Re-check every process, port, branch, 
 ## Repository state
 
 - Working repository: `E:\develop\数字员工\joukir`.
-- The migration feature branch is `chore/main-repository-migration`; its final functional-source commit is `fc1dd456445a0eccbe053fa0d19987a4b37102d9`.
-- Local `main` was fast-forwarded from `9cc0327b7ac84c0d277293cf347fea2ccd40a8cb` through the reviewed migration commit `df310e5ef15b15d40d03946ca93bd3b3e1e8d99d` on 2026-09-12. The retained feature branch and `main` are kept at the same latest commit; inspect `git rev-parse main` and `git rev-parse chore/main-repository-migration` for their current SHA. No GitHub remote is configured yet.
+- The reviewed functional audit was prepared on `docs/project-functional-audit-20260912` and integrated into local `main`. Read root `报告.md` for its time-stamped evidence and functional gaps; inspect `git rev-parse main` for the current SHA. The older `chore/main-repository-migration` branch remains at the migration cutover commit. No GitHub remote is configured yet.
 - Annotated tag `handover-20260909` targets `e0cb8df042b3a5f856c60b45cf7e9c2bafbc23b5`. The clone has no object alternates and no configured remote.
 - The old `E:\develop\数字员工\joukir-enterprise` source remains intact for rollback and will be removed manually by the user after acceptance.
 
@@ -22,28 +21,29 @@ This file is mutable operational context. Re-check every process, port, branch, 
 ## Verified source and test state
 
 - The immutable pre-layout index has 1,154 entries and the pinned `fc1dd45` source map resolves all 1,154 uniquely, with zero missing, case-folded collisions, unexplained content edits or unexplained mode changes. Exactly 1,056 blobs remain identical, 98 edits map to reviewed commits, and the three Unix shell mode changes are reviewed. The tracked map and verifier are under `docs/migration/` and `scripts/migration/`.
-- The full new-root and legacy backend baseline runs each collected 2,241 tests and ended 2,211 passed, 21 failed, 9 skipped, 0 errors, with identical normalized failure/error/skip nodes. This is not a full green suite; details and environment differences are in `docs/migration/VERIFICATION_20260911.md`. The workflow-contract fix added three tests after that baseline; the current tree collects 2,244 and the focused 20-test run passed.
+- The migration's new-root and legacy backend baseline each collected 2,241 tests and ended 2,211 passed, 21 failed, 9 skipped, 0 errors, with identical normalized failure/error/skip nodes. The 2026-09-12 full audit collected 2,244 tests: 2,200 passed, 35 failed, 9 skipped. All 21 earlier stable failures reproduced; 13 of the 14 additional default-environment failures passed when isolated, and the remaining WeChat recovery test was intermittent. Ruff reported 1,844 existing issues. See `报告.md`; this is not a green backend gate.
 - Frontend gates passed: configuration, 4,209-entry English i18n coverage, test type-check, 64 files/271 Vitest tests, and a 2,163-module production build.
-- Integration/packaging: both Python runner groups compile, PowerShell and Bash callers parse, the deterministic TikTok replay passed 5 checks with external writes disabled, and the tracked root test-layout guard passes.
-- GitHub workflow YAML parses and the backend TikTok CI subset passed 61 tests. The PostgreSQL production gate returned `ok=true`, and the worktree security delta found zero new sensitive-text candidates or tracked runtime artifacts.
+- Integration: deterministic TikTok Mock replay passed 5/5 main SOPs and 30/30 exception checks with external writes disabled. PostgreSQL production gate returned `ok=true`; the adapted tenant A/B/no-context and cross-tenant write denial checks passed. Source map resolves 1,154/1,154 paths; root test-layout guard passes. A real minimal text request to the configured default model returned a nonempty answer. Twelve M2M identities verified after bypassing the Windows system proxy for loopback; default HTTPX otherwise received 502 from the proxy. Browser automation did not connect, so no complete human UI acceptance was claimed.
+- Worktree security delta found zero new sensitive-text candidates or tracked runtime artifacts. The audit evidence XML/JSON is ignored under `.dev/functional-audit-20260912/`.
 
 ## Live local services
 
 - Compose project `joukir-restored-20260909` currently reports PostgreSQL and Casdoor healthy, bound only to loopback on ports 55433 and 18000 respectively.
-- The new repository's Web launcher PID 40608 and listener PID 37160 took over `127.0.0.1:5173` on 2026-09-12. Re-check process identity before relying on these transient PIDs. The launcher uses `joukir\backend\.venv`, ignored `backend/.env` and external `E:\develop\数字员工\joukir-runtime\data`; the PID is also in ignored `.dev/local-web.pid`, with logs under the external runtime `logs/` directory.
-- Health, gallery HTML/assets, OIDC configuration, Casdoor health and OIDC code/nonce/state/PKCE redirect checks passed without credentials. The browser rendered the already-authenticated gallery and a direct Casdoor Password page. Existing Admin cookies prevented this session from showing the unauthenticated SSO button, so that UI click remains unverified.
+- After a temporary Docker Desktop shutdown during the audit, it was restarted and the existing volumes auto-restored. At the final check, PostgreSQL and Casdoor were healthy, the Web supervisor PID was 40792, app PID was 9656, `127.0.0.1:5173` was listening and `/api/health` returned ok. Re-check these transient PIDs and ports before relying on them.
+- Health, gallery HTML/assets, OIDC configuration, Casdoor health and OIDC code/nonce/state/PKCE redirect checks passed without credentials. Browser automation failed to connect in this audit; human login, role/page interactions and full UI flows remain unverified.
+- A 2026-09-12 16:34 Asia/Shanghai read-only database snapshot found 149 public tables, 74 nonempty, 75 empty, 4,863 rows. Ten active employees were published and 14 draft. One TikTok Shadow record was `running` with zero observations and no later heartbeat; local `TIKTOK_SHADOW_ENABLED=false`. These are changing operational counts, not 14-day acceptance.
 
 ## Next actions
 
-1. Continue all product development in `E:\develop\数字员工\joukir`; use a short-lived feature branch and pull request from the local `main` once a real GitHub remote is supplied. `CONTRIBUTING.md`, `AGENTS.md`, `.github/` and `docs/PROJECT_MEMORY.md` define the current workflow and durable context.
-2. Triage the 21 shared backend failures as separate baseline/cross-platform work. When changing tests, keep executable suites in the four categorized `tests/` subdirectories and run `tests/check_test_layout.py`.
-3. Ask the maintainer to provide the actual GitHub repository URL before adding `origin`, pushing or configuring required checks/protection. Do not invent a remote.
-4. Have a human account owner complete Casdoor login, role/page and model-conversation acceptance; restore MinIO/Redis/Superset only if corresponding data and scope become available.
+1. Continue development from local `main` in `E:\develop\数字员工\joukir`, read `报告.md`, and use short-lived branches. Keep executable suites in the four categorized `tests/` subdirectories and run `tests/check_test_layout.py`.
+2. Fix or explicitly baseline the 21 stable backend failures, isolate the WeChat race, and ensure the local Web/worker M2M client bypasses the Windows loopback proxy without changing authentication policy. Retest focused paths and the full applicable gates.
+3. Have a human account owner complete Casdoor login, role/page, long conversation and SOP-task acceptance. For TikTok, real authorization, data, observation and write approval must each get separate evidence; the single zero-observation Shadow row is insufficient. Restore MinIO objects only when the missing backup scope and files are available.
+4. Obtain the actual GitHub repository URL before adding `origin`, pushing or configuring required checks/protection. Do not invent a remote.
 
 ## Validations still unavailable or intentionally deferred
 
 - A human Casdoor account has not completed final login and role/page acceptance.
-- The restored model configuration has not made a real external model request.
+- One minimal real external model text request succeeded; long conversation, streaming, attachments and reliability have not been accepted.
 - TikTok, advertising, social, channel, and other third-party production authorizations and writes are not accepted; execution remains disabled where recorded in local configuration.
 - MinIO object data was absent from the backup; Redis and Superset were not restored. Original asset availability is therefore unproven.
 - macOS and Linux package smoke tests require their target platforms. Full release signing/notarization also requires maintainer-controlled external credentials.

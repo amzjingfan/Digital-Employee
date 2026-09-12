@@ -111,3 +111,21 @@
 - 备份和保留：外置加密包 SHA-256 与交接值一致，独立 key 存在且 ACL 仅 Administrator/SYSTEM；未读取 key 内容。交接仓库、备份、容器卷及外置 runtime 保留；新仓库未配置 GitHub remote。
 - 详细命令、计数、比较边界及未验收功能见 `docs/migration/VERIFICATION_20260911.md`；当前后续工作接力以 `docs/SESSION_HANDOFF.md` 为准。
 - 本地 Git 集成：Task 8 与整分支独立复审通过后，以 `--ff-only` 将 `main` 从 `9cc0327` 快进至 `df310e5`；随后只更新最终仓库状态说明，保留迁移功能分支并使其与 `main` 保持同一最新提交。未添加远程或执行 push。
+
+## 2026-09-12 — 项目全功能审计与现状报告（开始）
+
+- 目标：在当前 Windows 本地恢复环境中执行仓库可安全运行的后端、前端、集成、数据库、权限和 UI 验证，并生成根目录 报告.md。
+- 范围：只读或 Mock/隔离测试；核对源码模块、SOP、运行服务、业务数据、测试证据和 Git 状态。
+- 已知阻塞：真人 Casdoor 最终验收、真实第三方授权/写入、缺失的 MinIO/Redis/Superset 数据、macOS/Linux 打包和签名不在当前自动验收能力内；既有后端基线含 21 个失败。
+- 安全边界：不打印或写入密码、Token、密钥、完整连接串、Cookie、个人敏感数据或原始授权载荷；不停止或删除恢复数据库。
+
+## 2026-09-12 — 项目功能审计与现状报告（完成）
+
+- 文件：新增根目录 `报告.md`，更新 `docs/README.md` 索引及 `docs/SESSION_HANDOFF.md`，并在本日志追加本条完成记录；未修改业务源码、迁移、恢复卷、备份或 Secret。
+- 源码与前端：`scripts/migration/verify_source_map.py` 为 1,154/1,154 路径、无缺失或无法解释改动；`tests/check_test_layout.py` 通过。前端 `config:check`、`i18n:check`、`test:typecheck`、64 文件 271 项 Vitest 和 2,163 模块构建通过。
+- 后端：`pytest -c pytest.ini tests/backend` 收集 2,244 项，2,200 passed、35 failed、9 skipped、0 errors；21 个历史稳定失败重现，另外 14 个在隔离复跑时 13 个通过、微信恢复用例表现为间歇性。`ruff check backend` 退出 1，有 1,844 项存量问题。原始 JUnit/摘要存于被忽略的 `.dev/functional-audit-20260912/`。
+- 集成与数据：Web、Casdoor、PostgreSQL 恢复并健康，OIDC/PKCE 跳转、PostgreSQL 生产门禁、跨租户读写拒绝、12/12 M2M 身份（回环绕过系统代理）、真实默认模型最小文本请求、TikTok Mock SOP 5/5 与异常 30/30 通过。M2M 的默认 HTTPX 受 Windows 系统代理影响返回 502，属于待修的本机运行风险。
+- 数据快照：2026-09-12 16:34 北京时间只读事务中有 149 张 public 表、74 张非空、4,863 行；10 个已发布、14 个草稿员工。TikTok Shadow 有 1 条 `running` 记录，但 0 次观测且无后续心跳，本地开关关闭；不构成 14 天真实业务验收。数据在审计期间变化，操作者/进程未核实。
+- 限制：浏览器自动化连接失败，未完成真人登录、多角色页面与端到端交互；真实第三方授权/写入、MinIO 对象、完整模型对话、macOS/Linux 包和签名仍未验收。报告只写实测与缺口，不作为生产发布批准。
+- 文档复核：独立审阅核对测试统计、主要数据、12 个内部文件链接与敏感文本；修正了变化中的数据库计数和报告标题。`git diff --check` 与安全扫描通过；本地分支经审阅后纳入 `main`，无 GitHub remote 与远端 PR。
+- 下一步：按 `报告.md` 的优先级先解决稳定后端失败和本机代理/M2M，补真人与真实数据的业务闭环，再由维护者提供真实 GitHub 地址以建立远端 CI/PR。
