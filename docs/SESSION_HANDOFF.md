@@ -7,7 +7,7 @@ This file is mutable operational context. Re-check every process, port, branch, 
 ## Repository state
 
 - Working repository: `E:\develop\数字员工\joukir`.
-- The reviewed functional audit was prepared on `docs/project-functional-audit-20260912` and integrated into local `main`. Read root `报告.md` for its time-stamped evidence and functional gaps; inspect `git rev-parse main` for the current SHA. The older `chore/main-repository-migration` branch remains at the migration cutover commit. No GitHub remote is configured yet.
+- The reviewed functional audit was prepared on `docs/project-functional-audit-20260912` and integrated into local `main`. The follow-up document classification branch `docs/classify-project-docs` was also integrated into local `main`. The report now lives at `docs/reports/报告.md`; inspect `git rev-parse main` for the current SHA. The older `chore/main-repository-migration` branch remains at the migration cutover commit. No GitHub remote is configured yet.
 - Annotated tag `handover-20260909` targets `e0cb8df042b3a5f856c60b45cf7e9c2bafbc23b5`. The clone has no object alternates and no configured remote.
 - The old `E:\develop\数字员工\joukir-enterprise` source remains intact for rollback and will be removed manually by the user after acceptance.
 
@@ -21,7 +21,7 @@ This file is mutable operational context. Re-check every process, port, branch, 
 ## Verified source and test state
 
 - The immutable pre-layout index has 1,154 entries and the pinned `fc1dd45` source map resolves all 1,154 uniquely, with zero missing, case-folded collisions, unexplained content edits or unexplained mode changes. Exactly 1,056 blobs remain identical, 98 edits map to reviewed commits, and the three Unix shell mode changes are reviewed. The tracked map and verifier are under `docs/migration/` and `scripts/migration/`.
-- The migration's new-root and legacy backend baseline each collected 2,241 tests and ended 2,211 passed, 21 failed, 9 skipped, 0 errors, with identical normalized failure/error/skip nodes. The 2026-09-12 full audit collected 2,244 tests: 2,200 passed, 35 failed, 9 skipped. All 21 earlier stable failures reproduced; 13 of the 14 additional default-environment failures passed when isolated, and the remaining WeChat recovery test was intermittent. Ruff reported 1,844 existing issues. See `报告.md`; this is not a green backend gate.
+- The migration's new-root and legacy backend baseline each collected 2,241 tests and ended 2,211 passed, 21 failed, 9 skipped, 0 errors, with identical normalized failure/error/skip nodes. The 2026-09-12 full audit collected 2,244 tests: 2,200 passed, 35 failed, 9 skipped. All 21 earlier stable failures reproduced; 13 of the 14 additional default-environment failures passed when isolated, and the remaining WeChat recovery test was intermittent. Ruff reported 1,844 existing issues. See `docs/reports/报告.md`; this is not a green backend gate.
 - Frontend gates passed: configuration, 4,209-entry English i18n coverage, test type-check, 64 files/271 Vitest tests, and a 2,163-module production build.
 - Integration: deterministic TikTok Mock replay passed 5/5 main SOPs and 30/30 exception checks with external writes disabled. PostgreSQL production gate returned `ok=true`; the adapted tenant A/B/no-context and cross-tenant write denial checks passed. Source map resolves 1,154/1,154 paths; root test-layout guard passes. A real minimal text request to the configured default model returned a nonempty answer. Twelve M2M identities verified after bypassing the Windows system proxy for loopback; default HTTPX otherwise received 502 from the proxy. Browser automation did not connect, so no complete human UI acceptance was claimed.
 - Worktree security delta found zero new sensitive-text candidates or tracked runtime artifacts. The audit evidence XML/JSON is ignored under `.dev/functional-audit-20260912/`.
@@ -35,7 +35,7 @@ This file is mutable operational context. Re-check every process, port, branch, 
 
 ## Next actions
 
-1. Continue development from local `main` in `E:\develop\数字员工\joukir`, read `报告.md`, and use short-lived branches. Keep executable suites in the four categorized `tests/` subdirectories and run `tests/check_test_layout.py`.
+1. Continue development from local `main` in `E:\develop\数字员工\joukir`, read `docs/reports/报告.md`, and use short-lived branches. Keep executable suites in the four categorized `tests/` subdirectories and run `tests/check_test_layout.py`.
 2. Fix or explicitly baseline the 21 stable backend failures, isolate the WeChat race, and ensure the local Web/worker M2M client bypasses the Windows loopback proxy without changing authentication policy. Retest focused paths and the full applicable gates.
 3. Have a human account owner complete Casdoor login, role/page, long conversation and SOP-task acceptance. For TikTok, real authorization, data, observation and write approval must each get separate evidence; the single zero-observation Shadow row is insufficient. Restore MinIO objects only when the missing backup scope and files are available.
 4. Obtain the actual GitHub repository URL before adding `origin`, pushing or configuring required checks/protection. Do not invent a remote.

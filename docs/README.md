@@ -1,10 +1,13 @@
 # Joukir documentation index
 
-Start a development session with the durable memory and current handoff below. Dated handover and development-branch records are evidence snapshots: they may use the former `source/` layout or describe service state that has since changed. Use current commands from the root README, `CONTRIBUTING.md`, and `tests/README.md`.
+Start a development session with the durable memory and current handoff below. Put new reports, designs, operations records, and branch notes in the matching `docs/` category, then add them to this index. Dated handover and development-branch records are evidence snapshots: they may use the former `source/` layout or describe service state that has since changed. Use current commands from the root README, `CONTRIBUTING.md`, and `tests/README.md`.
+
+## Current reports
+
+- [Current project functional audit and handover report, 2026-09-12](reports/报告.md)
 
 ## Development context and governance
 
-- [Current project functional audit and handover report, 2026-09-12](../报告.md)
 - [Stable project memory](PROJECT_MEMORY.md)
 - [Current session handoff](SESSION_HANDOFF.md)
 - [Append-only development log](DEVELOPMENT_LOG.md)
@@ -32,7 +35,7 @@ Both PRDs refer to `prd/lan-multiuser-codex-memory-2026.md`. That LAN multiuser/
 - [PostgreSQL and Casdoor restoration record, 2026-09-09](DATABASE_RESTORE_20260909.md) — dated handover evidence; verify live state before using it.
 - [Joukir analysis and local startup record, 2026-09-09](LOCAL_STARTUP_20260909.md) — dated source-layout/startup snapshot; current service state is in the session handoff and final verification.
 - [Portable development handover, 2026-09-09](PORTABLE_DEVELOPMENT_20260909.md) — dated handover snapshot.
-- [Backup scope](../BACKUP_SCOPE.md) — inherited scope record; backup data itself remains outside Git.
+- [Backup scope](operations/BACKUP_SCOPE.md) — inherited scope record; backup data itself remains outside Git.
 
 ## Repository migration
 
@@ -48,13 +51,13 @@ Both PRDs refer to `prd/lan-multiuser-codex-memory-2026.md`. That LAN multiuser/
 
 These files preserve design or branch evidence from the inherited development period. They are not current runbooks.
 
-- [Model API protocol design](../design-model-api-protocols.md)
-- [Multi-agent team decisions](../design-multi-agent-team-decisions.md)
-- [Design QA record](../design-qa.md)
-- [Feishu channel development record](../development-feishu-channel.md)
-- [Cross-border capabilities agent report, 2026-09-02](../.agent/reports/agent_report_crossborder_capabilities_20260902.md)
-- [Cross-border gallery agent report, 2026-09-02](../.agent/reports/agent_report_crossborder_gallery_20260902.md)
-- [StaffDeck snapshots/M2M agent report, 2026-09-02](../.agent/reports/agent_report_staffdeck_snapshots_m2m_20260902.md)
+- [Model API protocol design](design/design-model-api-protocols.md)
+- [Multi-agent team decisions](design/design-multi-agent-team-decisions.md)
+- [Design QA record](design/design-qa.md)
+- [Feishu channel development record](development-branches/development-feishu-channel.md)
+- [Cross-border capabilities agent report, 2026-09-02](reports/agent_report_crossborder_capabilities_20260902.md)
+- [Cross-border gallery agent report, 2026-09-02](reports/agent_report_crossborder_gallery_20260902.md)
+- [StaffDeck snapshots/M2M agent report, 2026-09-02](reports/agent_report_staffdeck_snapshots_m2m_20260902.md)
 - [Amazon Ads PDCA branch](development-branches/amazon-ads-pdca.md)
 - [BI analytics branch](development-branches/bi-analytics.md)
 - [Portable integration branch](development-branches/integration-portable-20260909.md)

@@ -53,6 +53,7 @@ This file contains stable facts and working agreements. Read it with `SESSION_HA
 ## Memory maintenance
 
 - Keep durable architecture, boundaries, and working agreements in this file.
+- Classify new narrative documentation under `docs/` (for example `reports/`, `design/`, `operations/`, or `development-branches/`) and link it from `docs/README.md`. Keep only entry-point documents at the repository root.
 - Keep mutable branch/HEAD, live services, recent verification, blockers, and exact next actions in `SESSION_HANDOFF.md`.
 - Append chronological implementation evidence to `DEVELOPMENT_LOG.md`; never rewrite prior entries to make later results look cleaner.
 - Record lasting architecture or workflow decisions in `docs/adr/` using its documented format.
