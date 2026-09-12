@@ -7,6 +7,7 @@ This file is mutable operational context. Re-check every process, port, branch, 
 ## Repository state
 
 - Working repository: `E:\develop\数字员工\joukir`.
+- Current documentation branch: `codex/prd-tiktok-v1-8`. The user-supplied cross-border PRD V1.8 replaces the prior V1.7 working copy, and the TikTok module PRD V1.8 is added under `docs/prd/`; both saved files match their source SHA-256 hashes. This branch is not yet integrated into local `main`.
 - The reviewed functional audit was prepared on `docs/project-functional-audit-20260912` and integrated into local `main`. The follow-up document classification branch `docs/classify-project-docs` was also integrated into local `main`. The report now lives at `docs/reports/报告.md`; inspect `git rev-parse main` for the current SHA. The older `chore/main-repository-migration` branch remains at the migration cutover commit. No GitHub remote is configured yet.
 - Annotated tag `handover-20260909` targets `e0cb8df042b3a5f856c60b45cf7e9c2bafbc23b5`. The clone has no object alternates and no configured remote.
 - The old `E:\develop\数字员工\joukir-enterprise` source remains intact for rollback and will be removed manually by the user after acceptance.
@@ -35,10 +36,12 @@ This file is mutable operational context. Re-check every process, port, branch, 
 
 ## Next actions
 
-1. Continue development from local `main` in `E:\develop\数字员工\joukir`, read `docs/reports/报告.md`, and use short-lived branches. Keep executable suites in the four categorized `tests/` subdirectories and run `tests/check_test_layout.py`.
-2. Fix or explicitly baseline the 21 stable backend failures, isolate the WeChat race, and ensure the local Web/worker M2M client bypasses the Windows loopback proxy without changing authentication policy. Retest focused paths and the full applicable gates.
-3. Have a human account owner complete Casdoor login, role/page, long conversation and SOP-task acceptance. For TikTok, real authorization, data, observation and write approval must each get separate evidence; the single zero-observation Shadow row is insufficient. Restore MinIO objects only when the missing backup scope and files are available.
-4. Obtain the actual GitHub repository URL before adding `origin`, pushing or configuring required checks/protection. Do not invent a remote.
+1. Review the V1.8 PRDs in `docs/prd/` and resolve the P3-A acceptance mismatch between the upper PRD's broad 12-SOP/per-role UAT language and its controlling chapter 26 plus the module PRD's five main SOPs/30 human comparisons. Confirm the sample fulfillment seven-day calendar/business-day rule before implementation.
+2. Start TikTok P3-B0 with a US pilot store, creator scope and data Owners; create a per-field source/business-key/freshness/missing-value contract and per-action E0-E3 capability evidence for Seller/Affiliate, Creator/Partner, Ads, LIVE and messaging. Use authorized read-only data or recorded/Mock contracts. Keep external writes and paid generation disabled.
+3. Before a second tenant or real authorization pilot, reproduce and fix the static risk from tenant-independent TikTok bootstrap/shop primary keys; make the production-readiness authorization gate require a usable, asset-linked, unexpired official read authorization. Add focused two-tenant and unusable-authorization regression tests. Ensure local Web/worker M2M loopback calls bypass the Windows system proxy without weakening authentication.
+4. After P3-B0 evidence and source contracts, implement P3-B1 E01/E02/E07: BD dashboard, append-only sample/fulfillment facts and metric dictionary. Apply explicit migrations, forced RLS, Casbin/asset checks, idempotence, visible stale/unknown/conflict states, Mock/replay and two-tenant tests; compare at least 30 historical records with BD. B2-B4 remain gated by their own PRD exit conditions.
+5. Separately complete P3-A real official authorization and human Shadow evidence (at least 30 evaluations over five SOPs, zero serious guardrail issues, then 14 calendar days and named sign-offs). The current zero-observation Shadow row and deterministic Mock replay are not production acceptance. Complete human Casdoor role/page and SOP-task acceptance.
+6. Fix or explicitly baseline the 21 stable backend failures and isolate the WeChat race; retest applicable gates. Restore MinIO objects only when the missing backup scope and files are available. Obtain the real GitHub URL before adding `origin`, pushing or configuring checks/protection.
 
 ## Validations still unavailable or intentionally deferred
 

@@ -1,21 +1,23 @@
 # PRD: 跨境电商数字员工部门平台
 
-> 产品代号：九骥 Joukir（基于 StaffDeck 二次开发）  
-> 文档版本：V1.7  
-> 文档状态：产品评审稿  
-> 日期：2026-09-02  
-> 产品负责人：待定  
-> 技术负责人：待定  
-> 业务负责人：待定  
-> 关联方案：[跨境电商数字员工部门综合建设方案（2026）](./crossborder-digital-workforce-integrated-plan-2026.md)  
-> 技术底座参考：[局域网多用户共享 Codex 与记忆知识库方案调研（2026）](./lan-multiuser-codex-memory-2026.md)
-> V1.1 变更：确定使用 Casdoor 负责身份认证与组织，Casbin 负责授权决策，PostgreSQL Row-Level Security 负责租户数据隔离；增加多语言和机器身份要求。
-> V1.2 变更：完成统一任务启动快照与七岗位独立 Casdoor M2M 服务身份；明确 Casdoor 只认证工作负载，StaffDeck/Casbin/RLS 继续执行最终业务授权。
-> V1.3 变更：完成七岗位审核后生产只读 SOP、知识库、工具绑定和岗位受限开放广场发布。
-> V1.4 变更：高风险审批固定动作内容摘要与业务资源上下文摘要；资源变化自动失效未执行审批，Worker 在连接器调用前二次校验并禁止失效审批重试。
-> V1.5 变更：个人记忆支持用户主动提交审核、独立审核人决策、提交快照漂移失效和 append-only 审计；审核结论不改变个人私有范围。
-> V1.6 变更：新增 TikTok 事业部组织模型、35 个数字岗位、部门 Skill 能力矩阵、12 条生产 SOP、卖家/达人/TAP/广告资产授权隔离、高风险操作审批和分阶段验收要求；本版本为规划基线，未完成项不得标记为已上线。
-> V1.7 变更：冻结 TikTok 事业部推荐实施方案。首期复用七个共享数字员工，仅新增五个 TikTok 专岗，以 12 个实际员工完成试点；采用 Joukir 模块化单体、现有任务/审批/发布快照、项目内审核 Skill、PostgreSQL RLS 和官方授权连接器，不引入第二套工作流引擎、独立向量库或生产期动态 GitHub Skill 安装。
+> 产品代号：九骥 Joukir（基于 StaffDeck 二次开发）<br>
+> 文档版本：V1.8<br>
+> 文档状态：产品评审稿<br>
+> 日期：2026-09-10<br>
+> 产品负责人：待定<br>
+> 技术负责人：待定<br>
+> 业务负责人：待定<br>
+> 关联方案：[跨境电商数字员工部门综合建设方案（2026）](./crossborder-digital-workforce-integrated-plan-2026.md)<br>
+> TikTok 模块详版：[TikTok 事业部数字化运营模块产品需求文档 V1.8](./tiktok-business-unit-module-prd-v1.8.md)<br>
+> 技术底座参考：[局域网多用户共享 Codex 与记忆知识库方案调研（2026）](./lan-multiuser-codex-memory-2026.md)<br>
+> V1.1 变更：确定使用 Casdoor 负责身份认证与组织，Casbin 负责授权决策，PostgreSQL Row-Level Security 负责租户数据隔离；增加多语言和机器身份要求。<br>
+> V1.2 变更：完成统一任务启动快照与七岗位独立 Casdoor M2M 服务身份；明确 Casdoor 只认证工作负载，StaffDeck/Casbin/RLS 继续执行最终业务授权。<br>
+> V1.3 变更：完成七岗位审核后生产只读 SOP、知识库、工具绑定和岗位受限开放广场发布。<br>
+> V1.4 变更：高风险审批固定动作内容摘要与业务资源上下文摘要；资源变化自动失效未执行审批，Worker 在连接器调用前二次校验并禁止失效审批重试。<br>
+> V1.5 变更：个人记忆支持用户主动提交审核、独立审核人决策、提交快照漂移失效和 append-only 审计；审核结论不改变个人私有范围。<br>
+> V1.6 变更：新增 TikTok 事业部组织模型、35 个数字岗位、部门 Skill 能力矩阵、12 条生产 SOP、卖家/达人/TAP/广告资产授权隔离、高风险操作审批和分阶段验收要求；本版本为规划基线，未完成项不得标记为已上线。<br>
+> V1.7 变更：冻结 TikTok 事业部推荐实施方案。首期复用七个共享数字员工，仅新增五个 TikTok 专岗，以 12 个实际员工完成试点；采用 Joukir 模块化单体、现有任务/审批/发布快照、项目内审核 Skill、PostgreSQL RLS 和官方授权连接器，不引入第二套工作流引擎、独立向量库或生产期动态 GitHub Skill 安装。<br>
+> V1.8 变更：补充 TikTok 内容请求三层留痕、AI 媒体数据出境与供应商门禁、第三方 Skill 付费触发规则；将趋势、内容实验、媒体 Provider、指标、BD 看板、样品履约、达人公海、三节点提醒和产品 Brief 纳入模块详版，并依据 TikTok 美区知识库增加选品与 SKU 组合、GMV Max 诊断、活动库存协同、直播复盘、素材血缘和经营信任放行包。
 
 ## 1. 产品概述
 
@@ -239,6 +241,7 @@ flowchart TB
 - 上线 12 条跨部门生产 SOP、10 类知识库、Skill 注册表、评测集和发布门禁。
 - 首期仅开放官方 API 或企业已授权数据源的读取、分析、草稿、内部派单和审批；发布、发送消息、调价、调预算、修改佣金、创建活动等外部写动作默认禁用。
 - 经真实连接器契约测试、影子运行、审批演练和业务签字后，按资产、动作、金额、地区和时间窗灰度开放受控写操作。
+- P3-B 先交付 BD 统一数据看板、样品物流与内容履约、达人归属公海池和分佣草案，再交付标准提醒、产品 Brief 库和内容智能；选品与 SKU 组合、GMV Max 诊断、活动库存协同、直播复盘和经营信任门禁作为数据能力验证后的经营闭环扩展。详细范围、数据契约、UAT 和退出条件以 TikTok 模块 V1.8 为准。
 
 ## 7. 信息架构
 
@@ -1707,7 +1710,7 @@ Skill 本身不授予任何业务权限。运行时有效权限为：
 | TT-DE-026 商达匹配专员 | 新增 | 商品约束、达人画像、可解释评分和活动草稿 | 只读和草稿 |
 | TT-DE-030 直播策划专员 | 新增 | 场次计划、选品排品、脚本、检查和复盘 | 只读和草稿 |
 
-P3-B 才评估 TT-DE-011 视频制作助理、TT-DE-028 样品与交付跟踪、TT-DE-033 实时场控预警和其他目标岗位。实时直播自动化不进入 P3-A。
+P3-B 评估 TT-DE-011 视频制作助理、TT-DE-028 样品与交付跟踪和其他目标岗位，并优先建设 BD 数据看板、样品履约和达人归属能力。TT-DE-033 实时场控预警及实时直播自动化不进入 P3-A；P3-B 的完整 Epic 和边界见 [TikTok 事业部数字化运营模块产品需求文档 V1.8](./tiktok-business-unit-module-prd-v1.8.md)。
 
 ### 26.5 P3-A Skill Pack 1.0
 
@@ -1963,7 +1966,7 @@ P3-A 不定义 Live 写方法。后续写方法只能通过 `BusinessActionExecu
 | WP-05 Skill Pack | `skills/joukir-tiktok-*`、导入脚本、评测夹具 | Schema、来源、许可证、Prompt Injection、版本漂移 |
 | WP-06 Agent/SOP 种子 | 新增幂等 bootstrap 服务和数据清单 | 重复执行、内容漂移、M2M 缺失、发布快照 |
 | WP-07 前端 | `frontend-enterprise/src/enums/routes.ts`、`auth.ts`、`App.tsx`、`AppSidebar.tsx`、新增 `TikTokBusinessUnitPage.tsx` | 路由权限、六 Tab、错误/空状态、i18n、构建 |
-| WP-08 端到端 | `tests/backend/test_tiktok_*.py`、前端同名测试、验证脚本 | 双租户、五授权域、五主 SOP、Trace、备份和回滚 |
+| WP-08 端到端 | `backend/tests/test_tiktok_*.py`、前端同名测试、验证脚本 | 双租户、五授权域、五主 SOP、Trace、备份和回滚 |
 
 新代码沿用现有模块结构：`schema.py` 定义 API 模型，`service.py` 管理事务和状态，`connectors/` 隔离远程依赖，API 层只做认证、参数转换和错误映射。禁止在 React 页面、Skill Markdown 或 API 路由中直接访问 TikTok HTTP 接口。
 
@@ -1975,7 +1978,7 @@ P3-A 不定义 Live 写方法。后续写方法只能通过 `BusinessActionExecu
 - [ ] 首个试点市场、店铺、广告账户和账号 Owner 已确认。
 - [ ] 六个 Casdoor Group 名称和旧 Group 迁移策略已确认。
 - [ ] P3-A 的 Mock 数据可以脱敏用于测试，业务负责人确认字段口径。
-- [x] 12 个 Skill 的来源和许可证清单完成，Clipcat 不作为硬依赖；清单位于 `skills/joukir-tiktok-pack/inventory.json`，可由 `backend/scripts/verify_tiktok_skill_inventory.py` 重复验收。
+- [ ] 12 个 Skill 的来源和许可证清单完成，Clipcat 不作为硬依赖。
 - [ ] PostgreSQL 测试库、受限运行角色、迁移角色和 RLS 测试可用。
 - [ ] TikTok 官方 API 未获批部分已标明 Mock/回放，不伪装为真实接入。
 
@@ -2010,12 +2013,11 @@ P3-A 不定义 Live 写方法。后续写方法只能通过 `BusinessActionExecu
 - 已完成 Mock OAuth/PKCE：强制 S256、短期 state、一次性授权码、回调交换后销毁 state；数据库只保存凭据引用和指纹，不保存 access token、refresh token 或 client secret。
 - 已完成 seller、creator、partner、ads、social 五类 TikTok Mock Read Connector，严格校验资源平台、岗位 Scope、授权 Scope 和租户；只返回白名单业务字段，并记录 `connector_sync_states` 游标。
 - 已完成 12 个 `skills/joukir-*` 项目 Skill 包，包含 SKILL.md、manifest、输入/输出 Schema、参考资料、评测夹具和许可证声明；管理员种子接口幂等创建 12 个 Skill、知识库版本、5 个只读工具、5 个数字员工草稿及 5 个 Casdoor M2M 服务身份，并按岗位最小职责集合绑定到 5 个 TikTok P3-A 数字员工。BD、短视频、达人授权、商达匹配和直播策划分别获得 3/6/3/3/4 个 SOP Skill、对应只读工具和同一份审核知识库；既有种子产生的多余绑定会自动降为 inactive，并写入审计原因。
-- 已完成 12 个 Skill 的来源/许可证机器清单与门禁：`skills/joukir-tiktok-pack/inventory.json` 固定每个 Skill 的内部来源、许可证、第三方内容声明、依赖和 `approved_seed` 状态；`skills/joukir-tiktok-pack/LICENSES.md` 提供人工审阅摘要；`backend/scripts/verify_tiktok_skill_inventory.py` 校验 registry、12 个 Skill 的必需文件、manifest 安全字段、第三方依赖声明和 Clipcat 非硬依赖。该门禁只证明 Skill 包资产可审计，不替代业务负责人生产发布审批。
 - 已完成前端 `/enterprise/tiktok` 入口、组织与生产资产初始化按钮、岗位 Casdoor 组、资源范围、授权状态和任务计数空/错状态；中文/英文目录和 TypeScript/Vite 构建已校验。
 - 已完成 TikTok 事业部六个 Tab：概览、员工、资产与授权、任务中心、SOP/Skill、风险与 KPI；各 Tab 沿用同一租户范围和只读数据边界。
 - 已完成生产就绪检查聚合接口和页面门禁卡：按当前租户分别检查 Casdoor Management Client、真实 TikTok 官方授权、五个 AgentRelease、14 天影子运行和外部写入关闭状态；Mock 授权不会计入官方授权，未满足项明确显示阻塞原因。
 - 已完成 AgentRelease 预检与发布闭环：新增五岗位统一预检接口，逐项返回岗位、当前发布状态、快照摘要和阻塞原因；批量发布必须输入业务负责人审批编号，预检通过后在单一事务中发布五个 AgentRelease，并写入统一发布原因和事件审计；重复发布同一快照保持幂等，不会无意义生成新版本。
-- 已完成五条 Mock SOP 回放验收夹具：`TT-SOP-002` 内容工厂、`TT-SOP-003` 小店巡检、`TT-SOP-004` 广告只读巡检、`TT-SOP-007` 商达匹配、`TT-SOP-009` 直播开播检查均覆盖“任务创建 -> 知识命中 -> 只读工具 -> Trace -> Evidence -> 后续待办契约”链路；其中小店巡检和广告巡检分别按 P3-A 由复用的运营主管、广告巡检员工承接，不虚构 TikTok 专岗实例。回放结果固定、脱敏、`mock_replay` 标记，`external_writes=false`，不写入 TikTok 外部系统，支持页面按钮和 `tests/integration/run_tiktok_mock_sop_replay.py` 重复验收。
+- 已完成五条 Mock SOP 回放验收夹具：`TT-SOP-002` 内容工厂、`TT-SOP-003` 小店巡检、`TT-SOP-004` 广告只读巡检、`TT-SOP-007` 商达匹配、`TT-SOP-009` 直播开播检查均覆盖“任务创建 -> 知识命中 -> 只读工具 -> Trace -> Evidence -> 后续待办契约”链路；其中小店巡检和广告巡检分别按 P3-A 由复用的运营主管、广告巡检员工承接，不虚构 TikTok 专岗实例。回放结果固定、脱敏、`mock_replay` 标记，`external_writes=false`，不写入 TikTok 外部系统，支持页面按钮和 `backend/scripts/run_tiktok_mock_sop_replay.py` 重复验收。
 - 已完成 Mock 回放到统一任务中心的显式落库入口：管理员可在页面选择“写入任务中心（Mock）”，按五条 SOP 的固定幂等键创建 `WorkTask`、`WorkTaskEvent` 和脱敏 `WorkTaskEvidence`，状态保持 `pending`，可在任务中心继续执行/接管；默认契约回放仍为无副作用，落库动作不自动 Claim、不执行 Worker、不发布 AgentRelease。
 - 已完成 Mock 任务的 Sandbox Worker 执行入口：管理员可在 AgentRelease 发布后手动运行来源过滤的 Sandbox Worker，仅 Claim `tiktok_mock_sop_replay` 任务；执行结果返回真实 `WorkTaskRun`、`WorkTaskExecutionSnapshot`、服务身份校验结果和 Trace 摘要。若 AgentRelease、服务身份或快照门禁不完整，任务按现有 Worker 逻辑失败关闭，不降级绕过门禁。
 - 已完成五条 Mock SOP 异常矩阵：每条 SOP 覆盖知识缺失、授权冲突、Connector 超时、重复回放、Scope 撤销和人工接管 6 类异常，共 30 个确定性验收单元；每个单元固定失败处置、错误码和后续人工待办契约，异常路径禁止 TikTok 外部写入，并提供管理员只读验收接口 `GET /api/enterprise/tiktok/mock-sop-replays/exception-matrix` 及页面按钮。

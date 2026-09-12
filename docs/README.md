@@ -22,10 +22,11 @@ Start a development session with the durable memory and current handoff below. P
 
 ## Product requirements
 
-- [Cross-border digital workforce PRD (2026)](prd/crossborder-digital-workforce-prd-2026.md)
+- [Cross-border digital workforce PRD V1.8 (2026)](prd/crossborder-digital-workforce-prd-2026.md)
+- [TikTok business unit module PRD V1.8 (2026)](prd/tiktok-business-unit-module-prd-v1.8.md)
 - [Cross-border digital workforce integrated plan (2026)](prd/crossborder-digital-workforce-integrated-plan-2026.md)
 
-Both PRDs refer to `prd/lan-multiuser-codex-memory-2026.md`. That LAN multiuser/Codex memory research document was absent from the inherited repository, so this migration records the gap instead of fabricating its contents.
+The cross-border PRD and integrated plan refer to `prd/lan-multiuser-codex-memory-2026.md`. That LAN multiuser/Codex memory research document was absent from the inherited repository, so this migration records the gap instead of fabricating its contents.
 
 ## Operations and restoration
 
