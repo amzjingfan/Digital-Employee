@@ -29,7 +29,7 @@ Both PRDs refer to `prd/lan-multiuser-codex-memory-2026.md`. That LAN multiuser/
 - [StaffDeck platform deployment guide](../deploy/staffdeck-platform/README.md)
 - [StaffDeck platform source manifest](../deploy/staffdeck-platform/SOURCE_MANIFEST.md)
 - [PostgreSQL and Casdoor restoration record, 2026-09-09](DATABASE_RESTORE_20260909.md) — dated handover evidence; verify live state before using it.
-- [Joukir analysis and local startup record, 2026-09-09](LOCAL_STARTUP_20260909.md) — dated source-layout/startup snapshot; current cutover commands will be finalized by migration verification.
+- [Joukir analysis and local startup record, 2026-09-09](LOCAL_STARTUP_20260909.md) — dated source-layout/startup snapshot; current service state is in the session handoff and final verification.
 - [Portable development handover, 2026-09-09](PORTABLE_DEVELOPMENT_20260909.md) — dated handover snapshot.
 - [Backup scope](../BACKUP_SCOPE.md) — inherited scope record; backup data itself remains outside Git.
 
@@ -39,7 +39,9 @@ Both PRDs refer to `prd/lan-multiuser-codex-memory-2026.md`. That LAN multiuser/
 - [Main-repository migration implementation plan](superpowers/plans/2026-09-11-joukir-main-repository-migration.md)
 - [Pre-layout tracked source index](migration/source-index-before-layout.tsv) — immutable handover path/blob evidence.
 - [Flat-layout mapping report](migration/layout-mapping-report.json)
-- Final functional verification: `migration/VERIFICATION_20260911.md` will be created after Task 8 completes; do not treat it as available yet.
+- [Final source path/blob mapping](migration/final-source-map.tsv)
+- [Final migration and functional verification, 2026-09-11](migration/VERIFICATION_20260911.md)
+- [Reproducible migration evidence tools](../scripts/migration/README.md)
 
 ## Historical architecture and implementation records
 

@@ -2,7 +2,8 @@
   "report": "Task 2 root-layout promotion",
   "baseline": {
     "sourceIndex": "docs/migration/source-index-before-layout.tsv",
-    "baseCommit": "e8a3affcbe80ecdea1c184e3004f55751c8a0b91",
+    "snapshotCommit": "6f3933a0b75333e555848ff70932a5d7874290ee",
+    "indexCommittedAt": "e8a3affcbe80ecdea1c184e3004f55751c8a0b91",
     "indexedPaths": 1154,
     "sourcePathsMoved": 1124,
     "alreadyRootedPathsRetained": 30

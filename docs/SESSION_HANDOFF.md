@@ -1,15 +1,14 @@
 # Current session handoff
 
-Last refreshed: 2026-09-11 (Asia/Shanghai)
+Last refreshed: 2026-09-12 (Asia/Shanghai)
 
 This file is mutable operational context. Re-check every process, port, branch, and test result before relying on it. It contains no credential values or connection strings.
 
 ## Repository state
 
 - Working repository: `E:\develop\数字员工\joukir`.
-- Active migration branch: `chore/main-repository-migration`.
-- Last completed migration task before the governance/memory commit: `c2ccf97600ed3ef27b21d3d9d987db0baabc02d3` (`test: fix test layout guard matching`).
-- Local `main` still points to the approved design baseline while the migration branch is under review. Task 8 will fast-forward it only after final functional verification.
+- The migration feature branch is `chore/main-repository-migration`; its final functional-source commit is `fc1dd456445a0eccbe053fa0d19987a4b37102d9`.
+- Local `main` and the retained feature branch point to the same final migration evidence commit after the reviewed fast-forward; inspect `git rev-parse main` for the current SHA. No GitHub remote is configured yet.
 - Annotated tag `handover-20260909` targets `e0cb8df042b3a5f856c60b45cf7e9c2bafbc23b5`. The clone has no object alternates and no configured remote.
 - The old `E:\develop\数字员工\joukir-enterprise` source remains intact for rollback and will be removed manually by the user after acceptance.
 
@@ -22,30 +21,24 @@ This file is mutable operational context. Re-check every process, port, branch, 
 
 ## Verified source and test state
 
-- All 1,154 indexed handover paths resolved after the flat-root move; 1,153 retained identical blobs and the expected `.gitignore` edit was the only content difference at that stage.
-- Backend tests: 190 tracked modules under `tests/backend/`; old and new collection both found 2,241 tests. A path-sensitive 26-test run passed after setting UTF-8 subprocess I/O and bypassing proxies for localhost. The complete new backend suite is still pending Task 8 comparison.
-- Frontend tests: 64 files and 271 tests passed in both the old and new layouts. Frontend test type-check and production build passed after the move.
+- The immutable pre-layout index has 1,154 entries and the pinned `fc1dd45` source map resolves all 1,154 uniquely, with zero missing, case-folded collisions, unexplained content edits or unexplained mode changes. Exactly 1,056 blobs remain identical, 98 edits map to reviewed commits, and the three Unix shell mode changes are reviewed. The tracked map and verifier are under `docs/migration/` and `scripts/migration/`.
+- The full new-root and legacy backend baseline runs each collected 2,241 tests and ended 2,211 passed, 21 failed, 9 skipped, 0 errors, with identical normalized failure/error/skip nodes. This is not a full green suite; details and environment differences are in `docs/migration/VERIFICATION_20260911.md`. The workflow-contract fix added three tests after that baseline; the current tree collects 2,244 and the focused 20-test run passed.
+- Frontend gates passed: configuration, 4,209-entry English i18n coverage, test type-check, 64 files/271 Vitest tests, and a 2,163-module production build.
 - Integration/packaging: both Python runner groups compile, PowerShell and Bash callers parse, the deterministic TikTok replay passed 5 checks with external writes disabled, and the tracked root test-layout guard passes.
-- Task 6 CI-parity checks: backend layout/compile/Ruff passed and the 12 focused TikTok modules passed 61 tests; frontend configuration, 4,209-entry English i18n coverage, test type-check, 64-file/271-test Vitest suite, and 2,163-module production build passed. All workflow YAML parses, and the CodeQL, release, and Dependabot files remain byte-identical to their pre-task versions.
-- Historical full backend handover evidence reports 2,207 passed, 22 failed, and 12 skipped. It is comparison evidence, not a successful current full-suite result.
+- GitHub workflow YAML parses and the backend TikTok CI subset passed 61 tests. The PostgreSQL production gate returned `ok=true`, and the worktree security delta found zero new sensitive-text candidates or tracked runtime artifacts.
 
 ## Live local services
 
 - Compose project `joukir-restored-20260909` currently reports PostgreSQL and Casdoor healthy, bound only to loopback on ports 55433 and 18000 respectively.
-- The old repository's Web process tree is still serving `127.0.0.1:5173`; the parent process uses the old `joukir-enterprise\source\backend\.venv` and the listening child currently reports application health `status=ok`, app `九骥 Joukir`.
-- The new repository has not taken ownership of port 5173 and has no new `.dev/local-web.pid`. Do not stop the old process until every pre-cutover Task 8 gate passes.
+- The new repository's Web launcher PID 40608 and listener PID 37160 took over `127.0.0.1:5173` on 2026-09-12. Re-check process identity before relying on these transient PIDs. The launcher uses `joukir\backend\.venv`, ignored `backend/.env` and external `E:\develop\数字员工\joukir-runtime\data`; the PID is also in ignored `.dev/local-web.pid`, with logs under the external runtime `logs/` directory.
+- Health, gallery HTML/assets, OIDC configuration, Casdoor health and OIDC code/nonce/state/PKCE redirect checks passed without credentials. The browser rendered the already-authenticated gallery and a direct Casdoor Password page. Existing Admin cookies prevented this session from showing the unauthenticated SSO button, so that UI click remains unverified.
 
 ## Next actions
 
-Task 8 must:
-
-1. Re-run Git integrity, mapping, test-layout, stale-path, staged-artifact, and redacted secret-pattern checks.
-2. Run the full backend suite from the new root and compare every failure with the handover environment; fix only migration regressions.
-3. Run all frontend gates and record final file/test counts and build result.
-4. Run the PostgreSQL production gate without exposing its database URL.
-5. If every pre-cutover gate passes, stop only the verified old Web process tree, start the new single-port app with the external runtime data directory, and store the new ignored PID/log state.
-6. Verify health, main pages, OIDC configuration, Casdoor health, and the browser SSO redirect to the Casdoor password page with PKCE. Do not enter or expose human credentials.
-7. Write final migration evidence, refresh this handoff, append the development log, commit the evidence, and fast-forward local `main`.
+1. Continue all product development in `E:\develop\数字员工\joukir`; use a short-lived feature branch and pull request from the local `main` once a real GitHub remote is supplied. `CONTRIBUTING.md`, `AGENTS.md`, `.github/` and `docs/PROJECT_MEMORY.md` define the current workflow and durable context.
+2. Triage the 21 shared backend failures as separate baseline/cross-platform work. When changing tests, keep executable suites in the four categorized `tests/` subdirectories and run `tests/check_test_layout.py`.
+3. Ask the maintainer to provide the actual GitHub repository URL before adding `origin`, pushing or configuring required checks/protection. Do not invent a remote.
+4. Have a human account owner complete Casdoor login, role/page and model-conversation acceptance; restore MinIO/Redis/Superset only if corresponding data and scope become available.
 
 ## Validations still unavailable or intentionally deferred
 
