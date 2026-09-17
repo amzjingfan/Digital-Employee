@@ -7,7 +7,7 @@ This file is mutable operational context. Re-check every process, port, branch, 
 ## Repository state
 
 - Working repository: `E:\develop\数字员工\joukir`.
-- Current documentation branch: `codex/prd-tiktok-v1-8`. The user-supplied cross-border PRD V1.8 replaces the prior V1.7 working copy, and the TikTok module PRD V1.8 is added under `docs/prd/`; both saved files match their source SHA-256 hashes. This branch is not yet integrated into local `main`.
+- Current branch: `main`. The local integration branch was fast-forwarded through `8e2e6b3`, so it now includes the user-supplied cross-border and TikTok module PRD V1.8 files, the TikTok authorization verification record, and the verified `src/` layout migration. The merged feature branch `codex/prd-tiktok-v1-8` remains at the migration commit for traceability.
 - The reviewed functional audit was prepared on `docs/project-functional-audit-20260912` and integrated into local `main`. The follow-up document classification branch `docs/classify-project-docs` was also integrated into local `main`. The report now lives at `docs/reports/报告.md`; inspect `git rev-parse main` for the current SHA. The older `chore/main-repository-migration` branch remains at the migration cutover commit. No GitHub remote is configured yet.
 - Annotated tag `handover-20260909` targets `e0cb8df042b3a5f856c60b45cf7e9c2bafbc23b5`. The clone has no object alternates and no configured remote.
 - The old `E:\develop\数字员工\joukir-enterprise` source remains intact for rollback and will be removed manually by the user after acceptance.
