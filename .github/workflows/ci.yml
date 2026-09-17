@@ -26,7 +26,7 @@ jobs:
       contents: read
     defaults:
       run:
-        working-directory: backend
+        working-directory: src/backend
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,7 +36,7 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: backend/uv.lock
+          cache-dependency-path: src/backend/uv.lock
 
       - name: Install uv
         run: python -m pip install uv
@@ -68,7 +68,7 @@ jobs:
 
       - name: Run TikTok regression tests
         run: >-
-          uv run --locked pytest -c ../pytest.ini -q
+          uv run --locked pytest -c ../../pytest.ini -q
           ../tests/backend/test_tiktok_connector_authorization.py
           ../tests/backend/test_tiktok_live_write_release_gate.py
           ../tests/backend/test_tiktok_release_evidence.py
@@ -90,7 +90,7 @@ jobs:
       contents: read
     defaults:
       run:
-        working-directory: frontend-enterprise
+        working-directory: src/frontend-enterprise
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -100,7 +100,7 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-          cache-dependency-path: frontend-enterprise/package-lock.json
+          cache-dependency-path: src/frontend-enterprise/package-lock.json
 
       - name: Install frontend dependencies
         run: npm ci

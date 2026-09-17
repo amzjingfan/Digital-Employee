@@ -4,7 +4,7 @@ version: 2
 updates:
   # Frontend dependencies (npm is the package manager used by the build scripts).
   - package-ecosystem: "npm"
-    directory: "/frontend-enterprise"
+    directory: "/src/frontend-enterprise"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -21,9 +21,9 @@ updates:
           - "minor"
           - "patch"
 
-  # Python backend dependencies declared in backend/pyproject.toml.
+  # Python backend dependencies declared in src/backend/pyproject.toml.
   - package-ecosystem: "pip"
-    directory: "/backend"
+    directory: "/src/backend"
     schedule:
       interval: "weekly"
       day: "monday"

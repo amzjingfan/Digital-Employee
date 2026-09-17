@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="packaging/assets/staffdeck_banner_cn.png" alt="StaffDeck 标志"  />
+<img src="src/packaging/assets/staffdeck_banner_cn.png" alt="StaffDeck 标志"  />
 
 <p align="center">
   <a href="https://staffdeck.openbmb.cn/"><img src="https://img.shields.io/badge/Website-staffdeck.openbmb.cn-FF6B35?style=flat-square&logo=googlechrome&logoColor=white" alt="Official Website"/></a>
@@ -74,7 +74,7 @@ URL。配置按用户保存，并在下次启动时生效。
 在授权的 Joukir 工作区中先阅读 README.zh.md、AGENTS.md、
 docs/PROJECT_MEMORY.md 和 docs/SESSION_HANDOFF.md。准备 Python 3.11 或更高版本、
 uv 和 Node.js 20，按锁文件安装前后端依赖，并通过批准的安全交接取得被忽略的
-backend/.env。缺少部署专用配置时向我询问，不得打印或提交配置值。严格使用当前
+src/backend/.env。缺少部署专用配置时向我询问，不得打印或提交配置值。严格使用当前
 系统对应的文档命令，最后验证 /api/health 和 /workspace/gallery 后再报告完成。
 ```
 
@@ -124,20 +124,20 @@ backend/.env。缺少部署专用配置时向我询问，不得打印或提交�
 macOS、Linux 或 WSL：
 
 ```bash
-uv sync --project backend --locked --extra dev
-npm --prefix frontend-enterprise ci
+uv sync --project src/backend --locked --extra dev
+npm --prefix src/frontend-enterprise ci
 ```
 
 Windows PowerShell：
 
 ```powershell
-uv sync --project backend --locked --extra dev
-npm --prefix frontend-enterprise ci
+uv sync --project src/backend --locked --extra dev
+npm --prefix src/frontend-enterprise ci
 ```
 
 ### 2. 配置模型
 
-`backend/.env` 已被 Git 忽略，仓库没有跟踪示例文件。只能通过批准的部署配置或安全交接创建，并将读取权限限制给运行服务的账号。使用已恢复的 PostgreSQL/Casdoor 开发环境时，请先阅读[本地启动记录](docs/LOCAL_STARTUP_20260909.md)、[数据库恢复记录](docs/DATABASE_RESTORE_20260909.md)和当前[会话交接](docs/SESSION_HANDOFF.md)，不要用通用样例覆盖该环境。
+`src/backend/.env` 已被 Git 忽略，仓库没有跟踪示例文件。只能通过批准的部署配置或安全交接创建，并将读取权限限制给运行服务的账号。使用已恢复的 PostgreSQL/Casdoor 开发环境时，请先阅读[本地启动记录](docs/LOCAL_STARTUP_20260909.md)、[数据库恢复记录](docs/DATABASE_RESTORE_20260909.md)和当前[会话交接](docs/SESSION_HANDOFF.md)，不要用通用样例覆盖该环境。
 
 单独创建新环境时，请在首次启动前于被忽略的文件中配置模型：
 
@@ -148,16 +148,16 @@ DEMO_MODEL_NAME="你的模型名"
 DEMO_MODEL_API_KEY="你的API-Key"
 ```
 
-API Key 用于创建初始模型配置，存入数据库前会被加密。请勿提交 `backend/.env`。服务启动后也可以在**管理员 → 模型配置**中管理模型服务。
+API Key 用于创建初始模型配置，存入数据库前会被加密。请勿提交 `src/backend/.env`。服务启动后也可以在**管理员 → 模型配置**中管理模型服务。
 
 ### 3. 启动 Web Demo
 
 | 平台 | 推荐命令 |
 | --- | --- |
-| macOS、Linux 或 WSL | `scripts/dev_up.sh --detach` |
-| Windows PowerShell | `.\scripts\dev_up.ps1 --detach` |
+| macOS、Linux 或 WSL | `src/scripts/dev_up.sh --detach` |
+| Windows PowerShell | `.\src\scripts\dev_up.ps1 --detach` |
 
-两套包装脚本最终都会调用同一个跨平台 Python 生命周期入口 `scripts/dev.py`。启动过程会构建 StaffDeck 前端，并由一个 FastAPI 进程在 `5173` 端口同时提供 UI 与 API。应用明确关闭了交互式 Swagger、ReDoc 和 OpenAPI Schema 路由。
+两套包装脚本最终都会调用同一个跨平台 Python 生命周期入口 `src/scripts/dev.py`。启动过程会构建 StaffDeck 前端，并由一个 FastAPI 进程在 `5173` 端口同时提供 UI 与 API。应用明确关闭了交互式 Swagger、ReDoc 和 OpenAPI Schema 路由。
 
 已恢复的 Joukir 开发环境使用企业 SSO 和原有 Casdoor 账号。请从应用内发起登录，不要假定存在默认管理员凭据。
 
@@ -187,19 +187,19 @@ curl.exe http://127.0.0.1:5173/api/health
 
 | 操作 | macOS、Linux 或 WSL | Windows PowerShell |
 | --- | --- | --- |
-| 后台启动 | `scripts/dev_up.sh --detach` | `.\scripts\dev_up.ps1 --detach` |
-| 前台启动 | `scripts/dev_up.sh` | `.\scripts\dev_up.ps1` |
-| 查看服务状态 | `scripts/dev_status.sh` | `.\scripts\dev_status.ps1` |
-| 停止本地服务 | `scripts/dev_down.sh` | `.\scripts\dev_down.ps1` |
+| 后台启动 | `src/scripts/dev_up.sh --detach` | `.\src\scripts\dev_up.ps1 --detach` |
+| 前台启动 | `src/scripts/dev_up.sh` | `.\src\scripts\dev_up.ps1` |
+| 查看服务状态 | `src/scripts/dev_status.sh` | `.\src\scripts\dev_status.ps1` |
+| 停止本地服务 | `src/scripts/dev_down.sh` | `.\src\scripts\dev_down.ps1` |
 
 #### 统一 Python 入口
 
-上述包装脚本最终都会调用 `scripts/dev.py`。也可以直接使用第 1 步创建的项目虚拟环境，避免依赖 Shell 脚本执行能力或系统 Python Launcher：
+上述包装脚本最终都会调用 `src/scripts/dev.py`。也可以直接使用第 1 步创建的项目虚拟环境，避免依赖 Shell 脚本执行能力或系统 Python Launcher：
 
 | 平台 | 直接后台启动 |
 | --- | --- |
-| macOS、Linux 或 WSL | `backend/.venv/bin/python scripts/dev.py up --detach` |
-| Windows PowerShell | `.\backend\.venv\Scripts\python.exe scripts\dev.py up --detach` |
+| macOS、Linux 或 WSL | `src/backend/.venv/bin/python src/scripts/dev.py up --detach` |
+| Windows PowerShell | `.\src\backend\.venv\Scripts\python.exe src\scripts\dev.py up --detach` |
 
 需要执行其他操作时，将 `up --detach` 替换为对应的生命周期参数：
 
@@ -212,16 +212,16 @@ curl.exe http://127.0.0.1:5173/api/health
 
 #### 验证代码改动
 
-从仓库根目录运行标准测试。CI 的精确专项节点见 [CONTRIBUTING.md](CONTRIBUTING.md)，集成和平台打包测试命令见 [tests/README.md](tests/README.md)。
+从仓库根目录运行标准测试。CI 的精确专项节点见 [CONTRIBUTING.md](CONTRIBUTING.md)，集成和平台打包测试命令见 [src/tests/README.md](src/tests/README.md)。
 
 ```bash
-uv run --project backend --locked python tests/check_test_layout.py
-uv run --project backend --locked pytest -c pytest.ini tests/backend
-npm --prefix frontend-enterprise run config:check
-npm --prefix frontend-enterprise run i18n:check
-npm --prefix frontend-enterprise run test:typecheck
-npm --prefix frontend-enterprise test
-npm --prefix frontend-enterprise run build
+uv run --project src/backend --locked python src/tests/check_test_layout.py
+uv run --project src/backend --locked pytest -c pytest.ini src/tests/backend
+npm --prefix src/frontend-enterprise run config:check
+npm --prefix src/frontend-enterprise run i18n:check
+npm --prefix src/frontend-enterprise run test:typecheck
+npm --prefix src/frontend-enterprise test
+npm --prefix src/frontend-enterprise run build
 ```
 
 > 完整说明 → [StaffDeck 使用教程](https://staffdeck.openbmb.cn/#/docs/introduce?lang=zh)
@@ -278,14 +278,15 @@ npm --prefix frontend-enterprise run build
 ```text
 joukir/
 ├── .github/                  # CI、CodeQL、依赖、发布与 PR 工作流
-├── backend/                  # FastAPI 接口、Agent 运行时、存储与任务 Worker
-├── deploy/                   # PostgreSQL、Casdoor、Casbin 与 RLS 部署资源
-├── frontend-enterprise/      # React/TypeScript StaffDeck 工作台
 ├── docs/                     # 产品文档、运行手册、记忆、交接与 ADR
-├── packaging/                # macOS、Linux 与 Windows 打包资源
-├── scripts/                  # 单端口服务生命周期与校验脚本
-├── skills/                   # Joukir 与 StaffDeck 发布技能包
-├── tests/                    # 后端、前端、集成与打包测试
+├── src/                      # 全部可执行项目区域
+│   ├── backend/              # FastAPI 接口、Agent 运行时、存储与任务 Worker
+│   ├── deploy/               # PostgreSQL、Casdoor、Casbin 与 RLS 部署资源
+│   ├── frontend-enterprise/  # React/TypeScript StaffDeck 工作台
+│   ├── packaging/            # macOS、Linux 与 Windows 打包资源
+│   ├── scripts/              # 单端口服务生命周期与校验脚本
+│   ├── skills/               # Joukir 与 StaffDeck 发布技能包
+│   └── tests/                # 后端、前端、集成与打包测试
 ├── AGENTS.md                 # 开发 Agent 仓库规则
 ├── CONTRIBUTING.md           # GitHub Flow 与本地验证
 ├── README.md                 # English
@@ -337,9 +338,9 @@ joukir/
 <td width="33%" align="center"><b>Discord 社区</b></td>
 </tr>
 <tr>
-<td align="center"><img src="packaging/assets/qr-wechat.png" width="200" alt="微信二维码"/></td>
-<td align="center"><img src="packaging/assets/qr-feishu.jpg" width="200" alt="飞书二维码"/></td>
-<td align="center"><img src="packaging/assets/qr-discord.png" width="200" alt="Discord 二维码"/></td>
+<td align="center"><img src="src/packaging/assets/qr-wechat.png" width="200" alt="微信二维码"/></td>
+<td align="center"><img src="src/packaging/assets/qr-feishu.jpg" width="200" alt="飞书二维码"/></td>
+<td align="center"><img src="src/packaging/assets/qr-discord.png" width="200" alt="Discord 二维码"/></td>
 </tr>
 </table>
 

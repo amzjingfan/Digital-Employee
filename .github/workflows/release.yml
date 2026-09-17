@@ -20,15 +20,15 @@ jobs:
       matrix:
         include:
           - os: macos-15        # Apple Silicon (arm64)
-            script: bash packaging/build_macos.sh
+            script: bash src/packaging/build_macos.sh
             macos_arch: arm64
           - os: macos-15-intel  # Intel (x86_64) — 无本地机器，靠 CI 出包
-            script: bash packaging/build_macos.sh
+            script: bash src/packaging/build_macos.sh
             macos_arch: x86_64
           - os: ubuntu-latest
-            script: bash packaging/build_linux.sh
+            script: bash src/packaging/build_linux.sh
           - os: windows-latest
-            script: pwsh packaging/build_windows.ps1
+            script: pwsh src/packaging/build_windows.ps1
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -42,7 +42,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install frontend deps
-        run: npm --prefix frontend-enterprise ci || npm --prefix frontend-enterprise install
+        run: npm --prefix src/frontend-enterprise ci || npm --prefix src/frontend-enterprise install
 
       - name: macOS tools
         if: startsWith(matrix.os, 'macos')
@@ -134,7 +134,7 @@ jobs:
           $env:ULTRARAG_PORT_RANGE_END = "5178"
           $env:ULTRARAG_DATA_DIR = $dataDir
           $env:STAFFDECK_HEADLESS = "1"
-          $p = Start-Process -FilePath "packaging/out/staffdeck/staffdeck.exe" -PassThru
+          $p = Start-Process -FilePath "src/packaging/out/staffdeck/staffdeck.exe" -PassThru
           try {
             $health = $null
             for ($i = 0; $i -lt 90; $i++) {
@@ -174,7 +174,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: staffdeck-${{ matrix.os }}
-          path: packaging/out/StaffDeck-*
+          path: src/packaging/out/StaffDeck-*
 
   release:
     needs: build

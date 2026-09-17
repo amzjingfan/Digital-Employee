@@ -6,7 +6,7 @@ This read-only gate audits the frozen P3-A TikTok surface. It prevents an unrevi
 
 ## Run
 
-From the `backend` directory:
+From the `src/backend` directory:
 
 ```powershell
 $env:PYTHONPATH='.'
@@ -18,7 +18,7 @@ Success prints JSON with `ok=true` and exits `0`. A blocked gate prints `ok=fals
 ## Audited surface
 
 - The enterprise TikTok API must exactly match the reviewed route freeze. Adding, removing, or changing a method or path fails closed.
-- HTTP clients in `backend/app/tiktok/` and the TikTok API may not use `POST`, `PUT`, `PATCH`, `DELETE`, `request`, or `send`. The current official adapter permits only reviewed GET-based authorization and reads.
+- HTTP clients in `src/backend/app/tiktok/` and the TikTok API may not use `POST`, `PUT`, `PATCH`, `DELETE`, `request`, or `send`. The current official adapter permits only reviewed GET-based authorization and reads.
 - TikTok modules may not import the generic `business_execution` surface or an unreviewed network library.
 - The Skill Pack registry and all 12 manifests must be present, repository-contained, and explicitly declare `external_write=false`.
 
@@ -88,7 +88,7 @@ The controller signs the UTF-8 bytes of the object after removing `signature` an
 
 ### Run
 
-From `backend`:
+From `src/backend`:
 
 ```powershell
 $env:PYTHONPATH='.'

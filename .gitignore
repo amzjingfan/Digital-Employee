@@ -27,19 +27,19 @@ node_modules/
 /official-site/
 /frontend-chat/
 # 打包产物（PyInstaller 输出、附带 python、下载缓存）—— 不进 git
-packaging/out/
-packaging/build/
-packaging/runtime/
-packaging/runtime_dl/
-packaging/sandbox_runtime/
-packaging/_win_reqs.txt
+src/packaging/out/
+src/packaging/build/
+src/packaging/runtime/
+src/packaging/runtime_dl/
+src/packaging/sandbox_runtime/
+src/packaging/_win_reqs.txt
 *.tsbuildinfo
 *.egg-info/
 sop_agent_loop.db
 skill_agent_loop.db
-backend/sop_agent_loop.db*
-backend/skill_agent_loop.db*
-backend/connector-locks/
+src/backend/sop_agent_loop.db*
+src/backend/skill_agent_loop.db*
+src/backend/connector-locks/
 *.sqlite
 *.sqlite3
 *.db-shm
@@ -48,4 +48,4 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-packaging/assets/staffdeck.iconset/
+src/packaging/assets/staffdeck.iconset/

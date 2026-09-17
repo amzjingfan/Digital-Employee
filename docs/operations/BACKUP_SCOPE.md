@@ -3,7 +3,7 @@
 本备份包含：
 
 - `source/`：Joukir 后端、企业前端、Skills、测试、文档与源码配置。
-- `deploy/staffdeck-platform/`：PostgreSQL/Casdoor 部署清单、初始化脚本和部署说明。
+- `src/deploy/staffdeck-platform/`：PostgreSQL/Casdoor 部署清单、初始化脚本和部署说明。
 - `docs/prd/`：跨境电商数字员工平台 PRD 与综合方案。
 
 已排除：

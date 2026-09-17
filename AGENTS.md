@@ -2,18 +2,18 @@
 
 ## Project Structure & Module Organization
 
-Joukir is the inherited product deployment built on StaffDeck. It combines a Python 3.11+ FastAPI service with a React/TypeScript console. Backend application code lives in `backend/app/`; entry points such as `backend/single_port_app.py` support the desktop and single-port runtime. Frontend code is in `frontend-enterprise/src/`, with static assets in `frontend-enterprise/public/`. All executable repository tests live below the root `tests/` tree, grouped as `backend`, `frontend`, `integration`, and `packaging`; published skill evaluation data remains under `skills/*/evals/`. Put newly generated reports, designs, operations records, and development notes under the matching `docs/` category and index them in `docs/README.md`; reserve the repository root for entry-point files. Use `scripts/` for development lifecycle tooling, `deploy/` for PostgreSQL/Casdoor platform assets, and `packaging/` for platform release assets. The supported conversation runtime is Harness v2.
+Joukir is the inherited product deployment built on StaffDeck. It combines a Python 3.11+ FastAPI service with a React/TypeScript console. All executable project areas live below the root `src/` directory. Backend application code lives in `src/backend/app/`; entry points such as `src/backend/single_port_app.py` support the desktop and single-port runtime. Frontend code is in `src/frontend-enterprise/src/`, with static assets in `src/frontend-enterprise/public/`. All executable repository tests live below `src/tests/`, grouped as `backend`, `frontend`, `integration`, and `packaging`; published skill evaluation data remains under `src/skills/*/evals/`. Put newly generated reports, designs, operations records, and development notes under the matching `docs/` category and index them in `docs/README.md`; reserve the repository root for governance, documentation, CI metadata, and repository-wide configuration. Use `src/scripts/` for development lifecycle tooling, `src/deploy/` for PostgreSQL/Casdoor platform assets, and `src/packaging/` for platform release assets. The supported conversation runtime is Harness v2.
 
 ## Build, Test, and Development Commands
 
-- `uv sync --project backend --locked --extra dev` installs the locked backend and test dependencies.
-- `npm --prefix frontend-enterprise ci` installs the locked frontend dependencies.
-- `scripts/dev_up.sh --detach` builds the frontend and starts the single-port app; use `scripts/dev_status.sh` and `scripts/dev_down.sh` to inspect or stop it.
-- `backend/.venv/bin/python -m pytest -c pytest.ini tests/backend` runs the backend suite on macOS/Linux/WSL; use `backend\.venv\Scripts\python.exe -m pytest -c pytest.ini tests\backend` on Windows.
-- `backend/.venv/bin/python tests/check_test_layout.py` enforces the root test boundary; use the matching Windows virtual-environment path when needed.
-- `backend/.venv/bin/ruff check backend` checks Python style.
-- `npm --prefix frontend-enterprise test` runs Vitest; `npm --prefix frontend-enterprise run test:typecheck` type-checks the root frontend suite; `npm --prefix frontend-enterprise run build` performs the production TypeScript/Vite build.
-- Run `npm --prefix frontend-enterprise run i18n:check` and `npm --prefix frontend-enterprise run config:check` when changing UI text or Vite environment usage.
+- `uv sync --project src/backend --locked --extra dev` installs the locked backend and test dependencies.
+- `npm --prefix src/frontend-enterprise ci` installs the locked frontend dependencies.
+- `src/scripts/dev_up.sh --detach` builds the frontend and starts the single-port app; use `src/scripts/dev_status.sh` and `src/scripts/dev_down.sh` to inspect or stop it.
+- `src/backend/.venv/bin/python -m pytest -c pytest.ini src/tests/backend` runs the backend suite on macOS/Linux/WSL; use `src\backend\.venv\Scripts\python.exe -m pytest -c pytest.ini src\tests\backend` on Windows.
+- `src/backend/.venv/bin/python src/tests/check_test_layout.py` enforces the `src/tests` boundary; use the matching Windows virtual-environment path when needed.
+- `src/backend/.venv/bin/ruff check src/backend` checks Python style.
+- `npm --prefix src/frontend-enterprise test` runs Vitest; `npm --prefix src/frontend-enterprise run test:typecheck` type-checks the frontend suite; `npm --prefix src/frontend-enterprise run build` performs the production TypeScript/Vite build.
+- Run `npm --prefix src/frontend-enterprise run i18n:check` and `npm --prefix src/frontend-enterprise run config:check` when changing UI text or Vite environment usage.
 
 ## Coding Style & Naming Conventions
 
@@ -21,7 +21,7 @@ Python uses four-space indentation, type hints, `snake_case` functions/modules, 
 
 ## Testing Guidelines
 
-Name Python tests `test_*.py` and frontend tests `*.test.ts(x)`. Put every executable repository test in the matching root `tests/` category; do not colocate tests with production source. Add focused regression tests for behavior changes, especially permissions, persistence, streaming, and channel routing. No numeric coverage threshold is configured; changed paths should still be exercised. For UI changes, also verify the affected route and user role in a browser.
+Name Python tests `test_*.py` and frontend tests `*.test.ts(x)`. Put every executable repository test in the matching `src/tests/` category; do not colocate tests with production source. Add focused regression tests for behavior changes, especially permissions, persistence, streaming, and channel routing. No numeric coverage threshold is configured; changed paths should still be exercised. For UI changes, also verify the affected route and user role in a browser.
 
 ## Commit & Pull Request Guidelines
 
@@ -29,7 +29,7 @@ Follow the history’s concise Conventional Commit pattern, such as `feat(channe
 
 ## Security & Configuration
 
-Create the ignored `backend/.env` only from approved deployment-specific configuration or a secure runtime handoff; this repository does not provide a tracked example file. Never commit secrets or channel credentials. Use strong `APP_SECRET` values and least-privilege external credentials. PostgreSQL is the authoritative current-development database; Casdoor OIDC, Casbin authorization, and forced PostgreSQL RLS form separate security boundaries. Apply schema changes through `backend/migrations/`, verify the production database gate, and never weaken tenant context or least-privilege database roles to make a test pass.
+Create the ignored `src/backend/.env` only from approved deployment-specific configuration or a secure runtime handoff; this repository does not provide a tracked example file. Never commit secrets or channel credentials. Use strong `APP_SECRET` values and least-privilege external credentials. PostgreSQL is the authoritative current-development database; Casdoor OIDC, Casbin authorization, and forced PostgreSQL RLS form separate security boundaries. Apply schema changes through `src/backend/migrations/`, verify the production database gate, and never weaken tenant context or least-privilege database roles to make a test pass.
 
 ## Development Memory and Logging
 

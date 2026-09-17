@@ -1,4 +1,4 @@
-extend = "backend/pyproject.toml"
+extend = "src/backend/pyproject.toml"
 
 [lint.isort]
 known-first-party = ["app"]

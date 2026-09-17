@@ -8,43 +8,43 @@ Joukir uses GitHub Flow. The local repository is ready for that workflow, but it
 2. Append the objective, scope, and known blockers to `docs/DEVELOPMENT_LOG.md`.
 3. Update local `main`, then create a short-lived branch named `feature/<topic>`, `fix/<topic>`, `docs/<topic>`, or `chore/<topic>`.
 4. Keep each commit focused and use Conventional Commits, for example `feat(channels): add binding status`, `fix: reject unsafe avatar URLs`, or `docs: clarify database recovery`.
-5. Put all executable tests below the root `tests/` directory in the matching `backend`, `frontend`, `integration`, or `packaging` category. Keep `skills/*/evals/cases.json` with its published skill because it is evaluation data rather than a repository test executable.
+5. Put all executable tests below `src/tests/` in the matching `backend`, `frontend`, `integration`, or `packaging` category. Keep `src/skills/*/evals/cases.json` with its published skill because it is evaluation data rather than a repository test executable.
 
 ## Local validation from the repository root
 
 Install the locked dependencies:
 
 ```powershell
-uv sync --project backend --locked --extra dev
-npm --prefix frontend-enterprise ci
+uv sync --project src/backend --locked --extra dev
+npm --prefix src/frontend-enterprise ci
 ```
 
-Run the backend checks represented in pull request CI. `uv --directory backend` gives Ruff and pytest the same working directory on Windows, macOS, Linux, and WSL:
+Run the backend checks represented in pull request CI. `uv --directory src/backend` gives Ruff and pytest the same working directory on Windows, macOS, Linux, and WSL:
 
 ```powershell
-uv run --directory backend --locked python ../tests/check_test_layout.py
-uv run --directory backend --locked python -m compileall -q app
-uv run --directory backend --locked ruff check app/api/tiktok.py app/tiktok/connector.py app/tiktok/official.py app/tiktok/release_evidence.py app/tiktok/release_gate.py app/tiktok/schema.py app/tiktok/service.py app/tiktok/shadow.py ../tests/backend/test_tiktok_connector_authorization.py ../tests/backend/test_tiktok_live_write_release_gate.py ../tests/backend/test_tiktok_release_evidence.py ../tests/backend/test_tiktok_shadow.py
-uv run --directory backend --locked pytest -c ../pytest.ini -q ../tests/backend/test_tiktok_connector_authorization.py ../tests/backend/test_tiktok_live_write_release_gate.py ../tests/backend/test_tiktok_release_evidence.py ../tests/backend/test_tiktok_shadow.py ../tests/backend/test_tiktok_release_gate.py ../tests/backend/test_tiktok_official_oauth.py ../tests/backend/test_tiktok_mock_replay_tasks.py ../tests/backend/test_tiktok_mock_replay_execution.py ../tests/backend/test_tiktok_mock_replay.py ../tests/backend/test_tiktok_mock_exception_matrix.py ../tests/backend/test_tiktok_m2m_verification.py ../tests/backend/test_tiktok_business_unit.py
+uv run --directory src/backend --locked python ../tests/check_test_layout.py
+uv run --directory src/backend --locked python -m compileall -q app
+uv run --directory src/backend --locked ruff check app/api/tiktok.py app/tiktok/connector.py app/tiktok/official.py app/tiktok/release_evidence.py app/tiktok/release_gate.py app/tiktok/schema.py app/tiktok/service.py app/tiktok/shadow.py ../tests/backend/test_tiktok_connector_authorization.py ../tests/backend/test_tiktok_live_write_release_gate.py ../tests/backend/test_tiktok_release_evidence.py ../tests/backend/test_tiktok_shadow.py
+uv run --directory src/backend --locked pytest -c ../../pytest.ini -q ../tests/backend/test_tiktok_connector_authorization.py ../tests/backend/test_tiktok_live_write_release_gate.py ../tests/backend/test_tiktok_release_evidence.py ../tests/backend/test_tiktok_shadow.py ../tests/backend/test_tiktok_release_gate.py ../tests/backend/test_tiktok_official_oauth.py ../tests/backend/test_tiktok_mock_replay_tasks.py ../tests/backend/test_tiktok_mock_replay_execution.py ../tests/backend/test_tiktok_mock_replay.py ../tests/backend/test_tiktok_mock_exception_matrix.py ../tests/backend/test_tiktok_m2m_verification.py ../tests/backend/test_tiktok_business_unit.py
 ```
 
 Run the complete backend suite when the affected behavior extends beyond the focused CI set:
 
 ```powershell
-uv run --project backend --locked pytest -c pytest.ini tests/backend
+uv run --project src/backend --locked pytest -c pytest.ini src/tests/backend
 ```
 
 Run every frontend gate:
 
 ```powershell
-npm --prefix frontend-enterprise run config:check
-npm --prefix frontend-enterprise run i18n:check
-npm --prefix frontend-enterprise run test:typecheck
-npm --prefix frontend-enterprise test
-npm --prefix frontend-enterprise run build
+npm --prefix src/frontend-enterprise run config:check
+npm --prefix src/frontend-enterprise run i18n:check
+npm --prefix src/frontend-enterprise run test:typecheck
+npm --prefix src/frontend-enterprise test
+npm --prefix src/frontend-enterprise run build
 ```
 
-Use the commands in `tests/README.md` for integration and packaging checks. Run platform-specific packaging checks on their target operating system. After editing files, run `git diff --check` and confirm ignored configuration, dependency trees, build output, databases, logs, and PID files are not staged.
+Use the commands in `src/tests/README.md` for integration and packaging checks. Run platform-specific packaging checks on their target operating system. After editing files, run `git diff --check` and confirm ignored configuration, dependency trees, build output, databases, logs, and PID files are not staged.
 
 ## Pull requests and review
 

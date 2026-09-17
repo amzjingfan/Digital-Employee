@@ -1,6 +1,6 @@
 # Joukir documentation index
 
-Start a development session with the durable memory and current handoff below. Put new reports, designs, operations records, and branch notes in the matching `docs/` category, then add them to this index. Dated handover and development-branch records are evidence snapshots: they may use the former `source/` layout or describe service state that has since changed. Use current commands from the root README, `CONTRIBUTING.md`, and `tests/README.md`.
+Start a development session with the durable memory and current handoff below. Put new reports, designs, operations records, and branch notes in the matching `docs/` category, then add them to this index. Dated handover and development-branch records are evidence snapshots: they may use the former `source/` layout or describe service state that has since changed. Use current commands from the root README, `CONTRIBUTING.md`, and `src/tests/README.md`.
 
 ## Current reports
 
@@ -15,7 +15,7 @@ Start a development session with the durable memory and current handoff below. P
 - [ADR 0001: main repository layout and history preservation](adr/0001-main-repository-layout.md)
 - [Repository agent rules](../AGENTS.md)
 - [Contribution and GitHub Flow guide](../CONTRIBUTING.md)
-- [Repository test guide](../tests/README.md)
+- [Repository test guide](../src/tests/README.md)
 - [Agent documentation domain policy](agents/domain.md)
 - [Agent issue tracker policy](agents/issue-tracker.md)
 - [Agent triage label policy](agents/triage-labels.md)
@@ -31,8 +31,8 @@ The cross-border PRD and integrated plan refer to `prd/lan-multiuser-codex-memor
 ## Operations and restoration
 
 - [TikTok live-write release gate runbook](runbooks/tiktok-live-write-release-gate.md)
-- [StaffDeck platform deployment guide](../deploy/staffdeck-platform/README.md)
-- [StaffDeck platform source manifest](../deploy/staffdeck-platform/SOURCE_MANIFEST.md)
+- [StaffDeck platform deployment guide](../src/deploy/staffdeck-platform/README.md)
+- [StaffDeck platform source manifest](../src/deploy/staffdeck-platform/SOURCE_MANIFEST.md)
 - [PostgreSQL and Casdoor restoration record, 2026-09-09](DATABASE_RESTORE_20260909.md) — dated handover evidence; verify live state before using it.
 - [Joukir analysis and local startup record, 2026-09-09](LOCAL_STARTUP_20260909.md) — dated source-layout/startup snapshot; current service state is in the session handoff and final verification.
 - [Portable development handover, 2026-09-09](PORTABLE_DEVELOPMENT_20260909.md) — dated handover snapshot.
@@ -40,13 +40,15 @@ The cross-border PRD and integrated plan refer to `prd/lan-multiuser-codex-memor
 
 ## Repository migration
 
+- [`src/` repository layout migration design](superpowers/specs/2026-09-17-src-layout-migration-design.md)
+- [`src/` repository layout migration implementation plan](superpowers/plans/2026-09-17-src-layout-migration.md)
 - [Approved main-repository migration design](superpowers/specs/2026-09-11-joukir-main-repository-migration-design.md)
 - [Main-repository migration implementation plan](superpowers/plans/2026-09-11-joukir-main-repository-migration.md)
 - [Pre-layout tracked source index](migration/source-index-before-layout.tsv) — immutable handover path/blob evidence.
 - [Flat-layout mapping report](migration/layout-mapping-report.json)
 - [Final source path/blob mapping](migration/final-source-map.tsv)
 - [Final migration and functional verification, 2026-09-11](migration/VERIFICATION_20260911.md)
-- [Reproducible migration evidence tools](../scripts/migration/README.md)
+- [Reproducible migration evidence tools](../src/scripts/migration/README.md)
 
 ## Historical architecture and implementation records
 
@@ -75,9 +77,9 @@ These files preserve design or branch evidence from the inherited development pe
 
 The application intentionally disables FastAPI's interactive Swagger, ReDoc, and OpenAPI schema routes. The tracked StaffDeck API skills provide maintained authentication and endpoint guidance:
 
-- [API authentication skill](../skills/staffdeck-api-auth/SKILL.md) and [authentication endpoint reference](../skills/staffdeck-api-auth/references/endpoints.md)
-- [Agent execution skill](../skills/staffdeck-api-run-agent/SKILL.md) and [run API reference](../skills/staffdeck-api-run-agent/references/run-api.md)
-- [Resource management skill](../skills/staffdeck-api-manage-resources/SKILL.md) and [resource API reference](../skills/staffdeck-api-manage-resources/references/resources-api.md)
-- [SOP management skill](../skills/staffdeck-api-manage-sops/SKILL.md) and [SOP API reference](../skills/staffdeck-api-manage-sops/references/sop-api.md)
+- [API authentication skill](../src/skills/staffdeck-api-auth/SKILL.md) and [authentication endpoint reference](../src/skills/staffdeck-api-auth/references/endpoints.md)
+- [Agent execution skill](../src/skills/staffdeck-api-run-agent/SKILL.md) and [run API reference](../src/skills/staffdeck-api-run-agent/references/run-api.md)
+- [Resource management skill](../src/skills/staffdeck-api-manage-resources/SKILL.md) and [resource API reference](../src/skills/staffdeck-api-manage-resources/references/resources-api.md)
+- [SOP management skill](../src/skills/staffdeck-api-manage-sops/SKILL.md) and [SOP API reference](../src/skills/staffdeck-api-manage-sops/references/sop-api.md)
 
 Public API routes are feature-gated and may be disabled in a deployment. Validate configuration, authentication scope, tenant context, and the actual route before relying on an example.

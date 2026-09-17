@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="packaging/assets/staffdeck_banner_en.png" alt="StaffDeck logo" />
+<img src="src/packaging/assets/staffdeck_banner_en.png" alt="StaffDeck logo" />
 
 <p align="center">
   <a href="https://staffdeck.openbmb.cn/"><img src="https://img.shields.io/badge/Website-staffdeck.openbmb.cn-FF6B35?style=flat-square&logo=googlechrome&logoColor=white" alt="Official Website"/></a>
@@ -73,7 +73,7 @@ deployments, you can also override the launch at runtime with
 Read README.md, AGENTS.md, docs/PROJECT_MEMORY.md, and docs/SESSION_HANDOFF.md in
 the authorized Joukir checkout. Prepare Python 3.11 or newer, uv, and Node.js 20,
 install the locked backend and frontend dependencies, and obtain an ignored
-backend/.env through the approved secure deployment handoff. Ask me for missing
+src/backend/.env through the approved secure deployment handoff. Ask me for missing
 deployment-specific settings without printing or committing their values. Use the
 commands documented for the current OS, then verify /api/health and
 /workspace/gallery before reporting success.
@@ -125,20 +125,20 @@ The migrated Joukir repository intentionally has no configured remote until a ma
 On macOS, Linux, or WSL:
 
 ```bash
-uv sync --project backend --locked --extra dev
-npm --prefix frontend-enterprise ci
+uv sync --project src/backend --locked --extra dev
+npm --prefix src/frontend-enterprise ci
 ```
 
 On Windows PowerShell:
 
 ```powershell
-uv sync --project backend --locked --extra dev
-npm --prefix frontend-enterprise ci
+uv sync --project src/backend --locked --extra dev
+npm --prefix src/frontend-enterprise ci
 ```
 
 ### 2. Configure a Model
 
-`backend/.env` is ignored and no tracked example file is provided. Create it only from approved deployment-specific configuration and restrict access to the account running the service. For the restored PostgreSQL/Casdoor development environment, follow the [local startup record](docs/LOCAL_STARTUP_20260909.md), [database restoration record](docs/DATABASE_RESTORE_20260909.md), and current [session handoff](docs/SESSION_HANDOFF.md). Do not replace that environment with a generic sample.
+`src/backend/.env` is ignored and no tracked example file is provided. Create it only from approved deployment-specific configuration and restrict access to the account running the service. For the restored PostgreSQL/Casdoor development environment, follow the [local startup record](docs/LOCAL_STARTUP_20260909.md), [database restoration record](docs/DATABASE_RESTORE_20260909.md), and current [session handoff](docs/SESSION_HANDOFF.md). Do not replace that environment with a generic sample.
 
 For a separate new environment, configure the model settings in the ignored file before the first startup:
 
@@ -149,16 +149,16 @@ DEMO_MODEL_NAME="your-model-name"
 DEMO_MODEL_API_KEY="your-api-key"
 ```
 
-The API key is used to create the initial model configuration and is encrypted before being stored in the database. Do not commit `backend/.env`. After startup, model services can also be managed from **Admin → Model Configuration**.
+The API key is used to create the initial model configuration and is encrypted before being stored in the database. Do not commit `src/backend/.env`. After startup, model services can also be managed from **Admin → Model Configuration**.
 
 ### 3. Launch the Web Demo
 
 | Platform | Recommended command |
 | --- | --- |
-| macOS, Linux, or WSL | `scripts/dev_up.sh --detach` |
-| Windows PowerShell | `.\scripts\dev_up.ps1 --detach` |
+| macOS, Linux, or WSL | `src/scripts/dev_up.sh --detach` |
+| Windows PowerShell | `.\src\scripts\dev_up.ps1 --detach` |
 
-Both wrappers call the same cross-platform Python lifecycle entry, `scripts/dev.py`. The startup process builds the StaffDeck frontend and serves the UI and API from one FastAPI process on port `5173`. Interactive Swagger, ReDoc, and OpenAPI schema routes are intentionally disabled by the application.
+Both wrappers call the same cross-platform Python lifecycle entry, `src/scripts/dev.py`. The startup process builds the StaffDeck frontend and serves the UI and API from one FastAPI process on port `5173`. Interactive Swagger, ReDoc, and OpenAPI schema routes are intentionally disabled by the application.
 
 The restored Joukir development environment uses enterprise SSO and the existing Casdoor accounts. Start sign-in from the application and do not assume default administrator credentials.
 
@@ -188,19 +188,19 @@ Open [http://127.0.0.1:5173/workspace/gallery](http://127.0.0.1:5173/workspace/g
 
 | Action | macOS, Linux, or WSL | Windows PowerShell |
 | --- | --- | --- |
-| Start in the background | `scripts/dev_up.sh --detach` | `.\scripts\dev_up.ps1 --detach` |
-| Start in the foreground | `scripts/dev_up.sh` | `.\scripts\dev_up.ps1` |
-| Inspect service status | `scripts/dev_status.sh` | `.\scripts\dev_status.ps1` |
-| Stop the local service | `scripts/dev_down.sh` | `.\scripts\dev_down.ps1` |
+| Start in the background | `src/scripts/dev_up.sh --detach` | `.\src\scripts\dev_up.ps1 --detach` |
+| Start in the foreground | `src/scripts/dev_up.sh` | `.\src\scripts\dev_up.ps1` |
+| Inspect service status | `src/scripts/dev_status.sh` | `.\src\scripts\dev_status.ps1` |
+| Stop the local service | `src/scripts/dev_down.sh` | `.\src\scripts\dev_down.ps1` |
 
 #### Unified Python Entry
 
-The wrapper scripts above delegate to `scripts/dev.py`. It can also be called directly with the project virtual environment created in step 1, avoiding any dependency on shell script execution or a system Python launcher:
+The wrapper scripts above delegate to `src/scripts/dev.py`. It can also be called directly with the project virtual environment created in step 1, avoiding any dependency on shell script execution or a system Python launcher:
 
 | Platform | Direct background start |
 | --- | --- |
-| macOS, Linux, or WSL | `backend/.venv/bin/python scripts/dev.py up --detach` |
-| Windows PowerShell | `.\backend\.venv\Scripts\python.exe scripts\dev.py up --detach` |
+| macOS, Linux, or WSL | `src/backend/.venv/bin/python src/scripts/dev.py up --detach` |
+| Windows PowerShell | `.\src\backend\.venv\Scripts\python.exe src\scripts\dev.py up --detach` |
 
 Replace `up --detach` with another lifecycle argument when needed:
 
@@ -213,16 +213,16 @@ Replace `up --detach` with another lifecycle argument when needed:
 
 #### Validate Changes
 
-Run the standard suites from the repository root. See [CONTRIBUTING.md](CONTRIBUTING.md) for the exact focused CI nodes and [tests/README.md](tests/README.md) for integration and platform smoke commands.
+Run the standard suites from the repository root. See [CONTRIBUTING.md](CONTRIBUTING.md) for the exact focused CI nodes and [src/tests/README.md](src/tests/README.md) for integration and platform smoke commands.
 
 ```bash
-uv run --project backend --locked python tests/check_test_layout.py
-uv run --project backend --locked pytest -c pytest.ini tests/backend
-npm --prefix frontend-enterprise run config:check
-npm --prefix frontend-enterprise run i18n:check
-npm --prefix frontend-enterprise run test:typecheck
-npm --prefix frontend-enterprise test
-npm --prefix frontend-enterprise run build
+uv run --project src/backend --locked python src/tests/check_test_layout.py
+uv run --project src/backend --locked pytest -c pytest.ini src/tests/backend
+npm --prefix src/frontend-enterprise run config:check
+npm --prefix src/frontend-enterprise run i18n:check
+npm --prefix src/frontend-enterprise run test:typecheck
+npm --prefix src/frontend-enterprise test
+npm --prefix src/frontend-enterprise run build
 ```
 
 > Full guide → [StaffDeck Tutorial](https://staffdeck.openbmb.cn/#/docs/introduce?lang=en)
@@ -275,14 +275,15 @@ Digital employees can serve users directly over IM channels: users chat with emp
 ```text
 joukir/
 ├── .github/                  # CI, CodeQL, dependency, release, and PR workflow
-├── backend/                  # FastAPI APIs, agent runtime, storage, and task workers
-├── deploy/                   # PostgreSQL, Casdoor, Casbin, and RLS deployment assets
-├── frontend-enterprise/      # React/TypeScript StaffDeck workspace
 ├── docs/                     # Product docs, runbooks, memory, handoff, and ADRs
-├── packaging/                # macOS, Linux, and Windows packaging assets
-├── scripts/                  # Single-port service lifecycle and validation scripts
-├── skills/                   # Joukir and StaffDeck published skill packages
-├── tests/                    # Backend, frontend, integration, and packaging tests
+├── src/                      # All executable project areas
+│   ├── backend/              # FastAPI APIs, agent runtime, storage, and task workers
+│   ├── deploy/               # PostgreSQL, Casdoor, Casbin, and RLS deployment assets
+│   ├── frontend-enterprise/  # React/TypeScript StaffDeck workspace
+│   ├── packaging/            # macOS, Linux, and Windows packaging assets
+│   ├── scripts/              # Single-port service lifecycle and validation scripts
+│   ├── skills/               # Joukir and StaffDeck published skill packages
+│   └── tests/                # Backend, frontend, integration, and packaging tests
 ├── AGENTS.md                 # Repository rules for development agents
 ├── CONTRIBUTING.md           # GitHub Flow and local validation
 ├── README.md                 # English
@@ -334,9 +335,9 @@ Roadmap priorities are driven by real deployment needs. Please open an [Issue](h
 <td width="33%" align="center"><b>Discord Community</b></td>
 </tr>
 <tr>
-<td align="center"><img src="packaging/assets/qr-wechat.png" width="200" alt="微信二维码"/></td>
-<td align="center"><img src="packaging/assets/qr-feishu.jpg" width="200" alt="飞书二维码"/></td>
-<td align="center"><img src="packaging/assets/qr-discord.png" width="200" alt="Discord 二维码"/></td>
+<td align="center"><img src="src/packaging/assets/qr-wechat.png" width="200" alt="微信二维码"/></td>
+<td align="center"><img src="src/packaging/assets/qr-feishu.jpg" width="200" alt="飞书二维码"/></td>
+<td align="center"><img src="src/packaging/assets/qr-discord.png" width="200" alt="Discord 二维码"/></td>
 </tr>
 </table>
 

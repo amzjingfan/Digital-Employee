@@ -30,7 +30,7 @@ List the exact commands run and their results. Include browser evidence for visi
 ## Review checklist
 
 - [ ] The change is scoped to one problem and has focused regression coverage.
-- [ ] Root test-layout, relevant backend/frontend CI gates, and affected browser routes pass.
+- [ ] Root test-layout, relevant src/backend/frontend CI gates, and affected browser routes pass.
 - [ ] Permission checks cover every affected role and tenant boundary.
 - [ ] Schema changes include forward migration, safe rollback, ownership, and RLS verification.
 - [ ] External writes, release gates, retries, audit evidence, and failure recovery were assessed.

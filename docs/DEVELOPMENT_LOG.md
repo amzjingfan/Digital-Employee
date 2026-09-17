@@ -269,3 +269,33 @@
 - 关闭验证：执行 `scripts/dev.py down` 后，`scripts/dev.py status` 显示 supervisor/app 均未运行、5173 可用、健康接口不可达；没有停止或修改现有 PostgreSQL/Casdoor 容器。
 - 文件：更新 `docs/SESSION_HANDOFF.md` 并追加本日志；Git 跟踪文件仅这两份文档改动。本机忽略的 `backend/.env` 保留本轮设置的三个非密钥 TikTok 字段，应用已停止。
 - 下一步：待用户部署 staging、HTTPS 443 与 `/api/health` 可达后，同步设置该环境和 Partner Center 的精确 HTTPS 回调，再从部署后的 Joukir 重新授权并验证授权记录与只读接口。暂停期间不再执行平台或本机操作。
+
+## 2026-09-17 — 将可执行项目区域迁入 `src/`（开始）
+
+- 目标：按用户确认的范围，把 `backend`、`frontend-enterprise`、`scripts`、`tests`、`skills`、`deploy`、`packaging` 迁入根级 `src/`，保持开发、测试、打包和单端口运行能力，并在验证后合并当前功能分支到 `main`。
+- 范围：迁移完整目录及其被忽略的本地依赖/运行配置；修正根配置、CI、发布、生命周期脚本、测试和当前文档中的有效路径；历史证据文件只在影响当前工具执行时调整。
+- 已知基线：当前分支为 `codex/prd-tiktok-v1-8`；此前 TikTok PRD 与本机授权核验记录已分别提交。应用当前处于停止状态；`backend/.env`、后端虚拟环境和前端依赖均为 Git 忽略内容，迁移期间不得输出配置值或加入版本控制。
+- 设计与计划：`docs/superpowers/specs/2026-09-17-src-layout-migration-design.md`、`docs/superpowers/plans/2026-09-17-src-layout-migration.md`。
+
+## 2026-09-17 — `src/` 目录迁移与路径修复（完成）
+
+- 目录：完整移动 `backend`、`frontend-enterprise`、`scripts`、`tests`、`skills`、`deploy`、`packaging` 到 `src/`；根目录保留文档、治理、CI 元数据和仓库级配置。被忽略的 `src/backend/.env`、虚拟环境、前端依赖和构建输出随所属模块移动，未读取配置值。
+- 路径：更新根级 pytest/Ruff/Git ignore 配置、GitHub CI/发布/Dependabot、生命周期 `.dev` 位置、测试布局门禁、迁移证据工具、部署回滚脚本、当前开发文档和用户可见命令。源代码内部以 `src/` 作为共同源根，保留后端、前端、测试、打包之间原有的兄弟目录关系。
+- 安全检查：移动前确认七个源目录和目标均位于仓库内且目标不存在；移动后 `src/backend/.env`、`src/backend/.venv`、`src/frontend-enterprise/node_modules`、`src/frontend-enterprise/.env.local` 仍由 Git ignore 规则覆盖。
+- 下一步：暂存迁移以让基于 `git ls-files` 的布局门禁观察新路径，然后运行静态、后端、前端和真实启动验证；对发现的路径回归逐项修复。
+
+## 2026-09-17 — `src/` 迁移验证（开始）
+
+- 目标：证明新路径下的 Python 导入、测试布局、后端回归、前端检查/构建、打包路径和单端口启动均可用。
+- 范围：只运行本地构建、测试、只读健康检查和生命周期启停；不执行外部 TikTok 写入、OAuth 授权、数据库重建或平台发布。
+- 已知限制：完整后端套件在迁移前的项目交接中存在已记录的环境相关失败；本轮首先检查目录迁移引入的新失败，并以实际启动/健康结果验证主要运行链路。
+
+## 2026-09-17 — `src/` 迁移验证（完成）
+
+- 布局与静态检查：新门禁检查 1,188 个 Git 跟踪路径并通过，禁止七个旧根目录重新出现项目文件；Python `compileall -f` 通过；GitHub YAML 和全部 PowerShell 脚本可解析；CI 使用的 Ruff 专项检查通过。全树 Ruff 仍报告 2,203 项存量问题（本次扫描还包含测试与脚本），未把该存量债务描述成迁移回归或全绿。
+- 后端：目录/生命周期/路径/打包专项 36 项通过；TikTok CI 回归 61 项通过。完整套件收集 2,244 项，约 12% 后遇到既有长耗时用例而停止；此前出现的 4 项失败为 3 项已有广告执行门禁失败和 1 项 Windows 符号链接权限失败，与现有审计分类一致。本轮没有以未完成的全量运行宣称全绿。
+- 前端：配置检查、4,209 条英文翻译覆盖、测试类型检查、64 个 Vitest 文件/271 项测试和 2,163 模块生产构建全部通过。受 ACL 保护的 `.env.local` 只由授权的本机构建进程读取，没有输出内容。
+- 运行：通过 `src/scripts/dev_up.ps1 --detach` 成功启动；监督进程和应用进程运行，5173 监听，`/api/health` 返回 `status=ok`/`九骥 Joukir`，`/chat/` 与 `/enterprise/dashboard` 均为 HTTP 200。随后执行 `src/scripts/dev_down.ps1`，最终监督进程和应用进程均停止、5173 可用、健康接口不可达，符合停止状态。
+- 证据与安全：历史迁移源映射仍为 1,154/1,154、无缺失/碰撞/未解释编辑；工作树安全扫描新增敏感候选 0、跟踪运行产物 0。Windows Sandbox Runtime smoke 在受限宿主仅 network-deny/artifact 通过，其余网络或文件隔离检查失败，不作为本次目录迁移的通过证据；Linux/macOS 打包仍需目标平台。
+- 剩余风险：完整后端套件和全树 Ruff 仍有已记录的存量失败/债务；平台专属安装包未在非本机平台构建。新目录的核心构建、专项回归和真实单端口启动均已验证。
+- 下一步：复核 staged diff 和忽略文件边界，提交 `src/` 迁移，将 `codex/prd-tiktok-v1-8` 快进合并到本地 `main`，再刷新最终分支交接状态。
