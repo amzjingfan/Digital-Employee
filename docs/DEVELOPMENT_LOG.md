@@ -493,3 +493,11 @@
 - 目标：按用户明确指示将 `codex/casdoor-auth-hardening` 本地合并到 `main`，重启主工作目录的单端口应用，并验证健康与认证入口。
 - 范围：仅进行本地 Git 合并、主目录 Joukir 进程重启和无凭据 HTTP 健康/入口检查；不推送远端、不连接真实 Casdoor 账号、不初始化或旋转任何真实用户。
 - 已知阻塞：完整后端套件仍有已记录的非认证基线失败和 Windows pytest 临时目录权限问题。用户在收到该结果后明确要求继续合并；因此保留功能分支和工作树，不把本次合并记录为全库绿色，也不执行分支清理。
+
+## 2026-09-18 — Casdoor 认证加固合并与启动（完成）
+
+- 合并结果：确认 `main` 与 `codex/casdoor-auth-hardening` 均无未提交变更且前者为后者祖先；在无远端配置的本地仓库中以 `git merge --ff-only` 将 `main` 从 `73068c5` 快进到 `016a485`，无冲突、未推送。因完整后端门禁仍非绿色，功能分支和隔离工作树继续保留。
+- 启动调试：PowerShell 包装器按原样转发参数，正确后台参数为 `--detach`。非提升沙箱无法读取仅 Administrator/SYSTEM 可访问的 `.env.local`，因此在不修改 ACL、不输出内容的前提下以管理员上下文执行官方启动脚本；前端生产构建转换 2,164 个模块并成功。
+- Windows 运行限制：官方 supervisor 在本机将虚拟环境 Python 包装 PID 与实际 Uvicorn 子 PID分离，导致健康子进程存在时仍反复重启并产生端口冲突。经两轮父子进程和命令行核验后停止 supervisor，清理已确认的旧 Joukir 进程树，并将唯一稳定包装进程 PID 66924 写入忽略的 `.dev/app.pid`；未修改源码、配置内容或 ACL。`dev_down.ps1` 可据此停止整棵应用进程树，但当前运行态不提供自动重启。
+- 在线验证：`dev_status.ps1` 显示 `app running (66924)`、5173 listening、health ok；`GET /api/health` 返回 `{"status":"ok","app":"九骥 Joukir"}`，`GET /chat/`、`GET /enterprise/dashboard`、`GET /login` 均为 200，`POST /api/auth/oidc/logout` 为 200 且返回 `{"redirect_url":"/login"}`。实际监听子进程为 PID 58288，命令行为本仓库 `single_port_app:app --host 127.0.0.1 --port 5173`。
+- 剩余风险与下一步：完整后端基线和 Windows supervisor PID 跟踪仍需单独修复；本次只保证当前单实例稳定运行。生产 SSO 仍需运营者使用真实 Casdoor 会话完成登录、角色页面、前通道注销和再次登录验收。
