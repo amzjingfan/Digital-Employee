@@ -50,6 +50,10 @@ The cross-border PRD and integrated plan refer to `prd/lan-multiuser-codex-memor
 - [Final migration and functional verification, 2026-09-11](migration/VERIFICATION_20260911.md)
 - [Reproducible migration evidence tools](../src/scripts/migration/README.md)
 
+## Current designs
+
+- [Casdoor production authentication hardening design, 2026-09-18](superpowers/specs/2026-09-18-casdoor-production-auth-hardening-design.md)
+
 ## Historical architecture and implementation records
 
 These files preserve design or branch evidence from the inherited development period. They are not current runbooks.

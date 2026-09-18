@@ -319,3 +319,16 @@
 - 验证结果：`src/scripts/dev_status.ps1` 报告健康状态为 `ok`；`GET /api/health` 返回 `status=ok` 和 `九骥 Joukir`，`/chat/` 与 `/enterprise/dashboard` 均返回 HTTP 200。
 - 变更与风险：没有修改业务代码、数据库结构或外部平台权限；仅追加本运行记录。构建存在既有的大分块性能警告，不影响本次启动。服务按用户要求保持运行。
 - 下一步：本地访问 `http://127.0.0.1:5173/chat/` 或 `http://127.0.0.1:5173/enterprise/dashboard`；不再需要时执行 `src/scripts/dev_down.ps1`。
+
+## 2026-09-18 — Casdoor 生产认证加固设计（开始）
+
+- 目标：按用户确认的最小方案设计现有标准 OIDC 集成的单点退出、生产 HTTPS 门禁和安全管理员初始化；不引入 Casdoor React/Python SDK。
+- 范围：仅新增设计文档并更新文档索引；保留本机开发环境的 `admin / admin`，生产环境禁止默认密码和不安全 OIDC 配置；本步骤不修改生产代码、运行配置、数据库账号或 Casdoor 状态。
+- 已知约束：当前 Joukir 仅清除本地会话，尚未执行 Casdoor RP-Initiated Logout；Casdoor access token 未持久化，设计应避免新增敏感令牌存储；生产域名和管理员密码由部署时安全注入，不能写入仓库。
+
+## 2026-09-18 — Casdoor 生产认证加固设计（完成）
+
+- 文件：新增 `docs/superpowers/specs/2026-09-18-casdoor-production-auth-hardening-design.md`，并在 `docs/README.md` 的当前设计区建立索引；生产代码、运行配置、数据库和 Casdoor 状态均未修改。
+- 设计结论：采用浏览器前通道 RP-Initiated Logout、显式 `development`/`production` 配置门禁和独立紧急管理员初始化命令；不持久化 Casdoor token，不引入 Casdoor SDK，开发环境继续允许现有默认账号，生产环境拒绝不安全 HTTPS/Cookie/密钥/演示种子配置。
+- 验证：设计文档 180 行，目标、非目标、测试策略和验收条件均存在；占位符扫描为 0；文档索引命中；`git diff --check` 未报告内容错误，仅提示现有 Windows 行尾转换策略。
+- 剩余步骤：等待用户审阅书面设计；确认后再编写逐步实施计划并进入红绿 TDD，不在设计确认前修改认证代码。
