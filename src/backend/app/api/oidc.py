@@ -14,7 +14,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import httpx
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
@@ -31,7 +31,12 @@ from app.db.models import (
     UserInvitation,
     utc_now,
 )
-from app.security.auth import OIDC_SESSION_COOKIE, create_access_token, hash_password
+from app.security.auth import (
+    OIDC_SESSION_COOKIE,
+    _decode_token,
+    create_access_token,
+    hash_password,
+)
 from app.security.business_roles import (
     GroupRoleMappingError,
     normalized_group_claim,
@@ -49,6 +54,10 @@ _OIDC_ALGORITHMS = ["RS256", "RS512", "ES256", "ES384", "ES512"]
 class OIDCConfigRead(BaseModel):
     enabled: bool
     login_url: str | None = None
+
+
+class OIDCLogoutRead(BaseModel):
+    redirect_url: str
 
 
 @router.get("/oidc/config", response_model=OIDCConfigRead)
@@ -166,13 +175,31 @@ def logout(
     request: Request,
     db: Annotated[Session, Depends(get_session)],
 ) -> Response:
+    _record_logout(request, db)
+    response = Response(status_code=204)
+    _delete_session_cookie(response)
+    return response
+
+
+@router.post("/oidc/logout", response_model=OIDCLogoutRead)
+def oidc_logout(
+    request: Request,
+    db: Annotated[Session, Depends(get_session)],
+) -> JSONResponse:
+    _record_logout(request, db)
+    response = JSONResponse(
+        OIDCLogoutRead(redirect_url=_oidc_logout_url(get_settings())).model_dump()
+    )
+    _delete_session_cookie(response)
+    return response
+
+
+def _record_logout(request: Request, db: Session) -> None:
     authorization = request.headers.get("authorization", "")
     bearer = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
     token = bearer or request.cookies.get(OIDC_SESSION_COOKIE)
     if token:
         try:
-            from app.security.auth import _decode_token
-
             payload = _decode_token(token)
             tenant_id = str(payload.get("tenant_id") or "")
             user_id = str(payload.get("user_id") or "")
@@ -191,9 +218,28 @@ def logout(
                     db.commit()
         except HTTPException:
             db.rollback()
-    response = Response(status_code=204)
+
+
+def _delete_session_cookie(response: Response) -> None:
     response.delete_cookie(OIDC_SESSION_COOKIE, path="/", samesite="lax")
-    return response
+
+
+def _oidc_logout_url(settings: Settings) -> str:
+    endpoint = settings.oidc_end_session_endpoint.strip()
+    redirect_uri = settings.oidc_post_logout_redirect_uri.strip()
+    client_id = settings.oidc_client_id.strip()
+    if not endpoint or not redirect_uri or not client_id:
+        return "/login"
+
+    parsed = urlsplit(endpoint)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query.update(
+        {
+            "client_id": client_id,
+            "post_logout_redirect_uri": redirect_uri,
+        }
+    )
+    return urlunsplit(parsed._replace(query=urlencode(query)))
 
 
 async def _exchange_code(settings: Settings, code: str, verifier: str) -> dict[str, Any]:

@@ -384,3 +384,17 @@
 - 静态检查：Ruff 检查全部变更 Python 文件和新测试，结果 `All checks passed!`。pytest 的 4 条 FastAPI `on_event` 弃用警告来自既有启动钩子，本任务未迁移生命周期机制。
 - 安全性质：开发配置直接放行；生产要求完整 OIDC 值、全部 OIDC URL 使用 HTTPS、Secure Cookie、至少 32 字符且非默认的 `APP_SECRET`、禁用演示种子；错误只输出设置键，不输出密钥值。
 - 下一步：Task 2 为 OIDC Cookie 会话新增服务器控制的 Casdoor 注销准备端点，并保持本地 204 注销兼容。
+
+## 2026-09-18 — Task 2 Casdoor 单点退出准备端点（开始）
+
+- 目标：为 OIDC Cookie 会话新增 `POST /api/auth/oidc/logout`，先清除 Joukir 会话并返回服务器配置的 Casdoor 注销 URL；保留本地/承载令牌注销的 204 合约。
+- 范围：仅修改 `src/backend/app/api/oidc.py` 与 `src/tests/backend/test_oidc_auth.py`，复用现有账号审计事件和会话 Cookie。
+- 已知约束：不存储或发送 Casdoor token，不接受调用方返回地址；开发环境缺少注销配置时安全回退 `/login`。先添加 URL、审计、Cookie 和兼容性失败测试。
+
+## 2026-09-18 — Task 2 Casdoor 单点退出准备端点（完成）
+
+- 文件：`app/api/oidc.py` 新增 `OIDCLogoutRead`、服务器配置 URL 构造器和 `POST /api/auth/oidc/logout`；现有本地注销与新端点共用注销审计及 Cookie 删除函数；`test_oidc_auth.py` 新增 4 项回归。
+- 红绿证据：新增测试首次运行 3 项按预期失败，原因分别是 `_oidc_logout_url` 与 `oidc_logout` 不存在，原有 10 项通过；实现后 OIDC 文件 13 项全部通过。
+- 回归与静态检查：生产门禁、OIDC、本地角色和密码哈希联合回归 46 项通过；Ruff 对路由与测试结果 `All checks passed!`。既有 FastAPI `on_event` 弃用警告仍为 4 条。
+- 安全性质：注销 URL 只使用服务器端 `OIDC_END_SESSION_ENDPOINT`、`OIDC_CLIENT_ID` 和 `OIDC_POST_LOGOUT_REDIRECT_URI`；不接收调用方重定向、不保存或发送 Casdoor token；缺失配置回退 `/login`，无效本地 token 仍删除 Cookie。
+- 下一步：Task 3 新增共享前端退出助手，仅显式退出触发 Casdoor，401 会话失效仍只返回本地登录页。
