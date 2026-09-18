@@ -428,3 +428,18 @@
 - 验证：部署脚本测试 12 项通过；Ruff 结果 `All checks passed!`；PowerShell AST 解析通过并识别 1,335 个 token。测试未连接数据库、未读取部署 `.env`、未修改实时 Casdoor。
 - 安全性质：公网地址禁止用户信息、非根路径、查询、片段和非法端口；HTTP 仅允许 `localhost`/`127.0.0.1`；默认本机配置保留两个原回调别名并新增 `/login`。
 - 下一步：Task 5 新增只从进程环境读取密码、需要显式旋转开关的紧急本地管理员初始化命令。
+
+## 2026-09-18 — Task 5 紧急本地管理员初始化（开始）
+
+- 目标：新增手动命令创建或显式旋转生产紧急管理员，密码只来自进程环境，旋转时递增 `session_version`。
+- 范围：新建 `src/backend/scripts/initialize_local_admin.py` 与 `src/tests/backend/test_initialize_local_admin.py`；只使用内存测试数据库，不运行命令连接实时数据库。
+- 已知约束：必须存在活动租户；默认拒绝覆盖现有账号；命令行不接受密码参数；stdout/stderr 不得包含密码、哈希或数据库 URL。先添加服务和 CLI 失败测试。
+
+## 2026-09-18 — Task 5 紧急本地管理员初始化（完成）
+
+- 文件：新增 `src/backend/scripts/initialize_local_admin.py`，提供可测试的创建/旋转事务函数与安全 CLI；新增 `test_initialize_local_admin.py` 12 项，覆盖创建、活动租户、密码策略、拒绝隐式覆盖、显式旋转、会话撤销和输出保密。
+- 红绿证据：首次运行因目标脚本不存在在收集阶段预期失败；实现后专项 12 项通过，连同本地认证与账号生命周期相邻回归共 30 项通过。
+- 调试记录：首次 Ruff 唯一失败为顶层宽异常捕获 BLE001。该捕获是防止未知数据库异常 traceback 泄露连接细节的 CLI 安全边界，添加限定抑制及意图说明后 Ruff 通过；内部事务在异常时显式回滚。
+- 安全性质：密码仅从 `JOUKIR_BOOTSTRAP_ADMIN_PASSWORD` 读取；`--password`/`--password=` 在 argparse 前无值回显拒绝；现有账号必须 `--rotate-existing`，旋转恢复本地平台管理员字段并递增 `session_version`；成功输出只含 tenant、username 和 action。
+- 验证：30 项相邻后端测试通过，Ruff 结果 `All checks passed!`；全部使用内存 SQLite，未对实时数据库执行初始化或旋转。
+- 下一步：Task 6 更新认证端点参考、部署运行手册和稳定项目记忆，不写入任何真实秘密。
