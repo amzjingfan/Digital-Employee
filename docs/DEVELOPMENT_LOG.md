@@ -398,3 +398,18 @@
 - 回归与静态检查：生产门禁、OIDC、本地角色和密码哈希联合回归 46 项通过；Ruff 对路由与测试结果 `All checks passed!`。既有 FastAPI `on_event` 弃用警告仍为 4 条。
 - 安全性质：注销 URL 只使用服务器端 `OIDC_END_SESSION_ENDPOINT`、`OIDC_CLIENT_ID` 和 `OIDC_POST_LOGOUT_REDIRECT_URI`；不接收调用方重定向、不保存或发送 Casdoor token；缺失配置回退 `/login`，无效本地 token 仍删除 Cookie。
 - 下一步：Task 3 新增共享前端退出助手，仅显式退出触发 Casdoor，401 会话失效仍只返回本地登录页。
+
+## 2026-09-18 — Task 3 前端统一退出行为（开始）
+
+- 目标：新增一个共享退出助手，根据 `auth_mode` 区分 OIDC Cookie 与本地承载令牌会话，并让企业控制台和聊天页的显式退出复用它。
+- 范围：新建 `src/frontend-enterprise/src/authLogout.ts` 与 `src/tests/frontend/authLogout.test.ts`，修改 `App.tsx` 和 `pages/chat/useChatSession.ts`。
+- 已知约束：网络失败也必须清除本地状态；仅显式退出触发 Casdoor，普通 401 只返回 `/login`；导航地址需拒绝危险协议。先编写共享助手失败测试。
+
+## 2026-09-18 — Task 3 前端统一退出行为（完成）
+
+- 文件：新增 `authLogout.ts` 共享助手和 `authLogout.test.ts` 6 项行为测试；`App.tsx` 企业退出与 `useChatSession.ts` 聊天显式退出均调用共享助手；聊天 401 路径仍仅清理状态并跳转 `/login`；`App.test.tsx` 新增两条界面集成测试。
+- 红绿证据：助手测试首次因模块不存在预期失败；实现后 6 项通过。企业与聊天集成测试随后均因助手调用次数为 0 预期失败；替换两条旧路径后，两个文件共 10 项通过。
+- 调试记录：首次类型检查和构建均稳定复现 `HeadersInit` 联合类型错误，根因为三元表达式将空对象推断为可选 `Authorization: undefined`；以显式 `Record<string, string>` 单点修复后类型检查通过。
+- 验证：聚焦 Vitest 10 项通过，测试 TypeScript 类型检查通过，Vite 配置检查通过，生产构建转换 2,164 个模块并成功完成。构建仍有既有的大分块与 SVGR 性能警告，不属于认证回归。
+- 安全性质：本地存储在请求前清除；OIDC 只调用新端点，本地承载令牌只调用原端点；拒绝危险协议，仅允许相对路径、HTTPS 和开发回环 HTTP；请求失败或非成功响应均返回 `/login`。
+- 下一步：Task 4 为 Casdoor 应用配置增加经过验证的 `--public-url`，并让迁移脚本写入回调和注销后地址。

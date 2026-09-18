@@ -7,8 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ENTERPRISE_AGENT_STORAGE_KEY } from '@/lib/agent-scope-storage';
 import { I18nProvider } from '@/i18n';
 import type { AgentProfileRead, TeamRead } from '@/types';
+import { logoutEnterpriseSession } from '@/authLogout';
 
 import App from '@/App';
+
+vi.mock('@/authLogout', () => ({
+  logoutEnterpriseSession: vi.fn().mockResolvedValue(undefined),
+}));
 
 const AUTH_STORAGE_KEY = 'ultrarag_auth';
 
@@ -123,6 +128,7 @@ function stubBrowserApis() {
 }
 
 beforeEach(() => {
+  vi.mocked(logoutEnterpriseSession).mockClear();
   stubBrowserApis();
   window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ token: 'token-1', user: authUser }));
   window.localStorage.setItem('staffdeck_onboarding_guide_seen', '1');
@@ -175,5 +181,40 @@ describe('App team scope selection', () => {
       expect(switcher.textContent).toContain('增长团队');
     });
     expect(window.localStorage.getItem(ENTERPRISE_AGENT_STORAGE_KEY)).toBe('team:team-1');
+  });
+});
+
+describe('App logout integration', () => {
+  it('uses the shared logout helper from the enterprise console', async () => {
+    const user = userEvent.setup();
+    stubAppFetch();
+    window.history.pushState({}, '', '/enterprise/agents');
+    render(<I18nProvider><App /></I18nProvider>);
+
+    const accountMenus = await screen.findAllByLabelText('账户菜单');
+    await user.click(accountMenus[0]);
+    await user.click(await screen.findByRole('menuitem', { name: '退出登录' }));
+
+    await waitFor(() => {
+      expect(logoutEnterpriseSession).toHaveBeenCalledWith(
+        expect.objectContaining({ token: 'token-1' }),
+      );
+    });
+  });
+
+  it('uses the shared logout helper from the chat header', async () => {
+    const user = userEvent.setup();
+    stubAppFetch();
+    window.history.pushState({}, '', '/workspace/chat');
+    render(<I18nProvider><App /></I18nProvider>);
+
+    await user.click(await screen.findByLabelText('账户菜单'));
+    await user.click(await screen.findByRole('menuitem', { name: '退出登录' }));
+
+    await waitFor(() => {
+      expect(logoutEnterpriseSession).toHaveBeenCalledWith(
+        expect.objectContaining({ token: 'token-1' }),
+      );
+    });
   });
 });

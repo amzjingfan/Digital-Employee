@@ -20,6 +20,7 @@ import {
   type EnterpriseAuthSession,
   type EnterpriseAuthUser,
 } from "./auth";
+import { logoutEnterpriseSession } from "./authLogout";
 import AppSidebar from "./components/AppSidebar";
 import OnboardingGuide, { ONBOARDING_SEEN_KEY } from "./components/OnboardingGuide";
 import QuickStartGuide, {
@@ -1155,10 +1156,10 @@ export default function App() {
   }, [auth?.auth_mode, auth?.token, hydrateLocale]);
 
   function logout() {
-    void api.post('/api/auth/logout').catch(() => undefined);
-    clearEnterpriseAuthSession();
+    const currentSession = getEnterpriseAuthSession();
     setAuth(null);
     setAuthChecked(true);
+    void logoutEnterpriseSession(currentSession);
   }
 
   return (

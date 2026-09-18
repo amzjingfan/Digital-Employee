@@ -22,6 +22,7 @@ import {
   type StreamEvent,
 } from '@/api/client';
 import { clearEnterpriseAuthSession, getEnterpriseAuthSession } from '@/auth';
+import { logoutEnterpriseSession } from '@/authLogout';
 import {
   emitAgentScopeChange,
   isTeamScope,
@@ -437,7 +438,12 @@ export function useChatSession(options: UseChatSessionOptions = {}) {
   const redirectToLogin = useCallback(() => {
     if (anonymous) return;
     clearEnterpriseAuthSession();
-    window.location.href = '/';
+    window.location.href = '/login';
+  }, [anonymous]);
+
+  const logout = useCallback(() => {
+    if (anonymous) return;
+    void logoutEnterpriseSession(getEnterpriseAuthSession());
   }, [anonymous]);
 
   useEffect(() => () => {
@@ -3553,7 +3559,7 @@ export function useChatSession(options: UseChatSessionOptions = {}) {
     openGallery,
     openRename,
     requestDelete,
-    logout: redirectToLogin,
+    logout,
     openAdmin: () => navigate('/enterprise/dashboard'),
     // rename dialog
     renameSession,
