@@ -443,3 +443,17 @@
 - 安全性质：密码仅从 `JOUKIR_BOOTSTRAP_ADMIN_PASSWORD` 读取；`--password`/`--password=` 在 argparse 前无值回显拒绝；现有账号必须 `--rotate-existing`，旋转恢复本地平台管理员字段并递增 `session_version`；成功输出只含 tenant、username 和 action。
 - 验证：30 项相邻后端测试通过，Ruff 结果 `All checks passed!`；全部使用内存 SQLite，未对实时数据库执行初始化或旋转。
 - 下一步：Task 6 更新认证端点参考、部署运行手册和稳定项目记忆，不写入任何真实秘密。
+
+## 2026-09-18 — Task 6 认证运维文档（开始）
+
+- 目标：记录本地与 OIDC 注销合约、生产 Casdoor/HTTPS 上线顺序、紧急管理员初始化命令和长期架构边界。
+- 范围：部署 README、认证端点参考、`docs/PROJECT_MEMORY.md`、文档索引与本日志；不修改代码、配置文件、数据库或 Casdoor。
+- 已知约束：所有域名和账号示例均为合成值；不记录密码、Secret、完整数据库 URL 或外部授权载荷，不提供内联秘密赋值示例。
+
+## 2026-09-18 — Task 6 认证运维文档（完成）
+
+- 文件：认证端点参考新增本地 204 注销与 OIDC 注销准备合约；平台部署 README 新增生产 HTTPS/Casdoor/紧急管理员上线步骤；`PROJECT_MEMORY.md` 记录双入口、前通道单点退出、无 token 持久化和生产门禁；文档索引标题明确同时包含实施计划。
+- 计划维护：修正实施计划中的秘密赋值扫描正则为 `[=]` 写法，避免命令文本自命中；未改变实施范围或验收标准。
+- 验证：`git diff --check` 未报告内容错误，仅有 Windows 行尾提示；密码/客户端 Secret/应用 Secret 赋值扫描结果为 0；设计、计划、部署指南和端点参考四个索引目标均存在。
+- 安全边界：文档仅使用 `identity.example.com`、`joukir.example.com` 和 `emergency-admin` 等合成示例；没有真实密码、Secret、DSN、token 或外部授权载荷。
+- 下一步：Task 7 运行聚焦后端、完整前端、布局门禁、Ruff、生产负向门禁和开发健康检查，并记录仍需人工执行的浏览器 OIDC 验收。

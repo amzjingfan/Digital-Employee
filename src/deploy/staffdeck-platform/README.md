@@ -113,6 +113,68 @@ curl.exe http://127.0.0.1:5173/api/health
 
 Open `http://127.0.0.1:5173/workspace/gallery`. The local model API key is intentionally unset, so chat generation will remain unavailable until a compatible model endpoint is configured in `src\backend\.env`.
 
+## Production authentication rollout
+
+Production keeps standard OIDC plus an explicit emergency local administrator. It does not require
+a Casdoor React/Python SDK and does not persist Casdoor access or ID tokens.
+
+1. Provision the Casdoor application for the exact public Joukir origin. Non-loopback origins must
+   use HTTPS:
+
+   ```powershell
+   $DeployEnvPath = 'D:\secure-runtime\staffdeck-platform.env'
+   src\backend\.venv\Scripts\python.exe `
+     src\deploy\staffdeck-platform\scripts\configure-casdoor-oidc.py `
+     --env-file $DeployEnvPath `
+     --public-url https://joukir.example.com
+   ```
+
+   This registers `https://joukir.example.com/api/auth/oidc/callback` and
+   `https://joukir.example.com/login`. Run the same command against the intended Casdoor application
+   before starting Joukir with that public URL.
+
+2. Create and verify a non-default Casdoor production administrator in the correct organization.
+   Do not reuse the local sample administrator.
+
+3. Deliver the production profile through the protected runtime handoff. The startup gate requires:
+
+   | Setting | Required production property |
+   | --- | --- |
+   | `DEPLOYMENT_ENVIRONMENT` | value `production` |
+   | OIDC issuer, authorization, token, JWKS, end-session, callback, and post-logout URLs | HTTPS and non-empty |
+   | `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET` | non-empty protected values |
+   | `OIDC_COOKIE_SECURE` | value `true` |
+   | `APP_SECRET` | non-default, at least 32 characters, delivered as a secret |
+   | `DATABASE_SEED_DEMO_DATA` | value `false` |
+
+   Invalid production configuration fails before database initialization and reports setting names,
+   never values. The gate performs no startup network calls.
+
+4. Optionally initialize an emergency local administrator. Inject
+   `JOUKIR_BOOTSTRAP_ADMIN_PASSWORD` into the command process through the approved secret handoff,
+   then run from the repository root:
+
+   ```powershell
+   src\backend\.venv\Scripts\python.exe `
+     src\backend\scripts\initialize_local_admin.py `
+     --tenant-id tenant_demo `
+     --username emergency-admin `
+     --display-name 'Emergency Administrator'
+   ```
+
+   Remove the bootstrap password from the process environment immediately afterward. The command
+   does not accept a password argument and never prints the password, its hash, or the database URL.
+   An existing account is not changed unless `--rotate-existing` is supplied. Rotation increments
+   `session_version`, invalidating every existing Joukir session for that account.
+
+5. Start Joukir. The production gate either accepts the complete profile or stops the process before
+   touching the database.
+
+6. Perform human acceptance with the intended roles and browser: local login/logout, OIDC
+   login/logout/re-login, Casdoor session termination, post-logout return to `/login`, protected-page
+   access, and the Secure/HttpOnly cookie attributes. Do not use the Casdoor production administrator
+   password in automated probes.
+
 ## Tenant isolation contract
 
 The runtime and worker database roles have all of these properties:

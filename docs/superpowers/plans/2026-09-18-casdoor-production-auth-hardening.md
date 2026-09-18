@@ -703,7 +703,7 @@ Add the implementation plan beside its approved design under `Current designs`, 
 
 ```powershell
 git diff --check
-git grep -n -E "(JOUKIR_BOOTSTRAP_ADMIN_PASSWORD=|OIDC_CLIENT_SECRET=|APP_SECRET=)" -- docs src/deploy/staffdeck-platform/README.md src/skills/staffdeck-api-auth/references/endpoints.md
+git grep -n -E "(JOUKIR_BOOTSTRAP_ADMIN_PASSWORD[=]|OIDC_CLIENT_SECRET[=]|APP_SECRET[=])" -- docs src/deploy/staffdeck-platform/README.md src/skills/staffdeck-api-auth/references/endpoints.md
 ```
 
 Expected: `git diff --check` exits zero. The secret-pattern scan returns no assignments containing credential values; setting names in prose are acceptable only without `=<value>`.

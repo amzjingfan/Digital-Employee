@@ -9,6 +9,27 @@ Content-Type: application/json
 
 Add `Idempotency-Key` to creates and other retryable writes. Never reuse a key with different request content.
 
+## Browser session logout
+
+Joukir exposes two logout contracts for its two retained authentication paths:
+
+```text
+POST  /api/auth/logout       Local bearer session; returns 204
+POST  /api/auth/oidc/logout  OIDC cookie session; returns a redirect target
+```
+
+The OIDC response has this shape:
+
+```json
+{"redirect_url":"https://identity.example.com/api/logout?client_id=joukir-client&post_logout_redirect_uri=https%3A%2F%2Fjoukir.example.com%2Flogin"}
+```
+
+Both endpoints clear the Joukir `staffdeck_session` cookie and record a logout event when the
+Joukir session is valid. A browser using OIDC must perform a top-level navigation to the returned
+URL so Casdoor can clear its own browser session. The target is built exclusively from validated
+server configuration; clients must never replace it with a user-supplied return address. If logout
+preparation fails, clear local browser state and return to `/login`.
+
 ## Agents and gallery
 
 ```text
