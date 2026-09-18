@@ -351,3 +351,36 @@
 - 目标：按用户批准，为认证实现创建 `.worktrees/casdoor-auth-hardening` 隔离工作树和 `codex/casdoor-auth-hardening` 分支，避免直接在 `main` 修改生产代码。
 - 范围：仅新增 `.worktrees/` Git 忽略规则并创建 Git 工作树；不修改认证代码、运行配置、数据库账号或 Casdoor 状态。
 - 已知约束：当前仓库位于干净的 `main` 普通检出，尚无项目内工作树目录；必须先提交忽略规则，防止工作树内容被误纳入版本控制。
+
+## 2026-09-18 — Casdoor 生产认证加固隔离工作树（完成）
+
+- 结果：已创建 `.worktrees/casdoor-auth-hardening`，分支为 `codex/casdoor-auth-hardening`，起点包含已批准设计、实施计划及 `.worktrees/` 忽略规则；`main` 不承载后续认证代码修改。
+- 安全边界：未复制或读取 Git 忽略的后端 `.env`、数据库、令牌或账号密码；新工作树需要独立确认依赖可用性并运行基线测试。
+- 下一步：在隔离工作树完成依赖检查和认证相关基线测试，然后从实施计划 Task 1 的失败测试开始。
+
+## 2026-09-18 — Casdoor 认证实现基线验证（开始）
+
+- 目标：确认隔离工作树分支、依赖和当前认证相关测试基线，避免把既有失败误判为本轮回归。
+- 范围：只检查 Git 隔离状态、依赖目录和运行认证相关后端/前端测试；不读取受保护 `.env`，不启动服务，不修改数据库或 Casdoor。
+- 已知限制：工作树不会复制主检出中被忽略的虚拟环境和 `node_modules`；如本机缓存不足，依赖安装可能需要网络授权。
+
+## 2026-09-18 — Casdoor 认证实现基线验证（完成）
+
+- 隔离状态：工作树 Git 目录为主仓库 `.git/worktrees/casdoor-auth-hardening`，公共 Git 目录为主仓库 `.git`，当前分支 `codex/casdoor-auth-hardening`；确认不是 `main` 普通检出。
+- 依赖：`uv sync --project src/backend --locked --extra dev` 按锁文件创建工作树后端虚拟环境；`npm --prefix src/frontend-enterprise ci --no-audit --no-fund` 安装 561 个锁定前端包。未复制或读取主检出的 `.env`。
+- 基线：后端 `test_oidc_auth.py`、`test_auth_roles.py`、`test_auth_password_hashing.py` 共 17 项通过；前端 `auth.test.ts` 与 `App.test.tsx` 共 5 项通过。
+- 下一步：实施 Task 1，先写生产认证配置门禁失败测试，再添加最小实现并运行专项回归。
+
+## 2026-09-18 — Task 1 生产认证配置门禁（开始）
+
+- 目标：新增纯配置生产门禁，并确保它在任何数据库初始化之前执行；开发环境继续兼容现有回环 HTTP 和演示种子配置。
+- 范围：`src/backend/app/config.py`、新建 `src/backend/app/security/runtime_config.py`、`src/backend/app/main.py`、新建 `src/tests/backend/test_runtime_config.py`。
+- 已知约束：校验不得联网、不得输出配置值；错误只列出无效设置键。严格遵循红绿 TDD，先观察缺少模块导致的预期失败。
+
+## 2026-09-18 — Task 1 生产认证配置门禁（完成）
+
+- 文件：在 `app/config.py` 新增 `DEPLOYMENT_ENVIRONMENT` 与 `OIDC_POST_LOGOUT_REDIRECT_URI` 设置；新增纯函数 `app/security/runtime_config.py`；`app/main.py` 在 `init_db()` 前执行生产门禁；新增 `test_runtime_config.py` 25 项覆盖。
+- 红绿证据：首次运行因 `app.security.runtime_config` 不存在而在收集阶段预期失败；最小实现后专项 25 项通过。随后联合 OIDC/本地认证回归共 42 项通过。
+- 静态检查：Ruff 检查全部变更 Python 文件和新测试，结果 `All checks passed!`。pytest 的 4 条 FastAPI `on_event` 弃用警告来自既有启动钩子，本任务未迁移生命周期机制。
+- 安全性质：开发配置直接放行；生产要求完整 OIDC 值、全部 OIDC URL 使用 HTTPS、Secure Cookie、至少 32 字符且非默认的 `APP_SECRET`、禁用演示种子；错误只输出设置键，不输出密钥值。
+- 下一步：Task 2 为 OIDC Cookie 会话新增服务器控制的 Casdoor 注销准备端点，并保持本地 204 注销兼容。

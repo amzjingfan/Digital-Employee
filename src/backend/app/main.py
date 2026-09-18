@@ -72,6 +72,7 @@ from app.public_api.webhooks import enqueue_due_webhook_deliveries
 from app.runtime_lock import acquire_runtime_instance_lock, release_runtime_instance_lock
 from app.scheduled_tasks.worker import start_background_worker, stop_background_worker
 from app.security.authorization import require_enterprise_permission
+from app.security.runtime_config import validate_runtime_config
 from app.teams.sweeper import start_timeout_sweeper, stop_timeout_sweeper
 from app.tiktok.shadow_worker import start_shadow_worker, stop_shadow_worker
 from app.tools.a2a_recovery import recover_a2a_client_tasks
@@ -110,6 +111,7 @@ async def attach_request_id(request: Request, call_next):
 def on_startup() -> None:
     acquire_runtime_instance_lock()
     try:
+        validate_runtime_config(settings)
         init_db()
         if settings.database_seed_demo_data:
             with Session(engine) as db:

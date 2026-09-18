@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "Skill Agent Loop Service"
+    deployment_environment: Literal["development", "production"] = "development"
     database_url: str = "sqlite:///./skill_agent_loop.db"
     database_auto_create: bool = True
     database_seed_demo_data: bool = True
@@ -26,6 +27,7 @@ class Settings(BaseSettings):
     oidc_client_id: str = ""
     oidc_client_secret: str = ""
     oidc_redirect_uri: str = ""
+    oidc_post_logout_redirect_uri: str = ""
     oidc_scopes: str = "openid profile email"
     oidc_tenant_mapping_json: str = "{}"
     oidc_group_claim: str = "groups"
