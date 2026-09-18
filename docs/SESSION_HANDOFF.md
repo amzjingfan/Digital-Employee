@@ -1,6 +1,6 @@
 # Current session handoff
 
-Last refreshed: 2026-09-17 (Asia/Shanghai)
+Last refreshed: 2026-09-18 (Asia/Shanghai)
 
 This file is mutable operational context. Re-check every process, port, branch, and test result before relying on it. It contains no credential values or connection strings.
 
@@ -11,6 +11,14 @@ This file is mutable operational context. Re-check every process, port, branch, 
 - The reviewed functional audit was prepared on `docs/project-functional-audit-20260912` and integrated into local `main`. The follow-up document classification branch `docs/classify-project-docs` was also integrated into local `main`. The report now lives at `docs/reports/报告.md`; inspect `git rev-parse main` for the current SHA. The older `chore/main-repository-migration` branch remains at the migration cutover commit. No GitHub remote is configured yet.
 - Annotated tag `handover-20260909` targets `e0cb8df042b3a5f856c60b45cf7e9c2bafbc23b5`. The clone has no object alternates and no configured remote.
 - The old `E:\develop\数字员工\joukir-enterprise` source remains intact for rollback and will be removed manually by the user after acceptance.
+
+## Casdoor authentication hardening (2026-09-18)
+
+- Active implementation worktree: `E:\develop\数字员工\joukir\.worktrees\casdoor-auth-hardening`; branch: `codex/casdoor-auth-hardening`. The original checkout remains on `main` and was not merged during this session.
+- Implemented production authentication configuration gates, a server-controlled OIDC logout preparation endpoint, shared browser logout behavior, validated Casdoor public callback/logout redirect provisioning, a password-from-environment emergency local-admin initializer, and production operations documentation. The project continues to use standard OIDC and does not add Casdoor React/Python SDKs.
+- Focused verification is green: 70 authentication/deployment backend tests; test-layout guard; Ruff on all changed Python; 65 frontend files/279 tests; frontend typecheck, configuration, i18n and production build; an isolated production-negative gate; and a real local HTTP logout probe. No real Casdoor account, secret, database password or external authorization payload was read or written.
+- The complete backend suite is not green. A fresh run reached 100% with failures and then pytest itself raised a Windows `PermissionError` while cleaning `%TEMP%\\pytest-of-Administrator\\pytest-current`, preventing a reliable terminal summary. The failure cache held 37 nodes in unrelated Harness, general-skills, advertising, runtime/process, attachment, channel and tool tests; no changed authentication test appeared there. A representative advertising failure reproduced identically on original `main` (`manual_resolution_required` rather than `queued`), consistent with the repository's documented non-green backend baseline.
+- Do not claim full-suite success or merge automatically. To obtain a strict green gate, fix or formally baseline the existing backend failures and the Windows pytest temporary-directory permission issue, then rerun `src\\backend\\.venv\\Scripts\\python.exe -m pytest -c pytest.ini src\\tests\\backend`. After deployment, a maintainer with a real Casdoor session must still verify OIDC login, assigned-role pages, front-channel logout, return to `/login`, and re-login.
 
 ## `src/` layout migration (2026-09-17)
 
