@@ -413,3 +413,18 @@
 - 验证：聚焦 Vitest 10 项通过，测试 TypeScript 类型检查通过，Vite 配置检查通过，生产构建转换 2,164 个模块并成功完成。构建仍有既有的大分块与 SVGR 性能警告，不属于认证回归。
 - 安全性质：本地存储在请求前清除；OIDC 只调用新端点，本地承载令牌只调用原端点；拒绝危险协议，仅允许相对路径、HTTPS 和开发回环 HTTP；请求失败或非成功响应均返回 `/login`。
 - 下一步：Task 4 为 Casdoor 应用配置增加经过验证的 `--public-url`，并让迁移脚本写入回调和注销后地址。
+
+## 2026-09-18 — Task 4 Casdoor 公网地址配置（开始）
+
+- 目标：让 Casdoor 应用配置脚本接收安全的公网源地址，并让平台迁移脚本从同一地址写入 OIDC 回调及注销后地址。
+- 范围：`configure-casdoor-oidc.py`、`migrate-staffdeck.ps1` 与新建 `test_casdoor_oidc_provisioning.py`；测试只加载纯函数和检查脚本文本。
+- 已知约束：不连接或修改实时 Casdoor/PostgreSQL，不读取部署 `.env`；非回环地址必须 HTTPS，且禁止凭据、路径、查询和片段。先添加失败测试。
+
+## 2026-09-18 — Task 4 Casdoor 公网地址配置（完成）
+
+- 文件：`configure-casdoor-oidc.py` 新增 `DEFAULT_PUBLIC_URL`、源地址规范化、重定向列表和 `--public-url`；Casdoor homepage/redirect URIs 从验证后的地址生成。`migrate-staffdeck.ps1` 新增同规则的 `PublicUrl` 参数并写入 OIDC 回调及注销后 URI；新增 12 项部署脚本测试。
+- 红绿证据：首次运行 12 项全部按预期失败，原因是两个 URL 辅助函数和 PowerShell 合约不存在；实现后 12 项全部通过。
+- 调试记录：首次 Ruff 唯一失败为端口校验属性访问未绑定（B018）；根因确认后以 `_ = parsed.port` 保留异常触发语义，重新运行通过。
+- 验证：部署脚本测试 12 项通过；Ruff 结果 `All checks passed!`；PowerShell AST 解析通过并识别 1,335 个 token。测试未连接数据库、未读取部署 `.env`、未修改实时 Casdoor。
+- 安全性质：公网地址禁止用户信息、非根路径、查询、片段和非法端口；HTTP 仅允许 `localhost`/`127.0.0.1`；默认本机配置保留两个原回调别名并新增 `/login`。
+- 下一步：Task 5 新增只从进程环境读取密码、需要显式旋转开关的紧急本地管理员初始化命令。

@@ -1,6 +1,7 @@
 param(
     [string]$StaffDeckRoot = 'D:\saas\third_party\StaffDeck',
     [string]$BackupRoot = 'D:\saas\backups',
+    [string]$PublicUrl = 'http://127.0.0.1:5173',
     [switch]$SkipDataMigration
 )
 
@@ -40,6 +41,25 @@ function Set-EnvValue {
     if (-not $found) { $lines.Add("$Key=$Value") }
     [IO.File]::WriteAllLines($Path, $lines, (New-Object Text.UTF8Encoding($false)))
 }
+
+[Uri]$publicUri = $null
+if (-not [Uri]::TryCreate($PublicUrl, [UriKind]::Absolute, [ref]$publicUri)) {
+    throw 'PublicUrl must be an absolute URL.'
+}
+$isLoopbackPublicUrl = $publicUri.Host -in @('127.0.0.1', 'localhost')
+$hasUnsafePublicUrlParts = (
+    $publicUri.UserInfo -or
+    $publicUri.Query -or
+    $publicUri.Fragment -or
+    $publicUri.AbsolutePath -ne '/'
+)
+if ($hasUnsafePublicUrlParts) {
+    throw 'PublicUrl must be an origin without credentials, path, query, or fragment.'
+}
+if ($publicUri.Scheme -ne 'https' -and -not ($publicUri.Scheme -eq 'http' -and $isLoopbackPublicUrl)) {
+    throw 'PublicUrl must use HTTPS except on loopback.'
+}
+$normalizedPublicUrl = $PublicUrl.Trim().TrimEnd('/')
 
 $resolvedBackupRoot = [IO.Path]::GetFullPath($BackupRoot)
 $allowedBackupRoot = [IO.Path]::GetFullPath('D:\saas\backups')
@@ -152,7 +172,8 @@ try {
     Set-EnvValue $backendEnvPath 'OIDC_END_SESSION_ENDPOINT' 'http://localhost:18000/api/logout'
     Set-EnvValue $backendEnvPath 'OIDC_CLIENT_ID' $deployEnv.STAFFDECK_OIDC_CLIENT_ID
     Set-EnvValue $backendEnvPath 'OIDC_CLIENT_SECRET' $deployEnv.STAFFDECK_OIDC_CLIENT_SECRET
-    Set-EnvValue $backendEnvPath 'OIDC_REDIRECT_URI' 'http://127.0.0.1:5173/api/auth/oidc/callback'
+    Set-EnvValue $backendEnvPath 'OIDC_REDIRECT_URI' "$normalizedPublicUrl/api/auth/oidc/callback"
+    Set-EnvValue $backendEnvPath 'OIDC_POST_LOGOUT_REDIRECT_URI' "$normalizedPublicUrl/login"
     Set-EnvValue $backendEnvPath 'OIDC_SCOPES' 'openid profile email'
     Set-EnvValue $backendEnvPath 'OIDC_TENANT_MAPPING_JSON' ($tenantMapping | ConvertTo-Json -Compress)
     Set-EnvValue $backendEnvPath 'OIDC_GROUP_CLAIM' 'groups'

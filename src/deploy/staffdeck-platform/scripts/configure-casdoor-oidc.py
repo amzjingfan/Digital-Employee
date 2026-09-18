@@ -6,9 +6,11 @@ import re
 import secrets
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlsplit
 
 import psycopg
+
+DEFAULT_PUBLIC_URL = "http://127.0.0.1:5173"
 
 
 STAFFDECK_GROUPS = (
@@ -20,6 +22,38 @@ STAFFDECK_GROUPS = (
     ("designer", "美工设计"),
     ("procurement", "采购专员"),
 )
+
+
+def normalize_public_url(value: str) -> str:
+    cleaned = value.strip()
+    parsed = urlsplit(cleaned)
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("public URL must not contain credentials, query, or fragment")
+    if parsed.path not in {"", "/"} or not parsed.hostname:
+        raise ValueError("public URL must be an origin without a path")
+    try:
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError("public URL port is invalid") from exc
+    is_loopback = parsed.hostname.lower() in {"127.0.0.1", "localhost"}
+    scheme = parsed.scheme.lower()
+    if scheme != "https" and not (scheme == "http" and is_loopback):
+        raise ValueError("public URL must use HTTPS except on loopback")
+    return cleaned.rstrip("/")
+
+
+def application_redirect_uris(public_url: str) -> list[str]:
+    normalized = normalize_public_url(public_url)
+    if normalized == DEFAULT_PUBLIC_URL:
+        return [
+            f"{normalized}/api/auth/oidc/callback",
+            "http://localhost:5173/api/auth/oidc/callback",
+            f"{normalized}/login",
+        ]
+    return [
+        f"{normalized}/api/auth/oidc/callback",
+        f"{normalized}/login",
+    ]
 
 
 def read_env(path: Path) -> tuple[list[str], dict[str, str]]:
@@ -61,7 +95,9 @@ def configured_secret(value: str | None, placeholder: str, bytes_count: int) -> 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Provision the StaffDeck Casdoor OIDC app")
     parser.add_argument("--env-file", type=Path, required=True)
+    parser.add_argument("--public-url", default=DEFAULT_PUBLIC_URL)
     args = parser.parse_args()
+    public_url = normalize_public_url(args.public_url)
 
     lines, env = read_env(args.env_file)
     organization = env.get("STAFFDECK_CASDOOR_ORGANIZATION", "").strip()
@@ -116,7 +152,7 @@ def main() -> None:
                     "owner": "admin",
                     "name": "app-staffdeck",
                     "display_name": "StaffDeck",
-                    "homepage_url": "http://127.0.0.1:5173",
+                    "homepage_url": public_url,
                     "description": "StaffDeck enterprise OIDC application",
                     "organization": organization,
                     "enable_sign_up": False,
@@ -125,10 +161,7 @@ def main() -> None:
                     "client_id": client_id,
                     "client_secret": client_secret,
                     "redirect_uris": json.dumps(
-                        [
-                            "http://127.0.0.1:5173/api/auth/oidc/callback",
-                            "http://localhost:5173/api/auth/oidc/callback",
-                        ],
+                        application_redirect_uris(public_url),
                         separators=(",", ":"),
                     ),
                     "grant_types": json.dumps(["authorization_code"], separators=(",", ":")),
