@@ -53,6 +53,7 @@ The cross-border PRD and integrated plan refer to `prd/lan-multiuser-codex-memor
 ## Current designs
 
 - [Casdoor production authentication hardening design, 2026-09-18](superpowers/specs/2026-09-18-casdoor-production-auth-hardening-design.md)
+- [Casdoor production authentication hardening implementation plan, 2026-09-18](superpowers/plans/2026-09-18-casdoor-production-auth-hardening.md)
 
 ## Historical architecture and implementation records
 
