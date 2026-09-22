@@ -518,3 +518,47 @@ def test_bi_pipeline_has_composite_tenant_fks_rls_and_append_only_quality() -> N
             "bi_daily_metrics",
         ):
             assert unscoped.execute(text(f"SELECT count(*) FROM {table}")).scalar_one() == 0
+
+
+def test_tiktok_data_validation_tables_enforce_rls_and_append_only_runs() -> None:
+    tables = (
+        "tiktok_data_validation_scopes",
+        "tiktok_field_contracts",
+        "tiktok_capability_evidence",
+        "tiktok_data_validation_runs",
+    )
+    with engine.connect() as unscoped:
+        for table in tables:
+            assert unscoped.execute(text(f"SELECT count(*) FROM {table}")).scalar_one() == 0
+
+    suffix = uuid4().hex[:12]
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            connection.execute(text("SELECT set_config('app.tenant_id', 'tenant_demo', true)"))
+            user_id = connection.execute(
+                text("SELECT id FROM users ORDER BY created_at LIMIT 1")
+            ).scalar_one()
+            run_id = f"tiktok_dv_accept_{suffix}"
+            connection.execute(
+                text(
+                    "INSERT INTO tiktok_data_validation_runs "
+                    "(id, tenant_id, mode, catalog_version, dataset_digest, record_count, "
+                    "status, workbench_ready_snapshot, real_data_ready_snapshot, checks_json, "
+                    "issues_json, started_by_user_id, created_at) VALUES "
+                    "(:id, 'tenant_demo', 'mock', 'p3-b0.v1', :digest, 1, 'passed', "
+                    "false, false, '[]'::jsonb, '[]'::jsonb, :user_id, now())"
+                ),
+                {"id": run_id, "digest": f"sha256:{suffix}", "user_id": user_id},
+            )
+            savepoint = connection.begin_nested()
+            with pytest.raises(DBAPIError, match="append-only"):
+                connection.execute(
+                    text(
+                        "UPDATE tiktok_data_validation_runs SET status='failed' WHERE id=:id"
+                    ),
+                    {"id": run_id},
+                )
+            savepoint.rollback()
+        finally:
+            transaction.rollback()

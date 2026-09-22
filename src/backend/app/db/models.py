@@ -4543,3 +4543,227 @@ class TeamTaskBid(SQLModel, table=True):
     score: Optional[float] = None
     score_rationale: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)
+
+
+class TikTokDataValidationScope(SQLModel, table=True):
+    """Tenant-owned US pilot boundary for TikTok data validation."""
+
+    __tablename__ = "tiktok_data_validation_scopes"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "market", name="uq_tiktok_dv_scope_tenant_market"),
+        ForeignKeyConstraint(
+            ["tenant_id", "store_resource_id"],
+            ["business_resources.tenant_id", "business_resources.id"],
+            name="fk_tiktok_dv_scope_tenant_store",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "business_owner_user_id"],
+            ["users.tenant_id", "users.id"],
+            name="fk_tiktok_dv_scope_tenant_business_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "data_owner_user_id"],
+            ["users.tenant_id", "users.id"],
+            name="fk_tiktok_dv_scope_tenant_data_owner",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("market = 'US'", name="tiktok_dv_scope_market_check"),
+        CheckConstraint(
+            "status IN ('draft', 'active', 'closed')",
+            name="tiktok_dv_scope_status_check",
+        ),
+        CheckConstraint("revision > 0", name="tiktok_dv_scope_revision_check"),
+        Index("ix_tiktok_dv_scope_tenant_status", "tenant_id", "status"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("tiktok_dv_scope"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    market: str = Field(default="US", index=True)
+    store_resource_id: str | None = Field(default=None, index=True)
+    creator_scope_summary: str = ""
+    business_owner_user_id: str | None = Field(default=None, index=True)
+    data_owner_user_id: str | None = Field(default=None, index=True)
+    status: str = Field(default="draft", index=True)
+    revision: int = 1
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class TikTokFieldContract(SQLModel, table=True):
+    """Stable field definition and ordered candidate sources; never business facts."""
+
+    __tablename__ = "tiktok_field_contracts"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "field_code", name="uq_tiktok_field_tenant_code"),
+        ForeignKeyConstraint(
+            ["tenant_id", "owner_user_id"],
+            ["users.tenant_id", "users.id"],
+            name="fk_tiktok_field_tenant_owner",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "domain IN ('sample', 'order', 'logistics', 'video', 'attribution', 'gmv')",
+            name="tiktok_field_domain_check",
+        ),
+        CheckConstraint(
+            "data_type IN ('string', 'datetime', 'decimal', 'integer', 'boolean', 'enum')",
+            name="tiktok_field_data_type_check",
+        ),
+        CheckConstraint(
+            "missing_behavior IN ('unknown', 'manual_review', 'block_stage', "
+            "'not_applicable')",
+            name="tiktok_field_missing_behavior_check",
+        ),
+        CheckConstraint(
+            "status IN ('draft', 'confirmed', 'blocked', 'not_applicable')",
+            name="tiktok_field_status_check",
+        ),
+        CheckConstraint(
+            "freshness_sla_seconds IS NULL OR freshness_sla_seconds > 0",
+            name="tiktok_field_freshness_sla_check",
+        ),
+        CheckConstraint("revision > 0", name="tiktok_field_revision_check"),
+        Index("ix_tiktok_field_tenant_domain_status", "tenant_id", "domain", "status"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("tiktok_field"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    field_code: str = Field(index=True)
+    domain: str = Field(index=True)
+    label: str
+    data_type: str
+    required: bool = True
+    owner_user_id: str | None = Field(default=None, index=True)
+    business_key: str = ""
+    freshness_sla_seconds: int | None = None
+    missing_behavior: str = "unknown"
+    sources_json: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
+    status: str = Field(default="draft", index=True)
+    revision: int = 1
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class TikTokCapabilityEvidence(SQLModel, table=True):
+    """Action-specific capability evidence or an external-provider decision."""
+
+    __tablename__ = "tiktok_capability_evidence"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "entry_code",
+            "subject_key",
+            name="uq_tiktok_capability_tenant_entry_subject",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "resource_id"],
+            ["business_resources.tenant_id", "business_resources.id"],
+            name="fk_tiktok_capability_tenant_resource",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "checked_by_user_id"],
+            ["users.tenant_id", "users.id"],
+            name="fk_tiktok_capability_tenant_checker",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "entry_kind IN ('capability', 'provider_decision')",
+            name="tiktok_capability_kind_check",
+        ),
+        CheckConstraint(
+            "direction IN ('read', 'write', 'export', 'decision')",
+            name="tiktok_capability_direction_check",
+        ),
+        CheckConstraint(
+            "evidence_level IN ('E0', 'E1', 'E2', 'E3')",
+            name="tiktok_capability_level_check",
+        ),
+        CheckConstraint(
+            "evidence_type IN ('unverified', 'official_docs', 'contract', 'mock', "
+            "'sandbox', 'approved_export', 'real_account')",
+            name="tiktok_capability_type_check",
+        ),
+        CheckConstraint(
+            "status IN ('unverified', 'verified', 'blocked', 'not_applicable')",
+            name="tiktok_capability_status_check",
+        ),
+        CheckConstraint(
+            "decision IS NULL OR decision IN ('use', 'defer', 'reject')",
+            name="tiktok_capability_decision_check",
+        ),
+        CheckConstraint("revision > 0", name="tiktok_capability_revision_check"),
+        Index(
+            "ix_tiktok_capability_tenant_kind_status",
+            "tenant_id",
+            "entry_kind",
+            "status",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("tiktok_cap"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    entry_code: str = Field(index=True)
+    entry_kind: str = Field(index=True)
+    platform_domain: str = Field(index=True)
+    action: str
+    direction: str
+    subject_key: str = Field(default="global", index=True)
+    resource_id: str | None = Field(default=None, index=True)
+    required_scope: str = ""
+    endpoint_or_artifact: str = ""
+    api_version: str = ""
+    evidence_level: str = Field(default="E0", index=True)
+    evidence_type: str = Field(default="unverified", index=True)
+    status: str = Field(default="unverified", index=True)
+    decision: str | None = Field(default=None, index=True)
+    summary: str = ""
+    evidence_ref: str = ""
+    checked_by_user_id: str | None = Field(default=None, index=True)
+    checked_at: datetime | None = Field(default=None, index=True)
+    valid_until: datetime | None = Field(default=None, index=True)
+    revision: int = 1
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class TikTokDataValidationRun(SQLModel, table=True):
+    """Append-only summary of a deterministic data-validation run."""
+
+    __tablename__ = "tiktok_data_validation_runs"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_tiktok_dv_run_tenant_id"),
+        ForeignKeyConstraint(
+            ["tenant_id", "started_by_user_id"],
+            ["users.tenant_id", "users.id"],
+            name="fk_tiktok_dv_run_tenant_starter",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("mode = 'mock'", name="tiktok_dv_run_mode_check"),
+        CheckConstraint(
+            "status IN ('passed', 'failed')",
+            name="tiktok_dv_run_status_check",
+        ),
+        CheckConstraint("record_count >= 0", name="tiktok_dv_run_record_count_check"),
+        CheckConstraint(
+            "real_data_ready_snapshot = false",
+            name="tiktok_dv_run_real_ready_check",
+        ),
+        Index("ix_tiktok_dv_run_tenant_created", "tenant_id", "created_at"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("tiktok_dv_run"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    mode: str = Field(default="mock", index=True)
+    catalog_version: str = Field(index=True)
+    dataset_digest: str = Field(index=True)
+    record_count: int = 0
+    status: str = Field(index=True)
+    workbench_ready_snapshot: bool = False
+    real_data_ready_snapshot: bool = False
+    checks_json: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
+    issues_json: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
+    started_by_user_id: str = Field(index=True)
+    created_at: datetime = Field(default_factory=utc_now, index=True)

@@ -538,3 +538,18 @@
 - 自检：计划与规格的四表、六路由、FastMoss/领星/达密/飞书、管理员/成员权限、E0-E3、Mock/真实门禁和追加写运行要求逐项对齐；无 TODO、TBD、FIXME、代码省略号或模糊“稍后实现”步骤，接口名称在前后任务中一致。
 - 评审重点：重复来源优先级/拒绝来源、revision 冲突、过期或主体/scope/资产不匹配 E3、双租户同键、重复 Mock 摘要与原值泄漏五类风险均有明确失败测试归属。
 - 下一步：用户评审计划并选择 Native 或 Subagent-driven 执行；收到选择前不开始 Task 1。
+
+## 2026-09-22 — TikTok P3-B0 数据验证持久化（开始）
+
+- 目标：建立 `tiktok_data_validation_scopes`、`tiktok_field_contracts`、`tiktok_capability_evidence`、`tiktok_data_validation_runs` 四张租户表及 SQLModel 映射。
+- 范围：新增 PostgreSQL 正向/回滚迁移、FORCE RLS、同租户复合外键、运行记录追加写保护，并补充模型、迁移静态检查和可选 PostgreSQL 验收。
+- 安全边界：数据库只保存范围、契约、证据元数据与验证摘要；不保存 Mock 原始 fixture、外部响应载荷、Token、Cookie 或 OAuth 原始数据。
+- 已知风险：本步骤只验证结构和数据库边界，不实现目录初始化、业务就绪算法或真实外部调用。
+
+## 2026-09-22 — TikTok P3-B0 数据验证持久化（完成）
+
+- 变更：新增四个 SQLModel、四表 PostgreSQL 正向/回滚迁移、租户复合外键、FORCE RLS、运行记录追加写触发器，以及模型/迁移静态测试和可选 PostgreSQL 验收用例。
+- 验证：新测试先因四个模型不存在而在收集阶段失败；实现后 `test_postgres_tiktok_data_validation_migration.py` 2 项通过。新增测试文件和 PostgreSQL 验收文件通过 Ruff；`models.py` 在忽略仓库既有的 `UP045` 与 `FURB157` 后通过 Ruff。
+- 基线偏差：计划中的全文件 Ruff 命令会报告 `models.py` 既有的 384 个 `UP045` 和 2 个 `FURB157`，这些告警位于本次改动之前的代码。未批量重写该共享模型文件，以免扩大 TikTok 任务范围；本次新增类型已使用 `X | None`，未增加同类告警。
+- 剩余风险：未配置真实 PostgreSQL 验收环境时，RLS、复合外键和追加写触发器只能由迁移静态检查覆盖；部署前仍需在迁移测试库执行可选验收。
+- 下一步：实现版本化目录、幂等 bootstrap 和只读工作区聚合。
