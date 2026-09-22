@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+import hashlib
+import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 
 from sqlmodel import Session, select
 
@@ -22,6 +25,8 @@ from app.tiktok.schema import (
     TikTokCapabilityEvidenceUpdate,
     TikTokDataValidationBlocker,
     TikTokDataValidationBootstrapResponse,
+    TikTokDataValidationCheck,
+    TikTokDataValidationIssue,
     TikTokDataValidationOption,
     TikTokDataValidationReadiness,
     TikTokDataValidationRunRead,
@@ -31,9 +36,74 @@ from app.tiktok.schema import (
     TikTokFieldContractRead,
     TikTokFieldContractUpdate,
     TikTokFieldSource,
+    TikTokMockValidationResult,
 )
 
 DATA_VALIDATION_CATALOG_VERSION = "p3-b0.v1"
+MOCK_VALIDATION_CLOCK = datetime(2026, 9, 22, 0, 0, tzinfo=UTC)
+MOCK_DATASET: dict[str, list[dict[str, object]]] = {
+    "samples": [
+        {
+            "application_id": "mock-application-001",
+            "creator_id": "mock-creator-001",
+            "product_id": "mock-product-001",
+            "status": "approved",
+            "applied_at": "2026-09-20T08:00:00Z",
+            "fulfillment_due_at": "2026-09-25T08:00:00Z",
+            "observed_at": "2026-09-21T23:00:00Z",
+        }
+    ],
+    "orders": [
+        {
+            "order_id": "mock-order-001",
+            "creator_id": "mock-creator-001",
+            "product_id": "mock-product-001",
+            "status": "completed",
+            "created_at": "2026-09-20T09:00:00Z",
+            "completed_at": "2026-09-21T09:00:00Z",
+            "observed_at": "2026-09-21T23:00:00Z",
+        }
+    ],
+    "logistics": [
+        {
+            "order_id": "mock-order-001",
+            "tracking_number": "mock-tracking-001",
+            "status": "delivered",
+            "occurred_at": "2026-09-21T08:00:00Z",
+            "observed_at": "2026-09-21T23:00:00Z",
+        }
+    ],
+    "videos": [
+        {
+            "video_id": "mock-video-001",
+            "creator_id": "mock-creator-001",
+            "product_id": "mock-product-001",
+            "published_at": "2026-09-20T10:00:00Z",
+            "view_count": 100,
+            "like_count": 10,
+            "observed_at": "2026-09-21T23:00:00Z",
+        }
+    ],
+    "attribution": [
+        {
+            "pid": "mock-pid-001",
+            "order_id": "mock-order-001",
+            "product_id": "mock-product-001",
+            "window_start": "2026-09-19T00:00:00Z",
+            "window_end": "2026-09-22T00:00:00Z",
+            "observed_at": "2026-09-21T23:00:00Z",
+        }
+    ],
+    "gmv": [
+        {
+            "order_id": "mock-order-001",
+            "amount": "99.99",
+            "currency": "USD",
+            "occurred_at": "2026-09-21T09:00:00Z",
+            "observed_at": "2026-09-21T23:00:00Z",
+        }
+    ],
+}
 
 
 class TikTokDataValidationNotFound(ValueError):
@@ -800,6 +870,318 @@ def _require_active_tenant_user(
         code = "checker_not_found" if kind == "checker" else "owner_not_found"
         raise TikTokDataValidationNotFound(code)
     return row
+
+
+def validate_mock_dataset(
+    *,
+    contracts: Sequence[TikTokFieldContract],
+    dataset: Mapping[str, list[dict[str, object]]],
+    validation_clock: datetime,
+) -> TikTokMockValidationResult:
+    """Validate normalized mock records without returning any source value."""
+
+    canonical = json.dumps(
+        {"catalog_version": DATA_VALIDATION_CATALOG_VERSION, "dataset": dataset},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    digest = f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
+    issues: list[TikTokDataValidationIssue] = []
+    checks: list[TikTokDataValidationCheck] = []
+    collection_by_domain = {
+        "sample": "samples",
+        "order": "orders",
+        "logistics": "logistics",
+        "video": "videos",
+        "attribution": "attribution",
+        "gmv": "gmv",
+    }
+
+    def add_issue(code: str, field_code: str, detail: str) -> None:
+        issues.append(
+            TikTokDataValidationIssue(
+                code=code,
+                field_code=field_code,
+                severity="error",
+                detail=detail,
+            )
+        )
+
+    def finish_check(code: str, start: int, checked_count: int) -> None:
+        checks.append(
+            TikTokDataValidationCheck(
+                code=code,
+                passed=len(issues) == start,
+                checked_count=checked_count,
+            )
+        )
+
+    start = len(issues)
+    required_checked = 0
+    for contract in contracts:
+        records = dataset.get(collection_by_domain.get(contract.domain, ""), [])
+        for record in records:
+            required_checked += 1
+            value = record.get(contract.field_code.split(".", 1)[1])
+            if contract.required and (value is None or value == ""):
+                add_issue(
+                    "required_field_missing",
+                    contract.field_code,
+                    "必需字段缺失。",
+                )
+            elif value is not None and not _value_matches_type(value, contract.data_type):
+                add_issue("invalid_field_type", contract.field_code, "字段类型不符合契约。")
+    finish_check("required_and_type", start, required_checked)
+
+    start = len(issues)
+    uniqueness_checked = 0
+    seen_domain_keys: set[tuple[str, str]] = set()
+    for contract in contracts:
+        identity = (contract.domain, contract.business_key)
+        if identity in seen_domain_keys or not contract.business_key:
+            continue
+        seen_domain_keys.add(identity)
+        records = dataset.get(collection_by_domain.get(contract.domain, ""), [])
+        seen_values: set[object] = set()
+        for record in records:
+            uniqueness_checked += 1
+            value = record.get(contract.business_key)
+            if value is None or value == "":
+                add_issue(
+                    "business_key_missing",
+                    f"{contract.domain}.{contract.business_key}",
+                    "记录业务键缺失。",
+                )
+            elif value in seen_values:
+                add_issue(
+                    "duplicate_business_key",
+                    f"{contract.domain}.{contract.business_key}",
+                    "记录业务键重复。",
+                )
+            else:
+                seen_values.add(value)
+    finish_check("business_key_uniqueness", start, uniqueness_checked)
+
+    start = len(issues)
+    order_ids = {record.get("order_id") for record in dataset.get("orders", [])}
+    relationship_checked = 0
+    for collection in ("logistics", "attribution", "gmv"):
+        for record in dataset.get(collection, []):
+            relationship_checked += 1
+            if record.get("order_id") not in order_ids:
+                add_issue(
+                    "broken_relationship",
+                    f"{collection}.order_id",
+                    "关联订单不存在。",
+                )
+    finish_check("relationships", start, relationship_checked)
+
+    start = len(issues)
+    amount_checked = 0
+    for record in dataset.get("gmv", []):
+        amount_checked += 1
+        amount = record.get("amount")
+        try:
+            if amount is None or Decimal(str(amount)) < 0:
+                raise InvalidOperation
+        except (InvalidOperation, ValueError):
+            add_issue("invalid_amount", "gmv.amount", "GMV 金额必须是非负十进制数。")
+        currency = record.get("currency")
+        if not isinstance(currency, str) or len(currency) != 3 or currency.upper() != currency:
+            add_issue("invalid_currency", "gmv.currency", "币种必须是三位大写代码。")
+    finish_check("amount_and_currency", start, amount_checked)
+
+    start = len(issues)
+    window_checked = 0
+    for record in dataset.get("attribution", []):
+        window_checked += 1
+        window_start = _parse_datetime(record.get("window_start"))
+        window_end = _parse_datetime(record.get("window_end"))
+        if window_start is None or window_end is None or window_end <= window_start:
+            add_issue(
+                "inverted_attribution_window",
+                "attribution.window_end",
+                "归因窗口结束时间必须晚于开始时间。",
+            )
+    finish_check("time_windows", start, window_checked)
+
+    start = len(issues)
+    freshness_checked = 0
+    sla_by_domain = {
+        domain: min(
+            row.freshness_sla_seconds
+            for row in contracts
+            if row.domain == domain and row.freshness_sla_seconds is not None
+        )
+        for domain in collection_by_domain
+        if any(row.domain == domain and row.freshness_sla_seconds for row in contracts)
+    }
+    for domain, collection in collection_by_domain.items():
+        sla = sla_by_domain.get(domain)
+        if sla is None:
+            continue
+        for record in dataset.get(collection, []):
+            freshness_checked += 1
+            observed_at = _parse_datetime(record.get("observed_at"))
+            if observed_at is None or (validation_clock - observed_at).total_seconds() > sla:
+                add_issue("stale_record", f"{domain}.observed_at", "记录超过字段新鲜度上限。")
+    finish_check("freshness", start, freshness_checked)
+
+    start = len(issues)
+    known_products = {
+        record.get("product_id")
+        for collection in ("samples", "orders", "attribution")
+        for record in dataset.get(collection, [])
+        if record.get("product_id")
+    }
+    pid_products: dict[object, object] = {}
+    pid_checked = 0
+    for record in dataset.get("attribution", []):
+        pid_checked += 1
+        pid = record.get("pid")
+        product = record.get("product_id")
+        if pid in pid_products and pid_products[pid] != product:
+            add_issue(
+                "pid_product_conflict",
+                "attribution.pid",
+                "同一 PID 对应多个商品。",
+            )
+        pid_products[pid] = product
+    for record in dataset.get("videos", []):
+        pid_checked += 1
+        if record.get("product_id") not in known_products:
+            add_issue(
+                "pid_product_conflict",
+                "video.product_id",
+                "视频商品无法与 PID/商品范围关联。",
+            )
+    finish_check("pid_product_consistency", start, pid_checked)
+
+    start = len(issues)
+    source_checked = 0
+    for contract in contracts:
+        for source in contract.sources_json:
+            source_checked += 1
+            if source.get("decision") == "use" and source.get("authorization_state") == "denied":
+                add_issue(
+                    "selected_source_denied",
+                    contract.field_code,
+                    "被拒绝的来源不能作为选定来源。",
+                )
+    finish_check("selected_source_authorization", start, source_checked)
+
+    unique_issues = {
+        (item.code, item.field_code): item
+        for item in issues
+    }
+    sorted_issues = sorted(unique_issues.values(), key=lambda item: (item.code, item.field_code))
+    return TikTokMockValidationResult(
+        catalog_version=DATA_VALIDATION_CATALOG_VERSION,
+        dataset_digest=digest,
+        record_count=sum(len(records) for records in dataset.values()),
+        status="failed" if sorted_issues else "passed",
+        checks=checks,
+        issues=sorted_issues,
+    )
+
+
+def _value_matches_type(value: object, data_type: str) -> bool:
+    if data_type in {"string", "enum"}:
+        return isinstance(value, str)
+    if data_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if data_type == "boolean":
+        return isinstance(value, bool)
+    if data_type == "decimal":
+        try:
+            Decimal(str(value))
+        except (InvalidOperation, ValueError):
+            return False
+        return True
+    if data_type == "datetime":
+        return _parse_datetime(value) is not None
+    return False
+
+
+def _parse_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def run_mock_data_validation(db: Session, user: User) -> TikTokDataValidationRunRead:
+    """Run the fixed fixture and append one secret-free audit summary."""
+
+    ensure_tenant_admin(user.tenant_id, user)
+    contracts = list(
+        db.exec(
+            select(TikTokFieldContract).where(
+                TikTokFieldContract.tenant_id == user.tenant_id
+            )
+        ).all()
+    )
+    if {row.field_code for row in contracts} != set(FIELD_CODES):
+        raise TikTokDataValidationNotFound("catalog_entry_not_found")
+    result = validate_mock_dataset(
+        contracts=contracts,
+        dataset=MOCK_DATASET,
+        validation_clock=MOCK_VALIDATION_CLOCK,
+    )
+    scope = db.exec(
+        select(TikTokDataValidationScope).where(
+            TikTokDataValidationScope.tenant_id == user.tenant_id,
+            TikTokDataValidationScope.market == "US",
+        )
+    ).first()
+    evidence = list(
+        db.exec(
+            select(TikTokCapabilityEvidence).where(
+                TikTokCapabilityEvidence.tenant_id == user.tenant_id
+            )
+        ).all()
+    )
+    authorizations = list(
+        db.exec(
+            select(ExternalAuthorization).where(
+                ExternalAuthorization.tenant_id == user.tenant_id,
+                ExternalAuthorization.status == "active",
+            )
+        ).all()
+    )
+    run = TikTokDataValidationRun(
+        tenant_id=user.tenant_id,
+        mode="mock",
+        catalog_version=DATA_VALIDATION_CATALOG_VERSION,
+        dataset_digest=result.dataset_digest,
+        record_count=result.record_count,
+        status=result.status,
+        checks_json=[item.model_dump(mode="json") for item in result.checks],
+        issues_json=[item.model_dump(mode="json") for item in result.issues],
+        started_by_user_id=user.id,
+    )
+    readiness = evaluate_data_validation_readiness(
+        scope=scope,
+        field_contracts=contracts,
+        evidence=evidence,
+        latest_run=run,
+        active_authorizations=authorizations,
+        now=MOCK_VALIDATION_CLOCK,
+        has_recorded_or_real_validation=False,
+    )
+    run.workbench_ready_snapshot = readiness.workbench_ready
+    run.real_data_ready_snapshot = False
+    if run.real_data_ready_snapshot:
+        raise AssertionError("mock run cannot mark real data ready")
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    return TikTokDataValidationRunRead.model_validate(run)
 
 
 def get_data_validation_workspace(db: Session, user: User) -> TikTokDataValidationWorkspace:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from copy import deepcopy
 from datetime import UTC, datetime
 
 import pytest
@@ -19,15 +21,22 @@ from app.db.models import (
     User,
 )
 from app.tiktok.data_validation import (
+    CAPABILITY_CATALOG,
     DATA_VALIDATION_CATALOG_VERSION,
+    FIELD_CATALOG,
+    MOCK_DATASET,
+    MOCK_VALIDATION_CLOCK,
+    PROVIDER_CATALOG,
     TikTokDataValidationConflict,
     TikTokDataValidationNotFound,
     bootstrap_data_validation_workspace,
     evaluate_data_validation_readiness,
     get_data_validation_workspace,
+    run_mock_data_validation,
     update_capability_evidence,
     update_data_validation_scope,
     update_field_contract,
+    validate_mock_dataset,
 )
 from app.tiktok.schema import (
     TikTokCapabilityEvidenceUpdate,
@@ -547,3 +556,209 @@ def test_real_gate_rejects_subject_resource_scope_and_authorization_mismatch(
     assert (expected_code, "seller.shop.read") in {
         (item.code, item.target_code) for item in readiness.blockers
     }
+
+
+def _confirmed_field_contracts() -> list[TikTokFieldContract]:
+    return [
+        TikTokFieldContract(
+            tenant_id="tenant_a",
+            field_code=item.code,
+            domain=item.domain,
+            label=item.label,
+            data_type=item.data_type,
+            owner_user_id="admin_tenant_a",
+            business_key=item.business_key,
+            freshness_sla_seconds=86400 * 7,
+            missing_behavior="block_stage",
+            sources_json=[_source(f"mock.{item.code}").model_dump(mode="json")],
+            status="confirmed",
+        )
+        for item in FIELD_CATALOG
+    ]
+
+
+def test_mock_validation_detects_required_quality_failures_without_raw_values() -> None:
+    contracts = _confirmed_field_contracts()
+    dataset = deepcopy(MOCK_DATASET)
+    dataset["orders"].append(deepcopy(dataset["orders"][0]))
+    dataset["gmv"][0].pop("currency")
+    dataset["videos"][0]["product_id"] = "unknown-product"
+
+    result = validate_mock_dataset(
+        contracts=contracts,
+        dataset=dataset,
+        validation_clock=MOCK_VALIDATION_CLOCK,
+    )
+
+    codes = {issue.code for issue in result.issues}
+    assert {"duplicate_business_key", "required_field_missing", "pid_product_conflict"} <= codes
+    serialized = result.model_dump_json()
+    assert "unknown-product" not in serialized
+    assert "mock-order-001" not in serialized
+
+
+def test_mock_validation_is_deterministic_for_same_catalog_and_fixture() -> None:
+    first = validate_mock_dataset(
+        contracts=_confirmed_field_contracts(),
+        dataset=MOCK_DATASET,
+        validation_clock=MOCK_VALIDATION_CLOCK,
+    )
+    second = validate_mock_dataset(
+        contracts=_confirmed_field_contracts(),
+        dataset=MOCK_DATASET,
+        validation_clock=MOCK_VALIDATION_CLOCK,
+    )
+    assert first.status == "passed"
+    assert first.dataset_digest == second.dataset_digest
+    assert first.checks == second.checks
+    assert first.issues == second.issues
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_code"),
+    (
+        ("stale", "stale_record"),
+        ("amount", "invalid_amount"),
+        ("currency", "invalid_currency"),
+        ("window", "inverted_attribution_window"),
+        ("relationship", "broken_relationship"),
+        ("missing_key", "business_key_missing"),
+        ("denied_source", "selected_source_denied"),
+    ),
+)
+def test_mock_validation_detects_each_guardrail(case: str, expected_code: str) -> None:
+    contracts = _confirmed_field_contracts()
+    dataset = deepcopy(MOCK_DATASET)
+    if case == "stale":
+        dataset["orders"][0]["observed_at"] = "2026-01-01T00:00:00Z"
+    elif case == "amount":
+        dataset["gmv"][0]["amount"] = "-1.00"
+    elif case == "currency":
+        dataset["gmv"][0]["currency"] = "usd"
+    elif case == "window":
+        dataset["attribution"][0]["window_start"] = "2026-09-23T00:00:00Z"
+    elif case == "relationship":
+        dataset["logistics"][0]["order_id"] = "missing-order"
+    elif case == "missing_key":
+        dataset["orders"][0].pop("order_id")
+    else:
+        contracts[0].sources_json.append(
+            _source(
+                "vendor.sample.application",
+                usage="real",
+                decision="use",
+                authorization_state="denied",
+            ).model_dump(mode="json")
+        )
+
+    result = validate_mock_dataset(
+        contracts=contracts,
+        dataset=dataset,
+        validation_clock=MOCK_VALIDATION_CLOCK,
+    )
+    assert expected_code in {issue.code for issue in result.issues}
+
+
+def _fully_configured_workspace(db: Session, tenant_id: str) -> User:
+    admin = _seed_tenant(db, tenant_id)
+    bootstrap_data_validation_workspace(db, admin)
+    update_data_validation_scope(
+        db,
+        admin,
+        TikTokDataValidationScopeUpdate(
+            revision=0,
+            store_resource_id=f"store_{tenant_id}",
+            creator_scope_summary="US pilot creators",
+            business_owner_user_id=f"admin_{tenant_id}",
+            data_owner_user_id=f"member_{tenant_id}",
+            status="active",
+        ),
+    )
+    for item in FIELD_CATALOG:
+        update_field_contract(
+            db,
+            admin,
+            item.code,
+            TikTokFieldContractUpdate(
+                revision=1,
+                owner_user_id=admin.id,
+                business_key=item.business_key,
+                freshness_sla_seconds=86400 * 7,
+                missing_behavior="block_stage",
+                sources=[_source(f"mock.{item.code}")],
+                status="confirmed",
+            ),
+        )
+    checked_at = datetime(2026, 9, 21, tzinfo=UTC)
+    for item in CAPABILITY_CATALOG:
+        update_capability_evidence(
+            db,
+            admin,
+            item.code,
+            TikTokCapabilityEvidenceUpdate(
+                revision=1,
+                subject_key="global",
+                evidence_level="E1",
+                evidence_type="official_docs",
+                status="blocked",
+                summary="Reviewed and unavailable for the pilot",
+                evidence_ref="doc:review",
+                checked_by_user_id=admin.id,
+                checked_at=checked_at,
+            ),
+        )
+    for item in PROVIDER_CATALOG:
+        update_capability_evidence(
+            db,
+            admin,
+            item.code,
+            TikTokCapabilityEvidenceUpdate(
+                revision=1,
+                subject_key="global",
+                evidence_level="E1",
+                evidence_type="contract",
+                status="verified",
+                decision="defer",
+                summary="Reviewed and deferred",
+                evidence_ref="contract:review",
+                checked_by_user_id=admin.id,
+                checked_at=checked_at,
+            ),
+        )
+    return admin
+
+
+def test_mock_runs_are_appended_and_never_mark_real_data_ready() -> None:
+    with _session() as db:
+        admin = _fully_configured_workspace(db, "tenant_a")
+        first = run_mock_data_validation(db, admin)
+        second = run_mock_data_validation(db, admin)
+        runs = db.exec(
+            select(TikTokDataValidationRun)
+            .where(TikTokDataValidationRun.tenant_id == "tenant_a")
+            .order_by(TikTokDataValidationRun.created_at)
+        ).all()
+        assert len(runs) == 2
+        assert first.dataset_digest == second.dataset_digest
+        assert first.status == second.status == "passed"
+        assert first.real_data_ready_snapshot is False
+        assert second.real_data_ready_snapshot is False
+        serialized = json.dumps(
+            [{"checks": row.checks_json, "issues": row.issues_json} for row in runs],
+            ensure_ascii=False,
+        )
+        assert "mock-order-001" not in serialized
+        assert "mock-creator-001" not in serialized
+        assert get_data_validation_workspace(db, admin).readiness.workbench_ready is True
+
+
+def test_member_cannot_insert_mock_run() -> None:
+    with _session() as db:
+        _fully_configured_workspace(db, "tenant_a")
+        member = db.get(User, "member_tenant_a")
+        assert member is not None
+        before = len(db.exec(select(TikTokDataValidationRun)).all())
+        with pytest.raises(HTTPException) as denied:
+            run_mock_data_validation(db, member)
+        assert denied.value.status_code == 403
+        assert len(db.exec(select(TikTokDataValidationRun)).all()) == before

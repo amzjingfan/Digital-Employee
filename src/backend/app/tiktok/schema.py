@@ -436,3 +436,25 @@ class TikTokCapabilityEvidenceUpdate(BaseModel):
         ):
             raise ValueError("valid_until_must_follow_checked_at")
         return self
+
+
+class TikTokDataValidationCheck(BaseModel):
+    code: str
+    passed: bool
+    checked_count: int = Field(ge=0)
+
+
+class TikTokDataValidationIssue(BaseModel):
+    code: str
+    field_code: str
+    severity: Literal["warning", "error"]
+    detail: str
+
+
+class TikTokMockValidationResult(BaseModel):
+    catalog_version: str
+    dataset_digest: str
+    record_count: int
+    status: Literal["passed", "failed"]
+    checks: list[TikTokDataValidationCheck]
+    issues: list[TikTokDataValidationIssue]
