@@ -1,8 +1,17 @@
 # Current session handoff
 
-Last refreshed: 2026-09-18 (Asia/Shanghai)
+Last refreshed: 2026-09-22 (Asia/Shanghai)
 
 This file is mutable operational context. Re-check every process, port, branch, and test result before relying on it. It contains no credential values or connection strings.
+
+## TikTok P3-B0 data validation workbench planning gate (2026-09-22)
+
+- Active isolated worktree: `E:\develop\数字员工\joukir\.worktrees\tiktok-p3b0-validation`; branch `codex/tiktok-p3b0-validation`. The primary `main` worktree has unrelated uncommitted authentication/M2M/supervisor work and must remain untouched.
+- The user approved the written design at `docs/superpowers/specs/2026-09-22-tiktok-p3b0-data-validation-workbench-design.md`; design commit `bfa1cbd` contains only that spec, its docs index entry, and development-log evidence.
+- The implementation plan is at `docs/superpowers/plans/2026-09-22-tiktok-p3b0-data-validation-workbench.md`. It defines seven TDD tasks: persistence/RLS, catalog/bootstrap, guarded edits/readiness, deterministic Mock runs, API, frontend, and repository/browser verification. It is awaiting user review and selection of Native or Subagent-driven execution.
+- No business source, database schema, runtime configuration, secret, external authorization, or live service has been changed for P3-B0. The current pre-change TikTok focused baseline is 68 passing tests across 13 existing files; the repository-wide backend suite remains separately non-green as already documented.
+- The controlling safety boundary is unchanged: Mock/document/sandbox/login evidence cannot establish E3 or `real_data_ready`; the first release has no real/recorded validation input, so real data readiness must stay false.
+- Exact next action: after the user approves the plan and chooses an execution method, invoke the matching execution skill and begin Task 1 in this worktree. Do not start P3-B1 or real external connector work in this branch.
 
 ## Repository state
 
