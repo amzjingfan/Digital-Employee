@@ -1325,11 +1325,15 @@ def run_recorded_data_validation(
 
     ensure_tenant_admin(user.tenant_id, user)
     validation_now = now or utc_now()
+    # Keep every mutable readiness input stable until the append-only run commits.
+    # The fixed query order also keeps concurrent validation transactions deterministic.
     scope = db.exec(
-        select(TikTokDataValidationScope).where(
+        select(TikTokDataValidationScope)
+        .where(
             TikTokDataValidationScope.tenant_id == user.tenant_id,
             TikTokDataValidationScope.market == "US",
         )
+        .with_for_update(read=True)
     ).first()
     if scope is None:
         raise TikTokDataValidationNotFound("scope_not_found")
@@ -1340,20 +1344,23 @@ def run_recorded_data_validation(
 
     contracts = list(
         db.exec(
-            select(TikTokFieldContract).where(
-                TikTokFieldContract.tenant_id == user.tenant_id
-            )
+            select(TikTokFieldContract)
+            .where(TikTokFieldContract.tenant_id == user.tenant_id)
+            .order_by(TikTokFieldContract.field_code)
+            .with_for_update(read=True)
         ).all()
     )
     if {row.field_code for row in contracts} != set(FIELD_CODES):
         raise TikTokDataValidationNotFound("catalog_entry_not_found")
 
     approver = db.exec(
-        select(User).where(
+        select(User)
+        .where(
             User.tenant_id == user.tenant_id,
             User.id == request.approved_by_user_id,
             User.status == "active",
         )
+        .with_for_update(read=True)
     ).first()
     if approver is None:
         raise TikTokDataValidationNotFound("approver_not_found")
@@ -1370,17 +1377,24 @@ def run_recorded_data_validation(
     )
     evidence = list(
         db.exec(
-            select(TikTokCapabilityEvidence).where(
-                TikTokCapabilityEvidence.tenant_id == user.tenant_id
+            select(TikTokCapabilityEvidence)
+            .where(TikTokCapabilityEvidence.tenant_id == user.tenant_id)
+            .order_by(
+                TikTokCapabilityEvidence.entry_code,
+                TikTokCapabilityEvidence.subject_key,
             )
+            .with_for_update(read=True)
         ).all()
     )
     authorizations = list(
         db.exec(
-            select(ExternalAuthorization).where(
+            select(ExternalAuthorization)
+            .where(
                 ExternalAuthorization.tenant_id == user.tenant_id,
                 ExternalAuthorization.status == "active",
             )
+            .order_by(ExternalAuthorization.id)
+            .with_for_update(read=True)
         ).all()
     )
     latest_mock_run = _latest_validation_run(db, user.tenant_id, "mock")

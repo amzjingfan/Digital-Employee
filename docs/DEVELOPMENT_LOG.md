@@ -810,3 +810,30 @@
 - 集成方式：回到干净的 `main@5a34f63`，以 squash 方式整合 `codex/tiktok-p3b0-recorded-validation@96dccdc`，保持主干线性且不产生 merge commit。
 - 合并树验证：TikTok 后端矩阵 148 项通过；测试布局 1,219 路径通过；Ruff 通过；完整前端 67 文件/294 项、测试类型检查、i18n 4,297 条、配置检查和 2,166 模块生产构建通过。`STAFFDECK_RUN_POSTGRES_ACCEPTANCE` 仍未配置，未宣称真实 PostgreSQL 验收。
 - 下一步：提交 squash 结果后，将 `33e6ef7` 中的六个原主工作树改动恢复为未提交状态并保留安全分支；随后开始 recorded 管理员/成员浏览器验收。
+
+## 2026-09-22 — TikTok recorded 并发一致性加固（开始）
+
+- 目标：确保 recorded 回放从读取 scope/契约/审批/能力证据/有效授权到追加运行摘要期间使用一个可串行化的租户内快照，消除已知的并发陈旧提交窗口。
+- 范围：仅修改 TikTok 数据验证服务及聚焦后端测试；不新增表、迁移、API、界面、外部调用或外部写能力。
+- 设计：PostgreSQL 以固定顺序对当前 scope、30 个字段契约、独立审批人、能力证据和有效授权获取共享行锁，并在同一事务内完成校验、就绪计算与 append-only 运行提交；SQLite 保持兼容。
+- 验证：先写 PostgreSQL 锁意图、并发 scope/contract、审批失效和双租户隔离的失败用例，观察 RED 后再实现；最终运行完整 TikTok 聚焦矩阵、Ruff 和真实本地 PostgreSQL 验收。
+- 已知限制：主工作区保留用户未提交改动，因此本步骤在 `codex/tiktok-recorded-concurrency` 独立工作树执行；浏览器桥此前不可用，视觉验收在后端门禁通过后再试。
+
+
+## 2026-09-22 — TikTok recorded 并发一致性加固（完成）
+
+- 实现：`run_recorded_data_validation` 在同一事务内按 scope、字段契约、独立审批人、能力证据、有效授权的固定顺序获取 PostgreSQL `FOR SHARE` 锁；字段契约按 `field_code`、能力证据按 `entry_code/subject_key`、授权按 `id` 排序。校验、就绪快照和 append-only run 提交保持同一事务，SQLite 路径保持兼容。
+- RED→GREEN：新增行为测试实际调用 recorded 服务并捕获其 SQL。修复前预期 5 类共享锁、实际为 0，测试按预期失败；实现后识别 5 类锁并验证租户过滤和稳定顺序，单项测试通过且无警告。
+- 聚焦验证：recorded/数据验证 67 项通过；完整 TikTok 后端矩阵 149 项通过；测试布局守卫确认 1,219 个 tracked 路径；Ruff 对生产文件和测试通过。
+- 真实 PostgreSQL：使用受保护本地配置执行两个并发事务，scope、字段契约、独立审批人、能力证据的无值 UPDATE 均在 300 ms `lock_timeout` 内被 recorded 快照锁阻塞；探针事务全部回滚，新增持久验收记录为 0。当前租户没有 active authorization 行，因此授权锁由 SQL 行为测试覆盖，未伪造真实授权。
+- 仓库级基线：完整后端收集 2,381 项，结果为 2,334 passed、31 failed、11 skipped、5 errors；失败/错误集中在既有 advertising、channel、Feishu、general skills、Harness、runtime、tool 路径，没有 TikTok 节点。本次 149 项必需 TikTok 门禁保持全绿，未修改无关基线模块。
+- 自审：无 Critical 或 Important 发现。锁住当前 active authorization 可防止撤销导致错误正向快照；并发新增/激活授权仍可能让历史快照暂时偏保守，但不会产生错误的 `real_data_ready=true`，当前 workspace 读取会重新计算。
+- 下一步：提交并按仓库线性历史规则合入 `main`；浏览器桥恢复后补做管理员/成员视觉验收。P3-B1 仍需真实 E3、有效资产授权和 30 条业务记录对照。
+
+## 2026-09-22 — TikTok recorded 并发一致性线性整合（完成）
+
+- 整合：`codex/tiktok-recorded-concurrency@608ccce` 已以 squash 方式应用到 `main@c13dc9d` 的后继提交，未产生 merge commit；源分支与本地安全分支均保留且未推送。
+- 合并树验证：完整 TikTok 后端矩阵 149 项通过；测试布局守卫确认 1,219 个 tracked 路径；本次生产与测试 Python 文件 Ruff 通过；暂存差异检查通过。Pytest 仅提示无法写入项目 `.pytest_cache`，系统临时 `basetemp` 中的测试本身全部成功。
+- 范围：合并只包含 recorded 事务共享锁、稳定查询顺序、对应行为测试及开发记录；没有迁移、API、前端或外部调用变化。
+- 主工作区保护：合并前的七个未提交路径已保存到 `codex/preserve-main-before-concurrency-merge-20260922@bb9c9f2`；提交合并结果后将原样恢复为未提交状态。
+- 剩余风险与下一步：完整后端既有非 TikTok 基线仍非全绿；浏览器视觉验收、真实 E3/有效资产授权和 P3-B1 的 30 条业务记录对照仍待完成。

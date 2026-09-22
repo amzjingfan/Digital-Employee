@@ -4,6 +4,15 @@ Last refreshed: 2026-09-22 (Asia/Shanghai)
 
 This file is mutable operational context. Re-check every process, port, branch, and test result before relying on it. It contains no credential values or connection strings.
 
+## TikTok recorded concurrency hardening (2026-09-22)
+
+- `codex/tiktok-recorded-concurrency@608ccce` has been squash-applied to `main` after the merged tree passed the 149-test TikTok matrix, the 1,219-path layout guard, focused Ruff and staged diff checks. The source branch remains local and has not been pushed or deleted.
+- Implemented on `codex/tiktok-recorded-concurrency`, forked from `main@c13dc9d`. The recorded transaction now acquires tenant-scoped PostgreSQL `FOR SHARE` locks in a stable order across the active scope, all field contracts, the independent approver, capability evidence and active authorizations before computing and appending its immutable summary. No schema, migration, API, frontend or external-call surface changed.
+- TDD evidence: the new behavior test first observed zero of five required lock queries and failed, then passed after the minimal implementation. Recorded/data-validation tests passed 67/67; the full TikTok backend matrix passed 149/149; the 1,219-path layout guard and focused Ruff passed.
+- A live local PostgreSQL concurrency probe confirmed scope, contract, approver and evidence updates time out while the recorded snapshot transaction holds its locks. Every probe rolled back and persisted zero acceptance rows. No active authorization row was available, so that lock remains covered by emitted-SQL verification rather than a fabricated authorization.
+- The full backend baseline remains non-green: 2,334 passed, 31 failed, 11 skipped and 5 errors across unrelated advertising, channel, Feishu, general-skills, Harness, runtime and tool tests; no TikTok test failed.
+- Residual behavior is conservative: an authorization inserted or activated after the active-authorization query can make the historical snapshot temporarily false, never incorrectly true; current workspace readiness is recalculated on read. Browser visual acceptance and real E3/30-record business evidence remain outstanding.
+
 ## TikTok P3-B0 approved recorded-data validation implementation (2026-09-22)
 
 - Local integration resumed after the user authorized preserving the dirty main work. Those six paths are backed up unchanged on `codex/preserve-main-before-tiktok-merge-20260922@33e6ef7`; the TikTok branch was squash-integrated into `main` after the merged tree passed the same 148-test backend matrix, 1,219-path layout guard, Ruff, 67-file/294-test frontend suite, typecheck, i18n, config and production build. Neither source nor preservation branch was pushed or deleted. The recorded administrator/member browser acceptance remains the next implementation step.

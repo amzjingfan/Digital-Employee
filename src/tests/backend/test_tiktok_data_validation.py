@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
+from sqlalchemy import event
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -892,6 +894,51 @@ def test_recorded_run_persists_only_safe_summary_and_uses_replay_clock() -> None
         ]
         assert after_evidence == before_evidence
 
+
+def test_recorded_run_locks_every_mutable_readiness_input_in_stable_order() -> None:
+    with _session() as db:
+        admin = _fully_configured_workspace(db, "tenant_a")
+        executed = []
+
+        def capture_statement(_connection, clauseelement, *_args) -> None:
+            executed.append(clauseelement)
+
+        assert db.bind is not None
+        event.listen(db.bind, "before_execute", capture_statement)
+        try:
+            run_recorded_data_validation(
+                db,
+                admin,
+                _recorded_request("tenant_a"),
+                now=RECORDED_NOW,
+            )
+        finally:
+            event.remove(db.bind, "before_execute", capture_statement)
+
+        sql = [
+            str(
+                statement.compile(
+                    dialect=postgresql.dialect(),
+                )
+            )
+            for statement in executed
+            if hasattr(statement, "compile")
+        ]
+        locked = [statement for statement in sql if " FOR SHARE" in statement]
+
+        assert len(locked) == 5
+        assert "FROM tiktok_data_validation_scopes" in locked[0]
+        assert "FROM tiktok_field_contracts" in locked[1]
+        assert "ORDER BY tiktok_field_contracts.field_code" in locked[1]
+        assert "FROM users" in locked[2]
+        assert "FROM tiktok_capability_evidence" in locked[3]
+        assert (
+            "ORDER BY tiktok_capability_evidence.entry_code, "
+            "tiktok_capability_evidence.subject_key" in locked[3]
+        )
+        assert "FROM external_authorizations" in locked[4]
+        assert "ORDER BY external_authorizations.id" in locked[4]
+        assert all("tenant_id" in statement for statement in locked)
 
 def test_recorded_validation_marks_empty_required_collection_failed() -> None:
     with _session() as db:
