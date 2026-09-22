@@ -345,6 +345,20 @@ def test_evidence_level_type_combinations_are_strict(level: str, evidence_type: 
         )
 
 
+def test_e0_evidence_cannot_claim_verified_status() -> None:
+    with pytest.raises(ValidationError):
+        TikTokCapabilityEvidenceUpdate(
+            revision=1,
+            subject_key="global",
+            evidence_level="E0",
+            evidence_type="unverified",
+            status="verified",
+            summary="Claimed verified without evidence",
+            checked_by_user_id="admin_tenant_a",
+            checked_at=datetime(2026, 9, 22, tzinfo=UTC),
+        )
+
+
 def _configured_readiness_rows() -> tuple[
     TikTokDataValidationScope,
     list[TikTokFieldContract],

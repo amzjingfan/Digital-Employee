@@ -230,6 +230,18 @@ describe('TikTokDataValidationPanel', () => {
     expect(screen.getByRole('alert').textContent).toContain('revision_conflict');
   });
 
+  it('renders UTC evidence timestamps as browser-local datetime values', async () => {
+    const timezoneOffset = vi.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(-480);
+    try {
+      render(<TikTokDataValidationPanel currentUser={adminUser} />);
+
+      const checkedAt = await screen.findByLabelText('seller.orders.read 检查时间');
+      expect((checkedAt as HTMLInputElement).value).toBe('2026-09-22T08:00');
+    } finally {
+      timezoneOffset.mockRestore();
+    }
+  });
+
   it('saves capability evidence and provider decisions with their revisions', async () => {
     render(<TikTokDataValidationPanel currentUser={adminUser} />);
     await screen.findByText('能力证据与供应商决定');

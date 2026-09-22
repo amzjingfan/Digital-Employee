@@ -421,6 +421,8 @@ class TikTokCapabilityEvidenceUpdate(BaseModel):
         }
         if self.evidence_type not in accepted_types[self.evidence_level]:
             raise ValueError("evidence_level_type_mismatch")
+        if self.evidence_level == "E0" and self.status == "verified":
+            raise ValueError("unverified_evidence_cannot_be_verified")
         if self.status != "unverified" and (
             not self.summary.strip()
             or not self.checked_by_user_id
