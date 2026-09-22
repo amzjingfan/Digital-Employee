@@ -49,6 +49,8 @@ This file contains stable facts and working agreements. Read it with `SESSION_HA
 - Catalog version `p3-b0.v1` defines 30 field contracts, 27 action-level capabilities, and 4 provider decisions. Evidence belongs to an exact action; evidence for one endpoint, login, package, or Mock run never upgrades another action.
 - `workbench_ready` and `real_data_ready` are separate gates. A deterministic Mock run may satisfy the workbench run requirement, but real readiness also requires matching E3 `real_account` evidence plus a real or approved recorded-data validation. Mock, documentation, sandbox, or login evidence cannot satisfy that gate.
 - Validation storage and UI contain contracts, evidence metadata, check codes, counts, issue metadata, and fixture digests only. Raw fixtures, external response bodies, OAuth payloads, credentials, cookies, and token fingerprints remain outside this boundary.
+- Approved recorded validation accepts a browser-selected JSON request only within a 2 MiB actual-byte limit. It permits the six catalog collections, the current 30 business fields, and reserved `observed_at` validation metadata; rejects unknown/nested/sensitive-key and non-finite JSON input; and never persists the raw dataset, source filename, or value-level errors.
+- A recorded run requires an active same-tenant approver distinct from the executing administrator, timezone-aware approval/data-period metadata, and a sanitization attestation. It evaluates freshness against `replay_as_of`, stores the scope revision and contract digest, and becomes stale after scope, contract, catalog, or approval changes. Mock and recorded latest runs are selected independently; recorded success never upgrades action evidence to E3.
 
 ## Git history and repository workflow
 

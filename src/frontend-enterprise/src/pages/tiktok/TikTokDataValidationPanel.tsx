@@ -4,98 +4,8 @@ import { api } from '@/api/client';
 import type { EnterpriseAuthUser } from '@/auth';
 import { notify } from '@/components/ui/app-toast';
 import { Button } from '@/components/ui/button';
-
-type FieldSource = {
-  source_key: string;
-  source_type: string;
-  object_name: string;
-  field_path: string;
-  priority: number;
-  usage: 'mock' | 'real';
-  decision: 'use' | 'defer' | 'reject';
-  authorization_state: 'not_required' | 'unverified' | 'authorized' | 'denied';
-};
-
-type ValidationScope = {
-  id: string;
-  store_resource_id: string | null;
-  creator_scope_summary: string;
-  business_owner_user_id: string | null;
-  data_owner_user_id: string | null;
-  status: 'draft' | 'active' | 'closed';
-  revision: number;
-};
-
-type FieldContract = {
-  id: string;
-  tenant_id: string;
-  field_code: string;
-  domain: string;
-  label: string;
-  data_type: string;
-  required: boolean;
-  owner_user_id: string | null;
-  business_key: string;
-  freshness_sla_seconds: number | null;
-  missing_behavior: 'unknown' | 'manual_review' | 'block_stage' | 'not_applicable';
-  sources: FieldSource[];
-  status: 'draft' | 'confirmed' | 'blocked' | 'not_applicable';
-  revision: number;
-};
-
-type CapabilityEvidence = {
-  id: string;
-  tenant_id: string;
-  entry_code: string;
-  entry_kind: 'capability' | 'provider_decision';
-  platform_domain: string;
-  action: string;
-  direction: string;
-  subject_key: string;
-  resource_id: string | null;
-  required_scope: string;
-  endpoint_or_artifact: string;
-  api_version: string;
-  evidence_level: 'E0' | 'E1' | 'E2' | 'E3';
-  evidence_type: 'unverified' | 'official_docs' | 'contract' | 'mock' | 'sandbox' | 'approved_export' | 'real_account';
-  status: 'unverified' | 'verified' | 'blocked' | 'not_applicable';
-  decision: 'use' | 'defer' | 'reject' | null;
-  summary: string;
-  evidence_ref: string;
-  checked_by_user_id: string | null;
-  checked_at: string | null;
-  valid_until: string | null;
-  revision: number;
-};
-
-type ValidationRun = {
-  id: string;
-  catalog_version: string;
-  dataset_digest: string;
-  record_count: number;
-  status: 'passed' | 'failed';
-  workbench_ready_snapshot: boolean;
-  real_data_ready_snapshot: boolean;
-  checks: { code: string; passed: boolean; checked_count: number }[];
-  issues: { code: string; field_code: string; severity: string; detail: string }[];
-  created_at: string;
-};
-
-type Workspace = {
-  tenant_id: string;
-  catalog_version: string;
-  scope: ValidationScope | null;
-  readiness: {
-    workbench_ready: boolean;
-    real_data_ready: boolean;
-    blockers: { code: string; target_type: string; target_code: string; detail: string }[];
-  };
-  field_contracts: FieldContract[];
-  capability_evidence: CapabilityEvidence[];
-  recent_runs: ValidationRun[];
-  store_options: { id: string; label: string }[];
-  owner_options: { id: string; label: string }[];
-};
+import TikTokRecordedValidationForm from './TikTokRecordedValidationForm';
+import type { CapabilityEvidence, FieldContract, Workspace } from './dataValidationTypes';
 
 type ScopeDraft = {
   revision: number;
@@ -351,10 +261,18 @@ export default function TikTokDataValidationPanel({ currentUser }: { currentUser
         <EvidenceGroup title="供应商决定" rows={providers} drafts={evidenceDrafts} setDrafts={setEvidenceDrafts} owners={workspace.owner_options} isAdmin={isAdmin} busyKey={busyKey} onSave={saveEvidence} />
       </section>
 
-      <section className={sectionClass} aria-labelledby="mock-runs-heading">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 id="mock-runs-heading" className="m-0 text-[16px]">Mock 运行</h2><p className="mt-1 text-[12px] text-[#66708a]">只保存摘要、检查代码和问题元数据，不展示原始记录。</p></div>{isAdmin && <Button onClick={() => void runMock()} disabled={busyKey === 'mock-run'}>运行 Mock 校验</Button>}</div>
+      <section className={sectionClass} aria-labelledby="validation-runs-heading">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 id="validation-runs-heading" className="m-0 text-[16px]">验证运行</h2><p className="mt-1 text-[12px] text-[#66708a]">只保存摘要、检查代码和问题元数据，不展示原始记录。</p></div>{isAdmin && <Button onClick={() => void runMock()} disabled={busyKey === 'mock-run'}>运行 Mock 校验</Button>}</div>
+        {isAdmin && (
+          <TikTokRecordedValidationForm
+            currentUserId={currentUser.id}
+            scope={workspace.scope}
+            ownerOptions={workspace.owner_options}
+            onCompleted={load}
+          />
+        )}
         <div className="mt-3 grid gap-2">
-          {workspace.recent_runs.map((run) => <div key={run.id} className="rounded-xl bg-[#f7f8fa] px-3 py-3 text-[12px]"><strong>{run.status === 'passed' ? '通过' : '失败'}</strong> · {run.record_count} 条 · {run.catalog_version}<div className="mt-1 text-[#66708a]">{run.checks.map((check) => `${check.code}: ${check.passed ? '通过' : '失败'} (${check.checked_count})`).join(' · ')}</div>{run.issues.length > 0 && <div className="mt-1 text-[#b42318]">{run.issues.map((issue) => `${issue.code}/${issue.field_code}`).join(' · ')}</div>}</div>)}
+          {workspace.recent_runs.map((run) => <div key={run.id} className="rounded-xl bg-[#f7f8fa] px-3 py-3 text-[12px]"><span className="mr-2 rounded bg-[#eef2ff] px-2 py-0.5 text-[#315efb]">{run.mode === 'recorded' ? '录制回放' : 'Mock'}</span><strong>{run.status === 'passed' ? '通过' : '失败'}</strong> · {run.record_count} 条 · {run.catalog_version}{run.mode === 'recorded' && <div className="mt-1 text-[#66708a]">审批引用：{run.approval_ref || '—'} · 审批有效期：{run.approval_valid_until || '—'}</div>}<div className="mt-1 text-[#66708a]">{run.checks.map((check) => `${check.code}: ${check.passed ? '通过' : '失败'} (${check.checked_count})`).join(' · ')}</div>{run.issues.length > 0 && <div className="mt-1 text-[#b42318]">{run.issues.map((issue) => `${issue.code}/${issue.field_code}`).join(' · ')}</div>}</div>)}
           {workspace.recent_runs.length === 0 && <span className="text-[12px] text-[#858b9c]">尚无运行记录</span>}
         </div>
       </section>

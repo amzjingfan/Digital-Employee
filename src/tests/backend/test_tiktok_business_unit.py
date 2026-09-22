@@ -171,8 +171,8 @@ def test_tiktok_production_readiness_does_not_count_mock_authorization(
     assert gates["agent_releases"].status == "waiting"
     assert gates["shadow_run"].status == "waiting"
     assert gates["external_writes"].status == "passed"
-    assert "29 条冻结路由" in gates["external_writes"].detail
-    assert "13 个 TikTok Python 文件" in gates["external_writes"].detail
+    assert "30 条冻结路由" in gates["external_writes"].detail
+    assert "14 个 TikTok Python 文件" in gates["external_writes"].detail
 
 
 def test_tiktok_production_readiness_blocks_when_live_write_audit_fails(

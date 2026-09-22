@@ -33,16 +33,20 @@ from app.tiktok.data_validation import (
     evaluate_data_validation_readiness,
     get_data_validation_workspace,
     run_mock_data_validation,
+    run_recorded_data_validation,
     update_capability_evidence,
     update_data_validation_scope,
     update_field_contract,
+    validate_data_validation_dataset,
     validate_mock_dataset,
 )
+from app.tiktok.recorded_validation import compute_contract_digest
 from app.tiktok.schema import (
     TikTokCapabilityEvidenceUpdate,
     TikTokDataValidationScopeUpdate,
     TikTokFieldContractUpdate,
     TikTokFieldSource,
+    TikTokRecordedValidationRequest,
 )
 
 
@@ -460,10 +464,11 @@ def test_configured_workspace_is_ready_but_mock_never_makes_real_data_ready() ->
         scope=scope,
         field_contracts=contracts,
         evidence=entries,
-        latest_run=passed_run,
+        latest_mock_run=passed_run,
+        latest_recorded_run=None,
+        current_contract_digest=compute_contract_digest(contracts),
         active_authorizations=[],
         now=datetime(2026, 9, 22, tzinfo=UTC),
-        has_recorded_or_real_validation=False,
     )
     assert readiness.workbench_ready is True
     assert readiness.real_data_ready is False
@@ -494,10 +499,11 @@ def test_e3_is_action_specific_and_requires_matching_unexpired_authorization() -
         scope=scope,
         field_contracts=contracts,
         evidence=entries,
-        latest_run=passed_run,
+        latest_mock_run=passed_run,
+        latest_recorded_run=None,
+        current_contract_digest=compute_contract_digest(contracts),
         active_authorizations=[authorization],
         now=datetime(2026, 9, 22, tzinfo=UTC),
-        has_recorded_or_real_validation=False,
     )
     blockers = {(item.code, item.target_code) for item in readiness.blockers}
     assert ("capability_e3_missing", "affiliate.orders.read") in blockers
@@ -508,10 +514,11 @@ def test_e3_is_action_specific_and_requires_matching_unexpired_authorization() -
         scope=scope,
         field_contracts=contracts,
         evidence=entries,
-        latest_run=passed_run,
+        latest_mock_run=passed_run,
+        latest_recorded_run=None,
+        current_contract_digest=compute_contract_digest(contracts),
         active_authorizations=[authorization],
         now=datetime(2026, 9, 22, tzinfo=UTC),
-        has_recorded_or_real_validation=False,
     )
     assert ("capability_evidence_expired", "seller.shop.read") in {
         (item.code, item.target_code) for item in expired.blockers
@@ -562,10 +569,11 @@ def test_real_gate_rejects_subject_resource_scope_and_authorization_mismatch(
         scope=scope,
         field_contracts=contracts,
         evidence=entries,
-        latest_run=passed_run,
+        latest_mock_run=passed_run,
+        latest_recorded_run=None,
+        current_contract_digest=compute_contract_digest(contracts),
         active_authorizations=auth_rows,
         now=datetime(2026, 9, 22, tzinfo=UTC),
-        has_recorded_or_real_validation=False,
     )
     assert (expected_code, "seller.shop.read") in {
         (item.code, item.target_code) for item in readiness.blockers
@@ -778,3 +786,318 @@ def test_member_cannot_insert_mock_run() -> None:
             run_mock_data_validation(db, member)
         assert denied.value.status_code == 403
         assert len(db.exec(select(TikTokDataValidationRun)).all()) == before
+
+
+RECORDED_NOW = datetime(2026, 9, 29, 12, tzinfo=UTC)
+
+
+def _recorded_request(
+    tenant_id: str,
+    *,
+    scope_revision: int = 1,
+    dataset: dict[str, list[dict[str, object]]] | None = None,
+) -> TikTokRecordedValidationRequest:
+    recorded_dataset = deepcopy(dataset or MOCK_DATASET)
+    for row in recorded_dataset["attribution"]:
+        row.pop("product_id", None)
+    return TikTokRecordedValidationRequest.model_validate(
+        {
+            "scope_revision": scope_revision,
+            "source_label": "approved-sanitized-export",
+            "approval_ref": "approval:recorded-001",
+            "approved_by_user_id": f"member_{tenant_id}",
+            "approved_at": "2026-09-22T01:00:00Z",
+            "approval_valid_until": "2026-10-02T00:00:00Z",
+            "data_period_start": "2026-09-20T00:00:00Z",
+            "data_period_end": "2026-09-21T23:30:00Z",
+            "replay_as_of": "2026-09-22T00:00:00Z",
+            "sanitization_attested": True,
+            "dataset": recorded_dataset,
+        }
+    )
+
+
+def _recorded_run_row(
+    *,
+    tenant_id: str,
+    scope: TikTokDataValidationScope,
+    approver_id: str,
+    contract_digest: str,
+    run_id: str,
+    status: str,
+    created_at: datetime,
+    catalog_version: str = DATA_VALIDATION_CATALOG_VERSION,
+    approval_valid_until: datetime = datetime(2026, 10, 2, tzinfo=UTC),
+) -> TikTokDataValidationRun:
+    return TikTokDataValidationRun(
+        id=run_id,
+        tenant_id=tenant_id,
+        mode="recorded",
+        catalog_version=catalog_version,
+        dataset_digest="sha256:recorded",
+        record_count=6,
+        status=status,
+        started_by_user_id=f"admin_{tenant_id}",
+        source_label="approved-sanitized-export",
+        approval_ref="approval:recorded-001",
+        approved_by_user_id=approver_id,
+        approved_at=datetime(2026, 9, 22, 1, tzinfo=UTC),
+        approval_valid_until=approval_valid_until,
+        data_period_start=datetime(2026, 9, 20, tzinfo=UTC),
+        data_period_end=datetime(2026, 9, 21, 23, 30, tzinfo=UTC),
+        replay_as_of=datetime(2026, 9, 22, tzinfo=UTC),
+        scope_id=scope.id,
+        scope_revision=scope.revision,
+        contract_digest=contract_digest,
+        attestation_version="p3-b0-recorded.v1",
+        created_at=created_at,
+    )
+
+
+def test_recorded_run_persists_only_safe_summary_and_uses_replay_clock() -> None:
+    with _session() as db:
+        admin = _fully_configured_workspace(db, "tenant_a")
+        before_evidence = [
+            row.model_dump()
+            for row in db.exec(
+                select(TikTokCapabilityEvidence).where(
+                    TikTokCapabilityEvidence.tenant_id == "tenant_a"
+                )
+            ).all()
+        ]
+        dataset = deepcopy(MOCK_DATASET)
+        dataset["orders"][0]["status"] = "synthetic-order-value"
+
+        run = run_recorded_data_validation(
+            db,
+            admin,
+            _recorded_request("tenant_a", dataset=dataset),
+            now=RECORDED_NOW,
+        )
+
+        assert run.mode == "recorded"
+        assert run.status == "passed"
+        assert run.approved_by_user_id == "member_tenant_a"
+        assert run.replay_as_of.replace(tzinfo=UTC) == datetime(2026, 9, 22, tzinfo=UTC)
+        serialized = run.model_dump_json()
+        assert "synthetic-order-value" not in serialized
+        assert "dataset" not in run.model_dump()
+        after_evidence = [
+            row.model_dump()
+            for row in db.exec(
+                select(TikTokCapabilityEvidence).where(
+                    TikTokCapabilityEvidence.tenant_id == "tenant_a"
+                )
+            ).all()
+        ]
+        assert after_evidence == before_evidence
+
+
+def test_recorded_validation_marks_empty_required_collection_failed() -> None:
+    with _session() as db:
+        admin = _fully_configured_workspace(db, "tenant_a")
+        dataset = deepcopy(MOCK_DATASET)
+        dataset["orders"] = []
+
+        run = run_recorded_data_validation(
+            db,
+            admin,
+            _recorded_request("tenant_a", dataset=dataset),
+            now=RECORDED_NOW,
+        )
+
+        assert run.status == "failed"
+        assert "required_collection_empty" in {item["code"] for item in run.issues}
+
+
+def test_recorded_approver_must_be_active_same_tenant_and_separate() -> None:
+    with _session() as db:
+        admin_a = _fully_configured_workspace(db, "tenant_a")
+        _seed_tenant(db, "tenant_b")
+
+        cross_tenant = _recorded_request("tenant_a").model_copy(
+            update={"approved_by_user_id": "member_tenant_b"}
+        )
+        with pytest.raises(TikTokDataValidationNotFound, match="approver_not_found"):
+            run_recorded_data_validation(db, admin_a, cross_tenant, now=RECORDED_NOW)
+
+        member = db.get(User, "member_tenant_a")
+        assert member is not None
+        member.status = "inactive"
+        db.add(member)
+        db.commit()
+        with pytest.raises(TikTokDataValidationNotFound, match="approver_not_found"):
+            run_recorded_data_validation(
+                db, admin_a, _recorded_request("tenant_a"), now=RECORDED_NOW
+            )
+
+        member.status = "active"
+        db.add(member)
+        db.commit()
+        self_approved = _recorded_request("tenant_a").model_copy(
+            update={"approved_by_user_id": admin_a.id}
+        )
+        with pytest.raises(TikTokDataValidationConflict, match="approval_separation_required"):
+            run_recorded_data_validation(db, admin_a, self_approved, now=RECORDED_NOW)
+
+        assert db.exec(select(TikTokDataValidationRun)).all() == []
+
+
+def test_recorded_run_rechecks_scope_revision_and_catalog_before_insert() -> None:
+    with _session() as db:
+        admin = _fully_configured_workspace(db, "tenant_a")
+        scope = db.exec(
+            select(TikTokDataValidationScope).where(
+                TikTokDataValidationScope.tenant_id == "tenant_a"
+            )
+        ).one()
+        request = _recorded_request("tenant_a", scope_revision=scope.revision)
+        scope.revision += 1
+        db.add(scope)
+        db.commit()
+
+        with pytest.raises(TikTokDataValidationConflict, match="scope_revision_conflict"):
+            run_recorded_data_validation(db, admin, request, now=RECORDED_NOW)
+        assert db.exec(select(TikTokDataValidationRun)).all() == []
+
+        request = _recorded_request("tenant_a", scope_revision=scope.revision)
+        contract = db.exec(
+            select(TikTokFieldContract).where(
+                TikTokFieldContract.tenant_id == "tenant_a"
+            )
+        ).first()
+        assert contract is not None
+        db.delete(contract)
+        db.commit()
+        with pytest.raises(TikTokDataValidationNotFound, match="catalog_entry_not_found"):
+            run_recorded_data_validation(db, admin, request, now=RECORDED_NOW)
+        assert db.exec(select(TikTokDataValidationRun)).all() == []
+
+
+def test_latest_recorded_failure_wins_stable_tie_break() -> None:
+    with _session() as db:
+        admin = _fully_configured_workspace(db, "tenant_a")
+        run_mock_data_validation(db, admin)
+        scope = db.exec(
+            select(TikTokDataValidationScope).where(
+                TikTokDataValidationScope.tenant_id == "tenant_a"
+            )
+        ).one()
+        contracts = db.exec(
+            select(TikTokFieldContract).where(
+                TikTokFieldContract.tenant_id == "tenant_a"
+            )
+        ).all()
+        digest = compute_contract_digest(contracts)
+        created_at = datetime(2026, 9, 22, 2, tzinfo=UTC)
+        db.add(
+            _recorded_run_row(
+                tenant_id="tenant_a",
+                scope=scope,
+                approver_id="member_tenant_a",
+                contract_digest=digest,
+                run_id="run-a",
+                status="passed",
+                created_at=created_at,
+            )
+        )
+        db.add(
+            _recorded_run_row(
+                tenant_id="tenant_a",
+                scope=scope,
+                approver_id="member_tenant_a",
+                contract_digest=digest,
+                run_id="run-b",
+                status="failed",
+                created_at=created_at,
+            )
+        )
+        db.commit()
+
+        workspace = get_data_validation_workspace(db, admin)
+        assert "latest_recorded_validation_failed" in {
+            item.code for item in workspace.readiness.blockers
+        }
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_code"),
+    (
+        ("scope", "recorded_validation_scope_stale"),
+        ("contract", "recorded_validation_contract_stale"),
+        ("catalog", "recorded_validation_catalog_stale"),
+        ("approval", "recorded_validation_approval_expired"),
+    ),
+)
+def test_recorded_readiness_invalidates_changed_or_expired_evidence(
+    mutation: str, expected_code: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with _session() as db:
+        admin = _fully_configured_workspace(db, "tenant_a")
+        run_mock_data_validation(db, admin)
+        run_recorded_data_validation(
+            db, admin, _recorded_request("tenant_a"), now=RECORDED_NOW
+        )
+        run = db.exec(
+            select(TikTokDataValidationRun).where(
+                TikTokDataValidationRun.mode == "recorded"
+            )
+        ).one()
+        if mutation == "scope":
+            scope = db.get(TikTokDataValidationScope, run.scope_id)
+            assert scope is not None
+            scope.revision += 1
+            db.add(scope)
+        elif mutation == "contract":
+            contract = db.exec(select(TikTokFieldContract)).first()
+            assert contract is not None
+            contract.freshness_sla_seconds += 1
+            contract.revision += 1
+            db.add(contract)
+        elif mutation == "catalog":
+            run.catalog_version = "p3-b0.outdated"
+            db.add(run)
+        else:
+            run.approval_valid_until = datetime(2026, 9, 29, 11, tzinfo=UTC)
+            db.add(run)
+        db.commit()
+        monkeypatch.setattr(
+            "app.tiktok.data_validation.utc_now",
+            lambda: RECORDED_NOW,
+        )
+
+        workspace = get_data_validation_workspace(db, admin)
+        assert expected_code in {item.code for item in workspace.readiness.blockers}
+
+
+def test_identical_pseudonymous_keys_remain_tenant_scoped() -> None:
+    with _session() as db:
+        admin_a = _fully_configured_workspace(db, "tenant_a")
+        admin_b = _fully_configured_workspace(db, "tenant_b")
+
+        run_a = run_recorded_data_validation(
+            db, admin_a, _recorded_request("tenant_a"), now=RECORDED_NOW
+        )
+        run_b = run_recorded_data_validation(
+            db, admin_b, _recorded_request("tenant_b"), now=RECORDED_NOW
+        )
+
+        assert run_a.tenant_id == "tenant_a"
+        assert run_b.tenant_id == "tenant_b"
+        assert run_a.dataset_digest == run_b.dataset_digest
+        assert len(db.exec(select(TikTokDataValidationRun)).all()) == 2
+
+
+def test_general_validator_keeps_mock_wrapper_compatible() -> None:
+    contracts = _confirmed_field_contracts()
+    direct = validate_data_validation_dataset(
+        contracts=contracts,
+        dataset=MOCK_DATASET,
+        validation_clock=MOCK_VALIDATION_CLOCK,
+    )
+    wrapped = validate_mock_dataset(
+        contracts=contracts,
+        dataset=MOCK_DATASET,
+        validation_clock=MOCK_VALIDATION_CLOCK,
+    )
+    assert direct == wrapped

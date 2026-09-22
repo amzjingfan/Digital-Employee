@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class TikTokRoleRead(BaseModel):
@@ -322,6 +322,18 @@ class TikTokDataValidationRunRead(BaseModel):
     checks: list[dict[str, Any]] = Field(validation_alias="checks_json")
     issues: list[dict[str, Any]] = Field(validation_alias="issues_json")
     started_by_user_id: str
+    source_label: str | None = None
+    approval_ref: str | None = None
+    approved_by_user_id: str | None = None
+    approved_at: datetime | None = None
+    approval_valid_until: datetime | None = None
+    data_period_start: datetime | None = None
+    data_period_end: datetime | None = None
+    replay_as_of: datetime | None = None
+    scope_id: str | None = None
+    scope_revision: int | None = None
+    contract_digest: str | None = None
+    attestation_version: str | None = None
     created_at: datetime
 
 
@@ -439,6 +451,128 @@ class TikTokCapabilityEvidenceUpdate(BaseModel):
             raise ValueError("valid_until_must_follow_checked_at")
         return self
 
+
+class TikTokRecordedSampleRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    application_id: Any | None = None
+    creator_id: Any | None = None
+    product_id: Any | None = None
+    status: Any | None = None
+    applied_at: Any | None = None
+    fulfillment_due_at: Any | None = None
+    observed_at: Any | None = None
+
+
+class TikTokRecordedOrderRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    order_id: Any | None = None
+    creator_id: Any | None = None
+    product_id: Any | None = None
+    status: Any | None = None
+    created_at: Any | None = None
+    completed_at: Any | None = None
+    observed_at: Any | None = None
+
+
+class TikTokRecordedLogisticsRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    order_id: Any | None = None
+    tracking_number: Any | None = None
+    status: Any | None = None
+    occurred_at: Any | None = None
+    observed_at: Any | None = None
+
+
+class TikTokRecordedVideoRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    video_id: Any | None = None
+    creator_id: Any | None = None
+    product_id: Any | None = None
+    published_at: Any | None = None
+    view_count: Any | None = None
+    like_count: Any | None = None
+    observed_at: Any | None = None
+
+
+class TikTokRecordedAttributionRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pid: Any | None = None
+    order_id: Any | None = None
+    window_start: Any | None = None
+    window_end: Any | None = None
+    observed_at: Any | None = None
+
+
+class TikTokRecordedGmvRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    order_id: Any | None = None
+    amount: Any | None = None
+    currency: Any | None = None
+    occurred_at: Any | None = None
+    observed_at: Any | None = None
+
+
+class TikTokRecordedDataset(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    samples: list[TikTokRecordedSampleRow]
+    orders: list[TikTokRecordedOrderRow]
+    logistics: list[TikTokRecordedLogisticsRow]
+    videos: list[TikTokRecordedVideoRow]
+    attribution: list[TikTokRecordedAttributionRow]
+    gmv: list[TikTokRecordedGmvRow]
+
+
+class TikTokRecordedValidationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scope_revision: int = Field(ge=1)
+    source_label: str = Field(min_length=1, max_length=160)
+    approval_ref: str = Field(min_length=1, max_length=200)
+    approved_by_user_id: str = Field(min_length=1, max_length=160)
+    approved_at: datetime
+    approval_valid_until: datetime
+    data_period_start: datetime
+    data_period_end: datetime
+    replay_as_of: datetime
+    sanitization_attested: Literal[True]
+    dataset: TikTokRecordedDataset
+
+    @field_validator("source_label", "approval_ref", "approved_by_user_id", mode="before")
+    @classmethod
+    def strip_audit_identity(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                raise ValueError("recorded_audit_identity_required")
+        return value
+
+    @model_validator(mode="after")
+    def validate_recorded_times(self) -> TikTokRecordedValidationRequest:
+        values = (
+            self.data_period_start,
+            self.data_period_end,
+            self.replay_as_of,
+            self.approved_at,
+            self.approval_valid_until,
+        )
+        if any(value.utcoffset() is None for value in values):
+            raise ValueError("recorded_timezone_required")
+        if not (
+            self.data_period_start
+            <= self.data_period_end
+            <= self.replay_as_of
+            <= self.approved_at
+            < self.approval_valid_until
+        ):
+            raise ValueError("recorded_time_order_invalid")
+        return self
 
 class TikTokDataValidationCheck(BaseModel):
     code: str

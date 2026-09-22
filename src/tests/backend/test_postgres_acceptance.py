@@ -562,3 +562,78 @@ def test_tiktok_data_validation_tables_enforce_rls_and_append_only_runs() -> Non
             savepoint.rollback()
         finally:
             transaction.rollback()
+
+
+def test_tiktok_recorded_validation_enforces_approval_and_append_only() -> None:
+    suffix = uuid4().hex[:12]
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            connection.execute(text("SELECT set_config('app.tenant_id', 'tenant_demo', true)"))
+            users = connection.execute(
+                text("SELECT id FROM users WHERE tenant_id='tenant_demo' ORDER BY id LIMIT 2")
+            ).scalars().all()
+            if len(users) < 2:
+                pytest.skip("recorded validation acceptance requires two tenant users")
+            scope = connection.execute(
+                text(
+                    "SELECT id, revision FROM tiktok_data_validation_scopes "
+                    "WHERE tenant_id='tenant_demo' AND market='US' LIMIT 1"
+                )
+            ).first()
+            if scope is None:
+                scope_id = f"tiktok_dv_scope_accept_{suffix}"
+                scope_revision = 1
+                connection.execute(
+                    text(
+                        "INSERT INTO tiktok_data_validation_scopes "
+                        "(id, tenant_id, market, creator_scope_summary, status, revision, "
+                        "created_at, updated_at) VALUES "
+                        "(:id, 'tenant_demo', 'US', '', 'draft', 1, now(), now())"
+                    ),
+                    {"id": scope_id},
+                )
+            else:
+                scope_id, scope_revision = scope
+            params = {
+                "id": f"tiktok_recorded_accept_{suffix}",
+                "digest": f"sha256:recorded-{suffix}",
+                "starter": users[0],
+                "approver": users[1],
+                "scope_id": scope_id,
+                "scope_revision": scope_revision,
+            }
+            insert_sql = text(
+                "INSERT INTO tiktok_data_validation_runs "
+                "(id, tenant_id, mode, catalog_version, dataset_digest, record_count, "
+                "status, workbench_ready_snapshot, real_data_ready_snapshot, checks_json, "
+                "issues_json, started_by_user_id, source_label, approval_ref, "
+                "approved_by_user_id, approved_at, approval_valid_until, data_period_start, "
+                "data_period_end, replay_as_of, scope_id, scope_revision, contract_digest, "
+                "attestation_version, created_at) VALUES "
+                "(:id, 'tenant_demo', 'recorded', 'p3-b0.v1', :digest, 6, 'passed', "
+                "false, false, '[]'::jsonb, '[]'::jsonb, :starter, 'approved-export', "
+                "'APPROVAL-ACCEPTANCE', :approver, now() - interval '1 hour', "
+                "now() + interval '1 day', now() - interval '3 days', "
+                "now() - interval '2 days', now() - interval '2 hours', :scope_id, "
+                ":scope_revision, 'sha256:contract', 'p3-b0-recorded.v1', now())"
+            )
+            connection.execute(insert_sql, params)
+
+            invalid = connection.begin_nested()
+            with pytest.raises(DBAPIError):
+                connection.execute(
+                    insert_sql,
+                    {**params, "id": f"invalid_{params['id']}", "approver": users[0]},
+                )
+            invalid.rollback()
+
+            immutable = connection.begin_nested()
+            with pytest.raises(DBAPIError, match="append-only"):
+                connection.execute(
+                    text("UPDATE tiktok_data_validation_runs SET status='failed' WHERE id=:id"),
+                    {"id": params["id"]},
+                )
+            immutable.rollback()
+        finally:
+            transaction.rollback()

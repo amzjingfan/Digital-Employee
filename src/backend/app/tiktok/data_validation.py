@@ -20,6 +20,11 @@ from app.db.models import (
     utc_now,
 )
 from app.security.permissions import ensure_tenant_admin
+from app.tiktok.recorded_validation import (
+    ATTESTATION_VERSION,
+    compute_contract_digest,
+    normalize_recorded_dataset,
+)
 from app.tiktok.schema import (
     TikTokCapabilityEvidenceRead,
     TikTokCapabilityEvidenceUpdate,
@@ -37,6 +42,7 @@ from app.tiktok.schema import (
     TikTokFieldContractUpdate,
     TikTokFieldSource,
     TikTokMockValidationResult,
+    TikTokRecordedValidationRequest,
 )
 
 DATA_VALIDATION_CATALOG_VERSION = "p3-b0.v1"
@@ -364,10 +370,11 @@ def evaluate_data_validation_readiness(
     scope: TikTokDataValidationScope | None,
     field_contracts: Sequence[TikTokFieldContract],
     evidence: Sequence[TikTokCapabilityEvidence],
-    latest_run: TikTokDataValidationRun | None,
+    latest_mock_run: TikTokDataValidationRun | None,
+    latest_recorded_run: TikTokDataValidationRun | None,
+    current_contract_digest: str,
     active_authorizations: Sequence[ExternalAuthorization],
     now: datetime,
-    has_recorded_or_real_validation: bool,
 ) -> TikTokDataValidationReadiness:
     """Evaluate configuration and real-data gates without inferring cross-action evidence."""
 
@@ -612,22 +619,22 @@ def evaluate_data_validation_readiness(
                 "供应商决定缺少结论、理由、检查人或检查时间。",
             )
 
-    if latest_run is None:
+    if latest_mock_run is None:
         add(workbench_blockers, "mock_run_missing", "run", "latest", "尚无 Mock 校验运行。")
     elif (
-        latest_run.status != "passed"
-        or latest_run.catalog_version != DATA_VALIDATION_CATALOG_VERSION
-        or not latest_run.dataset_digest.startswith("sha256:")
+        latest_mock_run.status != "passed"
+        or latest_mock_run.catalog_version != DATA_VALIDATION_CATALOG_VERSION
+        or not latest_mock_run.dataset_digest.startswith("sha256:")
     ):
         add(
             workbench_blockers,
             "mock_run_not_current_or_failed",
             "run",
-            latest_run.id,
+            latest_mock_run.id,
             "最近 Mock 运行未通过当前目录版本。",
         )
 
-    if not has_recorded_or_real_validation:
+    if latest_recorded_run is None:
         add(
             real_blockers,
             "recorded_or_real_validation_missing",
@@ -635,6 +642,55 @@ def evaluate_data_validation_readiness(
             DATA_VALIDATION_CATALOG_VERSION,
             "尚无真实数据或经批准的脱敏录制回放验证。",
         )
+    else:
+        recorded_target = latest_recorded_run.id
+        if latest_recorded_run.status != "passed":
+            add(
+                real_blockers,
+                "latest_recorded_validation_failed",
+                "run",
+                recorded_target,
+                "最近录制回放验证未通过。",
+            )
+        if (
+            scope is None
+            or latest_recorded_run.scope_id != scope.id
+            or latest_recorded_run.scope_revision != scope.revision
+        ):
+            add(
+                real_blockers,
+                "recorded_validation_scope_stale",
+                "run",
+                recorded_target,
+                "录制回放验证所用范围已变化。",
+            )
+        if latest_recorded_run.contract_digest != current_contract_digest:
+            add(
+                real_blockers,
+                "recorded_validation_contract_stale",
+                "run",
+                recorded_target,
+                "录制回放验证所用字段契约已变化。",
+            )
+        if (
+            latest_recorded_run.approval_valid_until is None
+            or _time_at_or_before(latest_recorded_run.approval_valid_until, now)
+        ):
+            add(
+                real_blockers,
+                "recorded_validation_approval_expired",
+                "run",
+                recorded_target,
+                "录制回放审批已失效。",
+            )
+        if latest_recorded_run.catalog_version != DATA_VALIDATION_CATALOG_VERSION:
+            add(
+                real_blockers,
+                "recorded_validation_catalog_stale",
+                "run",
+                recorded_target,
+                "录制回放验证所用目录版本已变化。",
+            )
 
     workbench_ready = not workbench_blockers
     blockers = _deduplicate_and_sort_blockers([*workbench_blockers, *real_blockers])
@@ -872,13 +928,13 @@ def _require_active_tenant_user(
     return row
 
 
-def validate_mock_dataset(
+def validate_data_validation_dataset(
     *,
     contracts: Sequence[TikTokFieldContract],
     dataset: Mapping[str, list[dict[str, object]]],
     validation_clock: datetime,
 ) -> TikTokMockValidationResult:
-    """Validate normalized mock records without returning any source value."""
+    """Validate normalized records without returning any source value."""
 
     canonical = json.dumps(
         {"catalog_version": DATA_VALIDATION_CATALOG_VERSION, "dataset": dataset},
@@ -920,6 +976,19 @@ def validate_mock_dataset(
 
     start = len(issues)
     required_checked = 0
+    required_domains = {
+        contract.domain
+        for contract in contracts
+        if contract.required and contract.status != "not_applicable"
+    }
+    for domain in sorted(required_domains):
+        collection = collection_by_domain.get(domain)
+        if collection is not None and not dataset.get(collection):
+            add_issue(
+                "required_collection_empty",
+                f"{domain}.*",
+                "必需数据集合为空。",
+            )
     for contract in contracts:
         records = dataset.get(collection_by_domain.get(contract.domain, ""), [])
         for record in records:
@@ -1087,6 +1156,21 @@ def validate_mock_dataset(
     )
 
 
+def validate_mock_dataset(
+    *,
+    contracts: Sequence[TikTokFieldContract],
+    dataset: Mapping[str, list[dict[str, object]]],
+    validation_clock: datetime,
+) -> TikTokMockValidationResult:
+    """Compatibility wrapper for callers of the original Mock validator."""
+
+    return validate_data_validation_dataset(
+        contracts=contracts,
+        dataset=dataset,
+        validation_clock=validation_clock,
+    )
+
+
 def _value_matches_type(value: object, data_type: str) -> bool:
     if data_type in {"string", "enum"}:
         return isinstance(value, str)
@@ -1128,7 +1212,7 @@ def run_mock_data_validation(db: Session, user: User) -> TikTokDataValidationRun
     )
     if {row.field_code for row in contracts} != set(FIELD_CODES):
         raise TikTokDataValidationNotFound("catalog_entry_not_found")
-    result = validate_mock_dataset(
+    result = validate_data_validation_dataset(
         contracts=contracts,
         dataset=MOCK_DATASET,
         validation_clock=MOCK_VALIDATION_CLOCK,
@@ -1165,19 +1249,176 @@ def run_mock_data_validation(db: Session, user: User) -> TikTokDataValidationRun
         issues_json=[item.model_dump(mode="json") for item in result.issues],
         started_by_user_id=user.id,
     )
+    latest_recorded_run = _latest_validation_run(db, user.tenant_id, "recorded")
     readiness = evaluate_data_validation_readiness(
         scope=scope,
         field_contracts=contracts,
         evidence=evidence,
-        latest_run=run,
+        latest_mock_run=run,
+        latest_recorded_run=latest_recorded_run,
+        current_contract_digest=compute_contract_digest(contracts),
         active_authorizations=authorizations,
         now=MOCK_VALIDATION_CLOCK,
-        has_recorded_or_real_validation=False,
     )
     run.workbench_ready_snapshot = readiness.workbench_ready
     run.real_data_ready_snapshot = False
     if run.real_data_ready_snapshot:
         raise AssertionError("mock run cannot mark real data ready")
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    return TikTokDataValidationRunRead.model_validate(run)
+
+
+def _latest_validation_run(
+    db: Session, tenant_id: str, mode: str
+) -> TikTokDataValidationRun | None:
+    return db.exec(
+        select(TikTokDataValidationRun)
+        .where(
+            TikTokDataValidationRun.tenant_id == tenant_id,
+            TikTokDataValidationRun.mode == mode,
+        )
+        .order_by(
+            TikTokDataValidationRun.created_at.desc(),
+            TikTokDataValidationRun.id.desc(),
+        )
+    ).first()
+
+
+def _validate_recorded_approval_times(
+    request: TikTokRecordedValidationRequest, now: datetime
+) -> None:
+    ordered = (
+        request.data_period_start,
+        request.data_period_end,
+        request.replay_as_of,
+        request.approved_at,
+        request.approval_valid_until,
+    )
+    if any(value.tzinfo is None or value.utcoffset() is None for value in ordered):
+        raise TikTokDataValidationConflict("recorded_timezone_required")
+    normalized = tuple(value.astimezone(UTC) for value in ordered)
+    if not (
+        normalized[0]
+        <= normalized[1]
+        <= normalized[2]
+        <= normalized[3]
+        < normalized[4]
+    ):
+        raise TikTokDataValidationConflict("recorded_time_order_invalid")
+    normalized_now = now.replace(tzinfo=UTC) if now.tzinfo is None else now.astimezone(UTC)
+    if normalized[3] > normalized_now:
+        raise TikTokDataValidationConflict("recorded_approval_not_started")
+    if normalized[4] <= normalized_now:
+        raise TikTokDataValidationConflict("recorded_approval_expired")
+
+
+def run_recorded_data_validation(
+    db: Session,
+    user: User,
+    request: TikTokRecordedValidationRequest,
+    *,
+    now: datetime | None = None,
+) -> TikTokDataValidationRunRead:
+    """Run one approved replay and persist only its audit summary."""
+
+    ensure_tenant_admin(user.tenant_id, user)
+    validation_now = now or utc_now()
+    scope = db.exec(
+        select(TikTokDataValidationScope).where(
+            TikTokDataValidationScope.tenant_id == user.tenant_id,
+            TikTokDataValidationScope.market == "US",
+        )
+    ).first()
+    if scope is None:
+        raise TikTokDataValidationNotFound("scope_not_found")
+    if scope.status != "active":
+        raise TikTokDataValidationConflict("scope_not_active")
+    if scope.revision != request.scope_revision:
+        raise TikTokDataValidationConflict("scope_revision_conflict")
+
+    contracts = list(
+        db.exec(
+            select(TikTokFieldContract).where(
+                TikTokFieldContract.tenant_id == user.tenant_id
+            )
+        ).all()
+    )
+    if {row.field_code for row in contracts} != set(FIELD_CODES):
+        raise TikTokDataValidationNotFound("catalog_entry_not_found")
+
+    approver = db.exec(
+        select(User).where(
+            User.tenant_id == user.tenant_id,
+            User.id == request.approved_by_user_id,
+            User.status == "active",
+        )
+    ).first()
+    if approver is None:
+        raise TikTokDataValidationNotFound("approver_not_found")
+    if approver.id == user.id:
+        raise TikTokDataValidationConflict("approval_separation_required")
+    _validate_recorded_approval_times(request, validation_now)
+
+    contract_digest = compute_contract_digest(contracts)
+    dataset = normalize_recorded_dataset(request)
+    result = validate_data_validation_dataset(
+        contracts=contracts,
+        dataset=dataset,
+        validation_clock=request.replay_as_of,
+    )
+    evidence = list(
+        db.exec(
+            select(TikTokCapabilityEvidence).where(
+                TikTokCapabilityEvidence.tenant_id == user.tenant_id
+            )
+        ).all()
+    )
+    authorizations = list(
+        db.exec(
+            select(ExternalAuthorization).where(
+                ExternalAuthorization.tenant_id == user.tenant_id,
+                ExternalAuthorization.status == "active",
+            )
+        ).all()
+    )
+    latest_mock_run = _latest_validation_run(db, user.tenant_id, "mock")
+    run = TikTokDataValidationRun(
+        tenant_id=user.tenant_id,
+        mode="recorded",
+        catalog_version=DATA_VALIDATION_CATALOG_VERSION,
+        dataset_digest=result.dataset_digest,
+        record_count=result.record_count,
+        status=result.status,
+        checks_json=[item.model_dump(mode="json") for item in result.checks],
+        issues_json=[item.model_dump(mode="json") for item in result.issues],
+        started_by_user_id=user.id,
+        source_label=request.source_label,
+        approval_ref=request.approval_ref,
+        approved_by_user_id=approver.id,
+        approved_at=request.approved_at,
+        approval_valid_until=request.approval_valid_until,
+        data_period_start=request.data_period_start,
+        data_period_end=request.data_period_end,
+        replay_as_of=request.replay_as_of,
+        scope_id=scope.id,
+        scope_revision=scope.revision,
+        contract_digest=contract_digest,
+        attestation_version=ATTESTATION_VERSION,
+    )
+    readiness = evaluate_data_validation_readiness(
+        scope=scope,
+        field_contracts=contracts,
+        evidence=evidence,
+        latest_mock_run=latest_mock_run,
+        latest_recorded_run=run,
+        current_contract_digest=contract_digest,
+        active_authorizations=authorizations,
+        now=validation_now,
+    )
+    run.workbench_ready_snapshot = readiness.workbench_ready
+    run.real_data_ready_snapshot = readiness.real_data_ready
     db.add(run)
     db.commit()
     db.refresh(run)
@@ -1210,7 +1451,10 @@ def get_data_validation_workspace(db: Session, user: User) -> TikTokDataValidati
         db.exec(
             select(TikTokDataValidationRun)
             .where(TikTokDataValidationRun.tenant_id == tenant_id)
-            .order_by(TikTokDataValidationRun.created_at.desc())
+            .order_by(
+                TikTokDataValidationRun.created_at.desc(),
+                TikTokDataValidationRun.id.desc(),
+            )
             .limit(20)
         ).all()
     )
@@ -1249,7 +1493,8 @@ def get_data_validation_workspace(db: Session, user: User) -> TikTokDataValidati
         if row.metadata_json.get("platform") == "tiktok"
         and row.metadata_json.get("market") == "US"
     ]
-    latest_run = run_rows[0] if run_rows else None
+    latest_mock_run = _latest_validation_run(db, tenant_id, "mock")
+    latest_recorded_run = _latest_validation_run(db, tenant_id, "recorded")
     return TikTokDataValidationWorkspace(
         tenant_id=tenant_id,
         catalog_version=DATA_VALIDATION_CATALOG_VERSION,
@@ -1273,9 +1518,10 @@ def get_data_validation_workspace(db: Session, user: User) -> TikTokDataValidati
             scope=scope_row,
             field_contracts=field_rows,
             evidence=evidence_rows,
-            latest_run=latest_run,
+            latest_mock_run=latest_mock_run,
+            latest_recorded_run=latest_recorded_run,
+            current_contract_digest=compute_contract_digest(field_rows),
             active_authorizations=authorization_rows,
             now=utc_now(),
-            has_recorded_or_real_validation=False,
         ),
     )

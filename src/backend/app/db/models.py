@@ -4741,14 +4741,51 @@ class TikTokDataValidationRun(SQLModel, table=True):
             name="fk_tiktok_dv_run_tenant_starter",
             ondelete="RESTRICT",
         ),
-        CheckConstraint("mode = 'mock'", name="tiktok_dv_run_mode_check"),
+        ForeignKeyConstraint(
+            ["tenant_id", "approved_by_user_id"],
+            ["users.tenant_id", "users.id"],
+            name="fk_tiktok_dv_run_tenant_approver",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "scope_id"],
+            ["tiktok_data_validation_scopes.tenant_id", "tiktok_data_validation_scopes.id"],
+            name="fk_tiktok_dv_run_tenant_scope",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "mode IN ('mock', 'recorded')",
+            name="tiktok_dv_run_mode_check",
+        ),
         CheckConstraint(
             "status IN ('passed', 'failed')",
             name="tiktok_dv_run_status_check",
         ),
         CheckConstraint("record_count >= 0", name="tiktok_dv_run_record_count_check"),
         CheckConstraint(
-            "real_data_ready_snapshot = false",
+            "(mode = 'mock' AND source_label IS NULL AND approval_ref IS NULL "
+            "AND approved_by_user_id IS NULL AND approved_at IS NULL "
+            "AND approval_valid_until IS NULL AND data_period_start IS NULL "
+            "AND data_period_end IS NULL AND replay_as_of IS NULL AND scope_id IS NULL "
+            "AND scope_revision IS NULL AND contract_digest IS NULL "
+            "AND attestation_version IS NULL) OR "
+            "(mode = 'recorded' AND source_label IS NOT NULL AND approval_ref IS NOT NULL "
+            "AND approved_by_user_id IS NOT NULL AND approved_at IS NOT NULL "
+            "AND approval_valid_until IS NOT NULL AND data_period_start IS NOT NULL "
+            "AND data_period_end IS NOT NULL AND replay_as_of IS NOT NULL "
+            "AND scope_id IS NOT NULL AND scope_revision > 0 "
+            "AND contract_digest IS NOT NULL "
+            "AND attestation_version = 'p3-b0-recorded.v1' "
+            "AND approved_by_user_id <> started_by_user_id "
+            "AND data_period_start <= data_period_end "
+            "AND data_period_end <= replay_as_of "
+            "AND replay_as_of <= approved_at "
+            "AND approved_at < approval_valid_until)",
+            name="tiktok_dv_run_recorded_metadata_check",
+        ),
+        CheckConstraint(
+            "NOT real_data_ready_snapshot "
+            "OR (mode = 'recorded' AND status = 'passed')",
             name="tiktok_dv_run_real_ready_check",
         ),
         Index("ix_tiktok_dv_run_tenant_created", "tenant_id", "created_at"),
@@ -4766,4 +4803,16 @@ class TikTokDataValidationRun(SQLModel, table=True):
     checks_json: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
     issues_json: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
     started_by_user_id: str = Field(index=True)
+    source_label: str | None = None
+    approval_ref: str | None = None
+    approved_by_user_id: str | None = Field(default=None, index=True)
+    approved_at: datetime | None = None
+    approval_valid_until: datetime | None = None
+    data_period_start: datetime | None = None
+    data_period_end: datetime | None = None
+    replay_as_of: datetime | None = None
+    scope_id: str | None = Field(default=None, index=True)
+    scope_revision: int | None = None
+    contract_digest: str | None = Field(default=None, index=True)
+    attestation_version: str | None = None
     created_at: datetime = Field(default_factory=utc_now, index=True)

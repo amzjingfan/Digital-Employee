@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from sqlmodel import Session
 
@@ -18,6 +18,7 @@ from app.tiktok.data_validation import (
     bootstrap_data_validation_workspace,
     get_data_validation_workspace,
     run_mock_data_validation,
+    run_recorded_data_validation,
     update_capability_evidence,
     update_data_validation_scope,
     update_field_contract,
@@ -40,6 +41,10 @@ from app.tiktok.official import (
     TikTokOfficialError,
     exchange_official_authorization,
     start_official_authorization,
+)
+from app.tiktok.recorded_validation import (
+    TikTokRecordedValidationInputError,
+    read_recorded_validation_request,
 )
 from app.tiktok.schema import (
     TikTokAgentReleasePreflight,
@@ -169,6 +174,29 @@ def data_validation_mock_run(
 ) -> TikTokDataValidationRunRead:
     try:
         return run_mock_data_validation(db, current_user)
+    except (TikTokDataValidationNotFound, TikTokDataValidationConflict) as exc:
+        db.rollback()
+        raise _data_validation_http_error(exc) from exc
+
+
+@router.post(
+    "/data-validation/runs/recorded",
+    response_model=TikTokDataValidationRunRead,
+)
+async def data_validation_recorded_run(
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> TikTokDataValidationRunRead:
+    try:
+        payload = await read_recorded_validation_request(request)
+        return run_recorded_data_validation(db, current_user, payload)
+    except TikTokRecordedValidationInputError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"code": exc.code, "message": exc.code},
+        ) from exc
     except (TikTokDataValidationNotFound, TikTokDataValidationConflict) as exc:
         db.rollback()
         raise _data_validation_http_error(exc) from exc

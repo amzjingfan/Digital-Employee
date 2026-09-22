@@ -1,20 +1,33 @@
 from __future__ import annotations
 
+import asyncio
+import json
+from copy import deepcopy
 from datetime import UTC, datetime
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
+from starlette.requests import Request
 
 from app.api.tiktok import (
     data_validation_bootstrap,
     data_validation_field_update,
     data_validation_mock_run,
+    data_validation_recorded_run,
     data_validation_scope_update,
     data_validation_workspace,
 )
-from app.db.models import BusinessResource, ExternalAuthorization, Tenant, User
+from app.db.models import (
+    BusinessResource,
+    ExternalAuthorization,
+    Tenant,
+    TikTokDataValidationRun,
+    User,
+)
+from app.tiktok.data_validation import FIELD_CATALOG, MOCK_DATASET
+from app.tiktok.recorded_validation import MAX_RECORDED_REQUEST_BYTES
 from app.tiktok.schema import (
     TikTokDataValidationScopeUpdate,
     TikTokFieldContractUpdate,
@@ -185,3 +198,211 @@ def test_workspace_response_never_serializes_credentials_or_fixture_values() -> 
             "mock-creator-001",
         ):
             assert forbidden not in serialized
+
+
+def _configure_recorded_validation(db: Session, admin: User) -> None:
+    data_validation_bootstrap(current_user=admin, db=db)
+    data_validation_scope_update(request=_scope_request(), current_user=admin, db=db)
+    for item in FIELD_CATALOG:
+        data_validation_field_update(
+            field_code=item.code,
+            request=TikTokFieldContractUpdate(
+                revision=1,
+                owner_user_id=admin.id,
+                business_key=item.business_key,
+                freshness_sla_seconds=86400 * 7,
+                missing_behavior="block_stage",
+                sources=[
+                    TikTokFieldSource(
+                        source_key=f"mock.{item.code}",
+                        source_type="mock_fixture",
+                        object_name=item.domain,
+                        field_path=item.code,
+                        priority=1,
+                        usage="mock",
+                        decision="use",
+                        authorization_state="not_required",
+                    )
+                ],
+                status="confirmed",
+            ),
+            current_user=admin,
+            db=db,
+        )
+
+
+def _recorded_body(
+    *,
+    scope_revision: int = 1,
+    approver_id: str = "member_tenant_a",
+    empty_orders: bool = False,
+    marker: str | None = None,
+) -> bytes:
+    dataset = deepcopy(MOCK_DATASET)
+    for row in dataset["attribution"]:
+        row.pop("product_id", None)
+    if empty_orders:
+        dataset["orders"] = []
+    if marker:
+        dataset["samples"][0]["status"] = marker
+    payload = {
+        "scope_revision": scope_revision,
+        "source_label": "approved-sanitized-export",
+        "approval_ref": "approval:recorded-api-001",
+        "approved_by_user_id": approver_id,
+        "approved_at": "2026-09-22T01:00:00Z",
+        "approval_valid_until": "2026-10-02T00:00:00Z",
+        "data_period_start": "2026-09-20T00:00:00Z",
+        "data_period_end": "2026-09-21T23:30:00Z",
+        "replay_as_of": "2026-09-22T00:00:00Z",
+        "sanitization_attested": True,
+        "dataset": dataset,
+    }
+    return json.dumps(payload, separators=(",", ":")).encode()
+
+
+def _recorded_http_request(
+    body: bytes, *, content_type: str = "application/json"
+) -> Request:
+    chunks = [body[index : index + 65536] for index in range(0, len(body), 65536)]
+    position = 0
+
+    async def receive() -> dict[str, object]:
+        nonlocal position
+        if position >= len(chunks):
+            return {"type": "http.request", "body": b"", "more_body": False}
+        chunk = chunks[position]
+        position += 1
+        return {
+            "type": "http.request",
+            "body": chunk,
+            "more_body": position < len(chunks),
+        }
+
+    return Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/api/enterprise/tiktok/data-validation/runs/recorded",
+            "raw_path": b"/api/enterprise/tiktok/data-validation/runs/recorded",
+            "query_string": b"",
+            "headers": [(b"content-type", content_type.encode())],
+            "client": ("127.0.0.1", 1),
+            "server": ("127.0.0.1", 80),
+        },
+        receive,
+    )
+
+
+def test_recorded_route_returns_safe_pass_and_quality_failure() -> None:
+    with _session() as db:
+        admin, _member = _seed_users(db)
+        _configure_recorded_validation(db, admin)
+
+        passed = asyncio.run(
+            data_validation_recorded_run(
+                request=_recorded_http_request(
+                    _recorded_body(marker="raw-sensitive-marker")
+                ),
+                current_user=admin,
+                db=db,
+            )
+        )
+        failed = asyncio.run(
+            data_validation_recorded_run(
+                request=_recorded_http_request(_recorded_body(empty_orders=True)),
+                current_user=admin,
+                db=db,
+            )
+        )
+
+        assert passed.status == "passed"
+        assert failed.status == "failed"
+        assert "required_collection_empty" in {item["code"] for item in failed.issues}
+        serialized = passed.model_dump_json()
+        assert "raw-sensitive-marker" not in serialized
+        assert "customer-export.json" not in serialized
+
+
+def test_recorded_route_rejects_member_tenant_and_scope_without_persistence() -> None:
+    with _session() as db:
+        admin, member = _seed_users(db)
+        _configure_recorded_validation(db, admin)
+        cases = (
+            (member, _recorded_body(), 403, None),
+            (admin, _recorded_body(approver_id="member_other"), 404, "approver_not_found"),
+            (admin, _recorded_body(scope_revision=2), 409, "scope_revision_conflict"),
+        )
+        for user, body, status_code, code in cases:
+            before = len(db.exec(select(TikTokDataValidationRun)).all())
+            with pytest.raises(HTTPException) as error:
+                asyncio.run(
+                    data_validation_recorded_run(
+                        request=_recorded_http_request(body),
+                        current_user=user,
+                        db=db,
+                    )
+                )
+            assert error.value.status_code == status_code
+            if code:
+                assert error.value.detail["code"] == code
+            assert len(db.exec(select(TikTokDataValidationRun)).all()) == before
+
+
+@pytest.mark.parametrize(
+    ("body", "content_type", "status_code", "code"),
+    (
+        (b"{}", "text/plain", 415, "recorded_content_type_required"),
+        (b'{"raw-parser-marker"', "application/json", 422, "recorded_json_invalid"),
+        (
+            json.dumps(
+                {
+                    "access_token": "raw-secret-marker",
+                    "dataset": {},
+                }
+            ).encode(),
+            "application/json",
+            422,
+            "sensitive_field_forbidden",
+        ),
+    ),
+)
+def test_recorded_route_maps_input_errors_without_leaking_values(
+    body: bytes, content_type: str, status_code: int, code: str
+) -> None:
+    with _session() as db:
+        admin, _member = _seed_users(db)
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(
+                data_validation_recorded_run(
+                    request=_recorded_http_request(body, content_type=content_type),
+                    current_user=admin,
+                    db=db,
+                )
+            )
+        assert error.value.status_code == status_code
+        assert error.value.detail == {"code": code, "message": code}
+        assert "raw-parser-marker" not in str(error.value.detail)
+        assert "raw-secret-marker" not in str(error.value.detail)
+
+
+def test_recorded_route_enforces_stream_limit_without_content_length() -> None:
+    with _session() as db:
+        admin, _member = _seed_users(db)
+        body = _recorded_body()
+        oversized = body + b" " * (MAX_RECORDED_REQUEST_BYTES + 1 - len(body))
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(
+                data_validation_recorded_run(
+                    request=_recorded_http_request(oversized),
+                    current_user=admin,
+                    db=db,
+                )
+            )
+        assert error.value.status_code == 413
+        assert error.value.detail == {
+            "code": "recorded_payload_too_large",
+            "message": "recorded_payload_too_large",
+        }

@@ -144,9 +144,25 @@ const workspace = {
     issues: [],
     started_by_user_id: 'admin',
     created_at: '2026-09-22T00:00:00Z',
+  }, {
+    id: 'run-2',
+    tenant_id: 'tenant_demo',
+    mode: 'recorded',
+    catalog_version: 'p3-b0.v1',
+    dataset_digest: 'sha256:recorded',
+    record_count: 6,
+    status: 'passed',
+    workbench_ready_snapshot: true,
+    real_data_ready_snapshot: false,
+    checks: [],
+    issues: [],
+    started_by_user_id: 'admin',
+    approval_ref: 'approval:001',
+    approval_valid_until: '2026-10-02T00:00:00Z',
+    created_at: '2026-09-22T01:00:00Z',
   }],
   store_options: [{ id: 'store-us', label: 'TikTok Shop US' }],
-  owner_options: [{ id: 'admin', label: '管理员' }],
+  owner_options: [{ id: 'admin', label: '管理员' }, { id: 'member', label: '数据负责人' }],
 };
 
 describe('TikTokDataValidationPanel', () => {
@@ -175,7 +191,20 @@ describe('TikTokDataValidationPanel', () => {
     expect(await screen.findByText('只读模式')).toBeTruthy();
     expect(screen.queryByRole('button', { name: '初始化验证目录' })).toBeNull();
     expect(screen.queryByRole('button', { name: '运行 Mock 校验' })).toBeNull();
+    expect(screen.queryByLabelText('选择脱敏 JSON')).toBeNull();
+    expect(screen.queryByRole('button', { name: '运行录制回放' })).toBeNull();
     expect(screen.queryByRole('button', { name: '保存字段契约' })).toBeNull();
+    expect(screen.getByText('录制回放')).toBeTruthy();
+    expect(screen.getByText(/approval:001/)).toBeTruthy();
+  });
+
+  it('shows the recorded replay controls only to administrators', async () => {
+    render(<TikTokDataValidationPanel currentUser={adminUser} />);
+
+    expect(await screen.findByLabelText('选择脱敏 JSON')).toBeTruthy();
+    expect((screen.getByRole('button', { name: '运行录制回放' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('录制回放')).toBeTruthy();
+    expect(screen.getByText(/approval:001/)).toBeTruthy();
   });
 
   it('bootstraps an empty catalog and reloads the workspace', async () => {
