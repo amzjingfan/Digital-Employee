@@ -215,3 +215,134 @@ class TikTokBootstrapResponse(BaseModel):
 
 class TikTokMembershipReconcileResponse(BaseModel):
     reconciled_count: int
+
+
+class TikTokFieldSource(BaseModel):
+    source_key: str = Field(min_length=1, max_length=120)
+    source_type: Literal[
+        "official_api", "approved_export", "internal_database", "vendor", "mock_fixture"
+    ]
+    object_name: str = Field(min_length=1, max_length=160)
+    field_path: str = Field(min_length=1, max_length=240)
+    priority: int = Field(ge=1)
+    usage: Literal["mock", "real"]
+    decision: Literal["use", "defer", "reject"]
+    authorization_state: Literal["not_required", "unverified", "authorized", "denied"]
+
+
+class TikTokDataValidationBlocker(BaseModel):
+    code: str
+    target_type: Literal["workspace", "scope", "field", "capability", "provider", "run"]
+    target_code: str
+    detail: str
+
+
+class TikTokDataValidationReadiness(BaseModel):
+    workbench_ready: bool
+    real_data_ready: bool
+    blockers: list[TikTokDataValidationBlocker] = Field(default_factory=list)
+
+
+class TikTokDataValidationScopeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    market: str
+    store_resource_id: str | None = None
+    creator_scope_summary: str
+    business_owner_user_id: str | None = None
+    data_owner_user_id: str | None = None
+    status: str
+    revision: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class TikTokFieldContractRead(BaseModel):
+    id: str
+    tenant_id: str
+    field_code: str
+    domain: str
+    label: str
+    data_type: str
+    required: bool
+    owner_user_id: str | None = None
+    business_key: str
+    freshness_sla_seconds: int | None = None
+    missing_behavior: str
+    sources: list[TikTokFieldSource] = Field(default_factory=list)
+    status: str
+    revision: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class TikTokCapabilityEvidenceRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    entry_code: str
+    entry_kind: str
+    platform_domain: str
+    action: str
+    direction: str
+    subject_key: str
+    resource_id: str | None = None
+    required_scope: str
+    endpoint_or_artifact: str
+    api_version: str
+    evidence_level: str
+    evidence_type: str
+    status: str
+    decision: str | None = None
+    summary: str
+    evidence_ref: str
+    checked_by_user_id: str | None = None
+    checked_at: datetime | None = None
+    valid_until: datetime | None = None
+    revision: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class TikTokDataValidationRunRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    mode: str
+    catalog_version: str
+    dataset_digest: str
+    record_count: int
+    status: str
+    workbench_ready_snapshot: bool
+    real_data_ready_snapshot: bool
+    checks_json: list[dict[str, Any]]
+    issues_json: list[dict[str, Any]]
+    started_by_user_id: str
+    created_at: datetime
+
+
+class TikTokDataValidationOption(BaseModel):
+    id: str
+    label: str
+
+
+class TikTokDataValidationBootstrapResponse(BaseModel):
+    catalog_version: str
+    created_field_count: int
+    created_evidence_count: int
+
+
+class TikTokDataValidationWorkspace(BaseModel):
+    tenant_id: str
+    catalog_version: str
+    scope: TikTokDataValidationScopeRead | None = None
+    field_contracts: list[TikTokFieldContractRead] = Field(default_factory=list)
+    capability_evidence: list[TikTokCapabilityEvidenceRead] = Field(default_factory=list)
+    recent_runs: list[TikTokDataValidationRunRead] = Field(default_factory=list)
+    store_options: list[TikTokDataValidationOption] = Field(default_factory=list)
+    owner_options: list[TikTokDataValidationOption] = Field(default_factory=list)
+    readiness: TikTokDataValidationReadiness
