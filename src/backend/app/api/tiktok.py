@@ -12,6 +12,16 @@ from app.db import get_session
 from app.db.models import TikTokOAuthState, User
 from app.security.auth import get_current_user
 from app.tiktok.connector import TikTokConnectorRead, read_tiktok_resource
+from app.tiktok.data_validation import (
+    TikTokDataValidationConflict,
+    TikTokDataValidationNotFound,
+    bootstrap_data_validation_workspace,
+    get_data_validation_workspace,
+    run_mock_data_validation,
+    update_capability_evidence,
+    update_data_validation_scope,
+    update_field_contract,
+)
 from app.tiktok.mock_replay import (
     execute_tiktok_mock_replays,
     persist_tiktok_mock_replay_tasks,
@@ -39,6 +49,15 @@ from app.tiktok.schema import (
     TikTokAuthorizationExchange,
     TikTokAuthorizationRead,
     TikTokBootstrapResponse,
+    TikTokCapabilityEvidenceRead,
+    TikTokCapabilityEvidenceUpdate,
+    TikTokDataValidationBootstrapResponse,
+    TikTokDataValidationRunRead,
+    TikTokDataValidationScopeRead,
+    TikTokDataValidationScopeUpdate,
+    TikTokDataValidationWorkspace,
+    TikTokFieldContractRead,
+    TikTokFieldContractUpdate,
     TikTokM2MVerificationResponse,
     TikTokMembershipReconcileResponse,
     TikTokMockReplayExecutionResponse,
@@ -72,6 +91,98 @@ from app.tiktok.shadow import (
 )
 
 router = APIRouter(prefix="/api/enterprise/tiktok", tags=["enterprise-tiktok"])
+
+
+@router.get("/data-validation", response_model=TikTokDataValidationWorkspace)
+def data_validation_workspace(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> TikTokDataValidationWorkspace:
+    return get_data_validation_workspace(db, current_user)
+
+
+@router.post(
+    "/data-validation/bootstrap",
+    response_model=TikTokDataValidationBootstrapResponse,
+)
+def data_validation_bootstrap(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> TikTokDataValidationBootstrapResponse:
+    return bootstrap_data_validation_workspace(db, current_user)
+
+
+@router.put(
+    "/data-validation/pilot-scope",
+    response_model=TikTokDataValidationScopeRead,
+)
+def data_validation_scope_update(
+    request: TikTokDataValidationScopeUpdate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> TikTokDataValidationScopeRead:
+    try:
+        return update_data_validation_scope(db, current_user, request)
+    except (TikTokDataValidationNotFound, TikTokDataValidationConflict) as exc:
+        db.rollback()
+        raise _data_validation_http_error(exc) from exc
+
+
+@router.put(
+    "/data-validation/field-contracts/{field_code}",
+    response_model=TikTokFieldContractRead,
+)
+def data_validation_field_update(
+    field_code: str,
+    request: TikTokFieldContractUpdate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> TikTokFieldContractRead:
+    try:
+        return update_field_contract(db, current_user, field_code, request)
+    except (TikTokDataValidationNotFound, TikTokDataValidationConflict) as exc:
+        db.rollback()
+        raise _data_validation_http_error(exc) from exc
+
+
+@router.put(
+    "/data-validation/capability-evidence/{entry_code}",
+    response_model=TikTokCapabilityEvidenceRead,
+)
+def data_validation_evidence_update(
+    entry_code: str,
+    request: TikTokCapabilityEvidenceUpdate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> TikTokCapabilityEvidenceRead:
+    try:
+        return update_capability_evidence(db, current_user, entry_code, request)
+    except (TikTokDataValidationNotFound, TikTokDataValidationConflict) as exc:
+        db.rollback()
+        raise _data_validation_http_error(exc) from exc
+
+
+@router.post("/data-validation/runs/mock", response_model=TikTokDataValidationRunRead)
+def data_validation_mock_run(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> TikTokDataValidationRunRead:
+    try:
+        return run_mock_data_validation(db, current_user)
+    except (TikTokDataValidationNotFound, TikTokDataValidationConflict) as exc:
+        db.rollback()
+        raise _data_validation_http_error(exc) from exc
+
+
+def _data_validation_http_error(
+    exc: TikTokDataValidationNotFound | TikTokDataValidationConflict,
+) -> HTTPException:
+    code, _, message = str(exc).partition(":")
+    status_code = 409 if isinstance(exc, TikTokDataValidationConflict) else 404
+    return HTTPException(
+        status_code=status_code,
+        detail={"code": code, "message": message.strip() or code},
+    )
 
 
 @router.get("/overview", response_model=TikTokOverview)

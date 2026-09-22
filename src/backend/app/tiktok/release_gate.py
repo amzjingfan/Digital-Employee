@@ -20,6 +20,7 @@ _APPROVED_TIKTOK_ROUTES = {
     ("GET", "/authorizations/callback"),
     ("GET", "/authorizations/official/callback"),
     ("GET", "/connector/read"),
+    ("GET", "/data-validation"),
     ("GET", "/mock/authorize"),
     ("GET", "/mock-sop-replays/exception-matrix"),
     ("GET", "/overview"),
@@ -32,6 +33,8 @@ _APPROVED_TIKTOK_ROUTES = {
     ("POST", "/authorizations/start"),
     ("POST", "/bootstrap"),
     ("POST", "/bootstrap-assets"),
+    ("POST", "/data-validation/bootstrap"),
+    ("POST", "/data-validation/runs/mock"),
     ("POST", "/m2m/verify"),
     ("POST", "/memberships/reconcile"),
     ("POST", "/mock-sop-replays/execute-sandbox"),
@@ -40,6 +43,9 @@ _APPROVED_TIKTOK_ROUTES = {
     ("POST", "/shadow/evaluations"),
     ("POST", "/shadow/heartbeat"),
     ("POST", "/shadow/start"),
+    ("PUT", "/data-validation/capability-evidence/{entry_code}"),
+    ("PUT", "/data-validation/field-contracts/{field_code}"),
+    ("PUT", "/data-validation/pilot-scope"),
 }
 
 _EXPECTED_SKILL_IDS = {
@@ -61,6 +67,7 @@ _EXPECTED_TIKTOK_PYTHON_FILES = {
     "backend/app/api/tiktok.py",
     "backend/app/tiktok/__init__.py",
     "backend/app/tiktok/connector.py",
+    "backend/app/tiktok/data_validation.py",
     "backend/app/tiktok/mock_replay.py",
     "backend/app/tiktok/oauth.py",
     "backend/app/tiktok/official.py",
