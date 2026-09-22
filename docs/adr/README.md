@@ -22,3 +22,4 @@ Use the next four-digit number and a short lowercase filename. Include:
 ## Index
 
 - [0001 — Main repository layout and history preservation](0001-main-repository-layout.md) — Accepted, 2026-09-11.
+- [0002 — Preserve task execution evidence when users delete conversations](0002-task-session-deletion-retention.md) — Accepted, 2026-09-22.

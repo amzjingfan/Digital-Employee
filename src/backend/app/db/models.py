@@ -2527,6 +2527,7 @@ class ChatSession(SQLModel, table=True):
     team_id: Optional[str] = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+    deleted_at: Optional[datetime] = Field(default=None, index=True)
 
 
 class ChannelBinding(SQLModel, table=True):

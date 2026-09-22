@@ -13,6 +13,7 @@ Start a development session with the durable memory and current handoff below. P
 - [Append-only development log](DEVELOPMENT_LOG.md)
 - [Architecture decision records](adr/README.md)
 - [ADR 0001: main repository layout and history preservation](adr/0001-main-repository-layout.md)
+- [ADR 0002: preserve task execution evidence when users delete conversations](adr/0002-task-session-deletion-retention.md)
 - [Repository agent rules](../AGENTS.md)
 - [Contribution and GitHub Flow guide](../CONTRIBUTING.md)
 - [Repository test guide](../src/tests/README.md)

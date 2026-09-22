@@ -72,8 +72,8 @@ from app.session.attachments import (
     validate_chat_turn_attachments,
 )
 from app.session.cleanup import (
-    purge_chat_session_records,
     remove_chat_session_workspace,
+    stage_user_chat_session_deletion,
 )
 from app.session.helpers import public_session
 from app.session.message_read import message_read
@@ -2014,6 +2014,7 @@ def list_chat_sessions(
             select(ChatSession)
             .where(
                 ChatSession.tenant_id == tenant_id,
+                ChatSession.deleted_at.is_(None),
                 or_(
                     ChatSession.channel.is_(None),
                     ChatSession.channel != "skill_test",
@@ -2134,9 +2135,10 @@ def delete_chat_session(
 ) -> dict[str, str]:
     _ensure_request_tenant(tenant_id, current_user)
     row = _get_user_chat_session(db, tenant_id, current_user.id, session_id)
-    purge_chat_session_records(db, row)
+    records_purged = stage_user_chat_session_deletion(db, row)
     db.commit()
-    remove_chat_session_workspace(tenant_id=tenant_id, session_id=session_id, db=db)
+    if records_purged:
+        remove_chat_session_workspace(tenant_id=tenant_id, session_id=session_id, db=db)
     return {"status": "deleted"}
 
 
@@ -2530,7 +2532,12 @@ def list_chat_session_spans(
 def _get_user_chat_session(db: Session, tenant_id: str, user_id: str, session_id: str) -> ChatSession:
     ensure_tenant(db, tenant_id)
     row = db.get(ChatSession, session_id)
-    if not row or row.tenant_id != tenant_id or row.user_id != user_id:
+    if (
+        not row
+        or row.tenant_id != tenant_id
+        or row.user_id != user_id
+        or row.deleted_at is not None
+    ):
         raise HTTPException(status_code=404, detail="Session not found")
     return row
 
@@ -2538,7 +2545,7 @@ def _get_user_chat_session(db: Session, tenant_id: str, user_id: str, session_id
 def _get_readable_chat_session(db: Session, tenant_id: str, current_user: User, session_id: str) -> ChatSession:
     ensure_tenant(db, tenant_id)
     row = db.get(ChatSession, session_id)
-    if not row or row.tenant_id != tenant_id:
+    if not row or row.tenant_id != tenant_id or row.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Session not found")
     if row.user_id == current_user.id:
         return row
@@ -2660,7 +2667,7 @@ def _bind_request_to_session_agent(
 def _ensure_chat_session_available(db: Session, tenant_id: str, user_id: str, session_id: str) -> ChatSession:
     ensure_tenant(db, tenant_id)
     row = db.get(ChatSession, session_id)
-    if not row or row.tenant_id != tenant_id:
+    if not row or row.tenant_id != tenant_id or row.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Session not found")
     # 团队会话(team_id 非空)对本租户成员开放发言(如 TL 工作台聊天室);
     # 普通会话仍仅创建者可见

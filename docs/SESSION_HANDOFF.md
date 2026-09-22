@@ -13,6 +13,14 @@ This file is mutable operational context. Re-check every process, port, branch, 
 - The full backend baseline remains non-green: 2,334 passed, 31 failed, 11 skipped and 5 errors across unrelated advertising, channel, Feishu, general-skills, Harness, runtime and tool tests; no TikTok test failed.
 - Residual behavior is conservative: an authorization inserted or activated after the active-authorization query can make the historical snapshot temporarily false, never incorrectly true; current workspace readiness is recalculated on read. Browser visual acceptance and real E3/30-record business evidence remain outstanding.
 
+## Task-linked conversation deletion fix (2026-09-22)
+
+- Implementation is complete in managed worktree `C:\Users\Administrator\.codex\worktrees\fix-task-session-delete\joukir` on branch `codex/fix-task-session-delete`, based on `main@c13dc9d`. It is not yet reviewed, committed, or integrated at this handoff update.
+- Ordinary user conversations retain physical deletion. A conversation referenced by a same-tenant `WorkTaskRun` now receives `deleted_at`, disappears from user chat lists, and is rejected by centralized chat access guards while its session, messages, Harness state/workspace, and task execution evidence remain available internally. The restrictive PostgreSQL foreign key remains unchanged; ADR 0002 records the decision.
+- A reversible PostgreSQL migration adds `public.sessions.deleted_at TIMESTAMPTZ` and `ix_sessions_deleted_at`. The migration was statically verified but was not applied to the restored local PostgreSQL database; no real PostgreSQL acceptance is claimed.
+- Final focused verification passed 89 backend tests, two Ruff gates, the 1,223-path test layout guard, and cached-diff whitespace checks. Two known baseline exclusions remain: Windows cannot create the symlink required by one Harness cleanup test, and `test_purge_orphaned_chat_sessions_cleans_pre_fix_leftovers` hangs in unchanged code.
+- Exact next actions: commit the isolated branch, obtain independent code review, address any Critical/Important findings, then merge linearly into `main` only if its unrelated dirty worktree can be preserved safely. Apply the migration before restarting the updated service and repeat the original browser delete action.
+
 ## TikTok P3-B0 approved recorded-data validation implementation (2026-09-22)
 
 - Local integration resumed after the user authorized preserving the dirty main work. Those six paths are backed up unchanged on `codex/preserve-main-before-tiktok-merge-20260922@33e6ef7`; the TikTok branch was squash-integrated into `main` after the merged tree passed the same 148-test backend matrix, 1,219-path layout guard, Ruff, 67-file/294-test frontend suite, typecheck, i18n, config and production build. Neither source nor preservation branch was pushed or deleted. The recorded administrator/member browser acceptance remains the next implementation step.

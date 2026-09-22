@@ -26,6 +26,7 @@ This file contains stable facts and working agreements. Read it with `SESSION_HA
 - Casbin policies and application permission checks form the service authorization boundary. PostgreSQL forced row-level security forms a separate tenant data boundary. Passing one boundary never substitutes for checking the others.
 - Database runtime, migration, worker, and identity roles must stay least-privileged and must not receive superuser or `BYPASSRLS`. Code that reads or writes tenant data must establish and preserve the intended tenant context.
 - Schema work must account for migration ownership, forward application, rollback where supported, data backfill, forced RLS, and the production database gate. Never disable RLS or broaden a role to make development or tests pass.
+- Work-task runs are durable execution and audit evidence. User deletion physically removes ordinary conversations, but a same-tenant conversation referenced by `WorkTaskRun` is marked deleted and hidden from chat while its session, messages, Harness state, workspace, and run records remain available to internal execution and enterprise audit paths. Keep the restrictive run-to-session foreign key; see ADR 0002.
 - Public API support exists under `src/backend/app/public_api/` and is feature-gated. Use the published API skill references indexed in `docs/README.md`; do not assume an interactive `/docs` endpoint exists.
 
 ## Runtime and secret boundary
