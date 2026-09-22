@@ -4,14 +4,15 @@ Last refreshed: 2026-09-22 (Asia/Shanghai)
 
 This file is mutable operational context. Re-check every process, port, branch, and test result before relying on it. It contains no credential values or connection strings.
 
-## TikTok P3-B0 data validation workbench planning gate (2026-09-22)
+## TikTok P3-B0 runnable data validation workbench (2026-09-22)
 
-- Active isolated worktree: `E:\develop\数字员工\joukir\.worktrees\tiktok-p3b0-validation`; branch `codex/tiktok-p3b0-validation`. The primary `main` worktree has unrelated uncommitted authentication/M2M/supervisor work and must remain untouched.
-- The user approved the written design at `docs/superpowers/specs/2026-09-22-tiktok-p3b0-data-validation-workbench-design.md`; design commit `bfa1cbd` contains only that spec, its docs index entry, and development-log evidence.
-- The implementation plan is at `docs/superpowers/plans/2026-09-22-tiktok-p3b0-data-validation-workbench.md`. It defines seven TDD tasks: persistence/RLS, catalog/bootstrap, guarded edits/readiness, deterministic Mock runs, API, frontend, and repository/browser verification. It is awaiting user review and selection of Native or Subagent-driven execution.
-- No business source, database schema, runtime configuration, secret, external authorization, or live service has been changed for P3-B0. The current pre-change TikTok focused baseline is 68 passing tests across 13 existing files; the repository-wide backend suite remains separately non-green as already documented.
-- The controlling safety boundary is unchanged: Mock/document/sandbox/login evidence cannot establish E3 or `real_data_ready`; the first release has no real/recorded validation input, so real data readiness must stay false.
-- Exact next action: after the user approves the plan and chooses an execution method, invoke the matching execution skill and begin Task 1 in this worktree. Do not start P3-B1 or real external connector work in this branch.
+- Completed in isolated worktree `E:\develop\数字员工\joukir\.worktrees\tiktok-p3b0-validation` on branch `codex/tiktok-p3b0-validation`. The primary `main` worktree still has unrelated work and was not modified. Implementation commits run from `23c1f5e` through `8b5c38d`; design and plan are `bfa1cbd` and `0e1e552`.
+- The branch adds four tenant-scoped PostgreSQL tables with forced RLS and append-only run history; catalog `p3-b0.v1` with 30 fields, 27 action capabilities, and 4 provider decisions; guarded revision-based edits; separate workbench/real-data gates; deterministic Mock validation; six authenticated API routes; and the seventh TikTok console tab.
+- Fresh focused backend verification passed 100 tests. The test-layout guard accepted 1,207 tracked paths. Static migration/RLS checks passed; the optional `STAFFDECK_RUN_POSTGRES_ACCEPTANCE` environment was absent. The migration was also applied to the restored local PostgreSQL development database for browser acceptance, without recording connection values.
+- Fresh frontend verification passed 66 files and 286 tests with one worker, plus typecheck, 4,275-entry i18n coverage, configuration validation, and production build. The first parallel Vitest run had three timeout-only failures under host contention; all three passed alone and the complete serial rerun passed.
+- Administrator acceptance at `/enterprise/tiktok` verified bootstrap counts, persisted US scope, a revision-backed field contract, action evidence, and a 6-record Mock run whose eight check groups passed. Member acceptance at the same route verified `只读模式`, zero enabled workbench inputs, and absence of all save/bootstrap/run controls. Safe evidence is in `docs/screenshots/tiktok-p3b0/`.
+- The isolated service used port 5176 and is stopped; port 5176 is available. The temporary copied `.env` and pytest scratch directory were removed. The separate main-workspace service on port 5173 was not altered.
+- `real_data_ready` remains false by design. Exact next action: obtain independently verified E3 `real_account` evidence for each required read action and execute a real or approved recorded-data validation before considering P3-B1 or production data readiness.
 
 ## Repository state
 

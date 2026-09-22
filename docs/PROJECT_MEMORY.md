@@ -43,6 +43,13 @@ This file contains stable facts and working agreements. Read it with `SESSION_HA
 - No numeric coverage threshold is configured. Pull request CI runs a focused backend regression set and the complete frontend suite/build; changes outside that backend set require proportional focused tests or the complete backend suite.
 - Real model calls, human identity/role flows, third-party authorization and writes, recovered object availability, and platform-specific packages require explicit acceptance evidence in their intended environment. Seed data, mocks, replay success, database restoration, or a health endpoint cannot establish those claims by themselves.
 
+## TikTok P3-B0 data-validation boundary
+
+- The runnable TikTok data-validation workbench uses four tenant-scoped PostgreSQL tables: pilot scopes, field contracts, action/provider evidence, and append-only validation-run summaries. Schema changes use explicit migrations, same-tenant references, forced RLS, and an update/delete guard on run history.
+- Catalog version `p3-b0.v1` defines 30 field contracts, 27 action-level capabilities, and 4 provider decisions. Evidence belongs to an exact action; evidence for one endpoint, login, package, or Mock run never upgrades another action.
+- `workbench_ready` and `real_data_ready` are separate gates. A deterministic Mock run may satisfy the workbench run requirement, but real readiness also requires matching E3 `real_account` evidence plus a real or approved recorded-data validation. Mock, documentation, sandbox, or login evidence cannot satisfy that gate.
+- Validation storage and UI contain contracts, evidence metadata, check codes, counts, issue metadata, and fixture digests only. Raw fixtures, external response bodies, OAuth payloads, credentials, cookies, and token fingerprints remain outside this boundary.
+
 ## Git history and repository workflow
 
 - This repository is an independent clone with no Git object alternates. It preserves the complete 44-commit handover history and original commit IDs.
