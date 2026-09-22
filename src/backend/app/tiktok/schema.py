@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class TikTokRoleRead(BaseModel):
@@ -346,3 +346,93 @@ class TikTokDataValidationWorkspace(BaseModel):
     store_options: list[TikTokDataValidationOption] = Field(default_factory=list)
     owner_options: list[TikTokDataValidationOption] = Field(default_factory=list)
     readiness: TikTokDataValidationReadiness
+
+
+class TikTokDataValidationScopeUpdate(BaseModel):
+    revision: int = Field(ge=0)
+    store_resource_id: str
+    creator_scope_summary: str = Field(min_length=1, max_length=1000)
+    business_owner_user_id: str
+    data_owner_user_id: str
+    status: Literal["draft", "active", "closed"]
+
+
+class TikTokFieldContractUpdate(BaseModel):
+    revision: int = Field(ge=1)
+    owner_user_id: str
+    business_key: str = Field(min_length=1, max_length=120)
+    freshness_sla_seconds: int = Field(gt=0)
+    missing_behavior: Literal["unknown", "manual_review", "block_stage", "not_applicable"]
+    sources: list[TikTokFieldSource] = Field(min_length=1)
+    status: Literal["draft", "confirmed", "blocked", "not_applicable"]
+
+    @model_validator(mode="after")
+    def validate_sources(self) -> TikTokFieldContractUpdate:
+        keys = [source.source_key for source in self.sources]
+        priorities = [source.priority for source in self.sources]
+        if len(keys) != len(set(keys)):
+            raise ValueError("source_key_duplicate")
+        if len(priorities) != len(set(priorities)):
+            raise ValueError("source_priority_duplicate")
+        for source in self.sources:
+            if source.decision == "use" and source.authorization_state == "denied":
+                raise ValueError("denied_source_cannot_be_used")
+            if (
+                source.usage == "real"
+                and source.decision == "use"
+                and source.authorization_state != "authorized"
+            ):
+                raise ValueError("real_source_requires_authorization")
+        return self
+
+
+class TikTokCapabilityEvidenceUpdate(BaseModel):
+    revision: int = Field(ge=1)
+    subject_key: str = Field(min_length=1, max_length=160)
+    resource_id: str | None = None
+    required_scope: str = Field(default="", max_length=240)
+    endpoint_or_artifact: str = Field(default="", max_length=400)
+    api_version: str = Field(default="", max_length=80)
+    evidence_level: Literal["E0", "E1", "E2", "E3"]
+    evidence_type: Literal[
+        "unverified",
+        "official_docs",
+        "contract",
+        "mock",
+        "sandbox",
+        "approved_export",
+        "real_account",
+    ]
+    status: Literal["unverified", "verified", "blocked", "not_applicable"]
+    decision: Literal["use", "defer", "reject"] | None = None
+    summary: str = Field(default="", max_length=2000)
+    evidence_ref: str = Field(default="", max_length=400)
+    checked_by_user_id: str | None = None
+    checked_at: datetime | None = None
+    valid_until: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_evidence(self) -> TikTokCapabilityEvidenceUpdate:
+        accepted_types = {
+            "E0": {"unverified"},
+            "E1": {"official_docs", "contract"},
+            "E2": {"mock", "sandbox", "approved_export"},
+            "E3": {"real_account"},
+        }
+        if self.evidence_type not in accepted_types[self.evidence_level]:
+            raise ValueError("evidence_level_type_mismatch")
+        if self.status != "unverified" and (
+            not self.summary.strip()
+            or not self.checked_by_user_id
+            or self.checked_at is None
+        ):
+            raise ValueError("audited_conclusion_required")
+        if self.valid_until is not None and self.checked_at is None:
+            raise ValueError("valid_until_requires_checked_at")
+        if (
+            self.valid_until is not None
+            and self.checked_at is not None
+            and self.valid_until <= self.checked_at
+        ):
+            raise ValueError("valid_until_must_follow_checked_at")
+        return self

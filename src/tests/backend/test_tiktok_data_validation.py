@@ -1,19 +1,39 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
+import pytest
+from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.db.models import (
     BusinessResource,
+    ExternalAuthorization,
     Tenant,
     TikTokCapabilityEvidence,
+    TikTokDataValidationRun,
+    TikTokDataValidationScope,
     TikTokFieldContract,
     User,
 )
 from app.tiktok.data_validation import (
     DATA_VALIDATION_CATALOG_VERSION,
+    TikTokDataValidationConflict,
+    TikTokDataValidationNotFound,
     bootstrap_data_validation_workspace,
+    evaluate_data_validation_readiness,
     get_data_validation_workspace,
+    update_capability_evidence,
+    update_data_validation_scope,
+    update_field_contract,
+)
+from app.tiktok.schema import (
+    TikTokCapabilityEvidenceUpdate,
+    TikTokDataValidationScopeUpdate,
+    TikTokFieldContractUpdate,
+    TikTokFieldSource,
 )
 
 
@@ -139,3 +159,391 @@ def test_bootstrap_uses_only_mock_sources_and_unverified_evidence() -> None:
             and item.checked_at is None
             for item in evidence
         )
+
+
+def _source(
+    source_key: str,
+    *,
+    priority: int = 1,
+    usage: str = "mock",
+    decision: str = "use",
+    authorization_state: str = "not_required",
+) -> TikTokFieldSource:
+    return TikTokFieldSource(
+        source_key=source_key,
+        source_type="mock_fixture" if usage == "mock" else "official_api",
+        object_name="order",
+        field_path="order.id",
+        priority=priority,
+        usage=usage,
+        decision=decision,
+        authorization_state=authorization_state,
+    )
+
+
+def _confirmed_contract(
+    *, revision: int, owner_user_id: str = "admin_tenant_a"
+) -> TikTokFieldContractUpdate:
+    return TikTokFieldContractUpdate(
+        revision=revision,
+        owner_user_id=owner_user_id,
+        business_key="order_id",
+        freshness_sla_seconds=3600,
+        missing_behavior="block_stage",
+        status="confirmed",
+        sources=[_source("mock.order.id")],
+    )
+
+
+def test_field_source_rejects_duplicate_priority_and_denied_use() -> None:
+    with pytest.raises(ValidationError):
+        TikTokFieldContractUpdate(
+            revision=1,
+            owner_user_id="admin_tenant_a",
+            business_key="order_id",
+            freshness_sla_seconds=3600,
+            missing_behavior="block_stage",
+            status="confirmed",
+            sources=[
+                _source("mock.order.id", priority=1, usage="mock"),
+                _source("mock.order.id.copy", priority=1, usage="mock"),
+            ],
+        )
+    with pytest.raises(ValidationError):
+        TikTokFieldContractUpdate(
+            revision=1,
+            owner_user_id="admin_tenant_a",
+            business_key="order_id",
+            freshness_sla_seconds=3600,
+            missing_behavior="block_stage",
+            status="confirmed",
+            sources=[
+                _source(
+                    "vendor.order.id",
+                    usage="real",
+                    decision="use",
+                    authorization_state="denied",
+                )
+            ],
+        )
+
+
+def test_stale_revision_and_cross_tenant_references_do_not_mutate() -> None:
+    with _session() as db:
+        admin_a = _seed_tenant(db, "tenant_a")
+        admin_b = _seed_tenant(db, "tenant_b")
+        bootstrap_data_validation_workspace(db, admin_a)
+        updated = update_field_contract(
+            db, admin_a, "order.order_id", _confirmed_contract(revision=1)
+        )
+        assert updated.revision == 2
+        with pytest.raises(TikTokDataValidationConflict, match="revision_conflict"):
+            update_field_contract(
+                db, admin_a, "order.order_id", _confirmed_contract(revision=1)
+            )
+        with pytest.raises(TikTokDataValidationNotFound, match="owner_not_found"):
+            update_field_contract(
+                db,
+                admin_a,
+                "order.order_id",
+                _confirmed_contract(revision=2, owner_user_id=admin_b.id),
+            )
+
+
+def test_scope_mutation_rejects_cross_tenant_store_and_member_writes() -> None:
+    with _session() as db:
+        admin_a = _seed_tenant(db, "tenant_a")
+        _seed_tenant(db, "tenant_b")
+        bootstrap_data_validation_workspace(db, admin_a)
+        request = TikTokDataValidationScopeUpdate(
+            revision=0,
+            store_resource_id="store_tenant_b",
+            creator_scope_summary="US pilot creators",
+            business_owner_user_id="admin_tenant_a",
+            data_owner_user_id="member_tenant_a",
+            status="active",
+        )
+        with pytest.raises(TikTokDataValidationNotFound, match="store_not_found"):
+            update_data_validation_scope(db, admin_a, request)
+
+        member = db.get(User, "member_tenant_a")
+        assert member is not None
+        valid_scope = request.model_copy(update={"store_resource_id": "store_tenant_a"})
+        with pytest.raises(HTTPException) as denied:
+            update_data_validation_scope(db, member, valid_scope)
+        assert denied.value.status_code == 403
+        with pytest.raises(HTTPException):
+            update_field_contract(
+                db, member, "order.order_id", _confirmed_contract(revision=1)
+            )
+        with pytest.raises(HTTPException):
+            update_capability_evidence(
+                db,
+                member,
+                "seller.shop.read",
+                TikTokCapabilityEvidenceUpdate(
+                    revision=1,
+                    subject_key="global",
+                    required_scope="shop.read",
+                    evidence_level="E1",
+                    evidence_type="official_docs",
+                    status="verified",
+                    summary="Documented capability",
+                    evidence_ref="doc:shop-read",
+                    checked_by_user_id=admin_a.id,
+                    checked_at=datetime(2026, 9, 22, tzinfo=UTC),
+                ),
+            )
+
+
+def test_unknown_catalog_code_and_provider_without_audit_details_are_rejected() -> None:
+    with _session() as db:
+        admin = _seed_tenant(db, "tenant_a")
+        bootstrap_data_validation_workspace(db, admin)
+        with pytest.raises(TikTokDataValidationNotFound, match="catalog_entry_not_found"):
+            update_field_contract(db, admin, "order.unknown", _confirmed_contract(revision=1))
+    with pytest.raises(ValidationError):
+        TikTokCapabilityEvidenceUpdate(
+            revision=1,
+            subject_key="global",
+            evidence_level="E1",
+            evidence_type="official_docs",
+            status="verified",
+            decision="use",
+            summary="",
+            evidence_ref="contract:fastmoss",
+        )
+
+
+@pytest.mark.parametrize(
+    ("level", "evidence_type"),
+    (("E3", "mock"), ("E2", "official_docs"), ("E0", "sandbox")),
+)
+def test_evidence_level_type_combinations_are_strict(level: str, evidence_type: str) -> None:
+    with pytest.raises(ValidationError):
+        TikTokCapabilityEvidenceUpdate(
+            revision=1,
+            subject_key="seller-us",
+            resource_id="store_tenant_a",
+            required_scope="shop.read",
+            evidence_level=level,
+            evidence_type=evidence_type,
+            status="verified",
+            summary="Evidence summary",
+            evidence_ref="evidence:1",
+            checked_by_user_id="admin_tenant_a",
+            checked_at=datetime(2026, 9, 22, tzinfo=UTC),
+        )
+
+
+def _configured_readiness_rows() -> tuple[
+    TikTokDataValidationScope,
+    list[TikTokFieldContract],
+    list[TikTokCapabilityEvidence],
+    TikTokDataValidationRun,
+]:
+    checked_at = datetime(2026, 9, 21, tzinfo=UTC)
+    scope = TikTokDataValidationScope(
+        tenant_id="tenant_a",
+        market="US",
+        store_resource_id="store_tenant_a",
+        creator_scope_summary="US pilot creators",
+        business_owner_user_id="admin_tenant_a",
+        data_owner_user_id="member_tenant_a",
+        status="active",
+    )
+    fields = [
+        TikTokFieldContract(
+            tenant_id="tenant_a",
+            field_code=code,
+            domain=code.split(".", 1)[0],
+            label=code,
+            data_type="string",
+            owner_user_id="admin_tenant_a",
+            business_key="record_id",
+            freshness_sla_seconds=3600,
+            missing_behavior="block_stage",
+            sources_json=[_source(f"mock.{code}").model_dump(mode="json")],
+            status="confirmed",
+        )
+        for code in (
+            "sample.application_id",
+            "sample.creator_id",
+            "sample.product_id",
+            "sample.status",
+            "sample.applied_at",
+            "sample.fulfillment_due_at",
+            "order.order_id",
+            "order.creator_id",
+            "order.product_id",
+            "order.status",
+            "order.created_at",
+            "order.completed_at",
+            "logistics.order_id",
+            "logistics.tracking_number",
+            "logistics.status",
+            "logistics.occurred_at",
+            "video.video_id",
+            "video.creator_id",
+            "video.product_id",
+            "video.published_at",
+            "video.view_count",
+            "video.like_count",
+            "attribution.pid",
+            "attribution.order_id",
+            "attribution.window_start",
+            "attribution.window_end",
+            "gmv.order_id",
+            "gmv.amount",
+            "gmv.currency",
+            "gmv.occurred_at",
+        )
+    ]
+    from app.tiktok.data_validation import CAPABILITY_CATALOG, PROVIDER_CATALOG
+
+    entries = [
+        TikTokCapabilityEvidence(
+            tenant_id="tenant_a",
+            entry_code=item.code,
+            entry_kind=item.entry_kind,
+            platform_domain=item.platform_domain,
+            action=item.action,
+            direction=item.direction,
+            evidence_level="E1",
+            evidence_type="official_docs",
+            status="blocked" if item.entry_kind == "capability" else "verified",
+            decision="defer" if item.entry_kind == "provider_decision" else None,
+            summary="Reviewed and recorded",
+            evidence_ref="doc:review",
+            checked_by_user_id="admin_tenant_a",
+            checked_at=checked_at,
+        )
+        for item in (*CAPABILITY_CATALOG, *PROVIDER_CATALOG)
+    ]
+    run = TikTokDataValidationRun(
+        tenant_id="tenant_a",
+        catalog_version=DATA_VALIDATION_CATALOG_VERSION,
+        dataset_digest="sha256:fixed",
+        record_count=1,
+        status="passed",
+        started_by_user_id="admin_tenant_a",
+    )
+    return scope, fields, entries, run
+
+
+def test_configured_workspace_is_ready_but_mock_never_makes_real_data_ready() -> None:
+    scope, contracts, entries, passed_run = _configured_readiness_rows()
+    readiness = evaluate_data_validation_readiness(
+        scope=scope,
+        field_contracts=contracts,
+        evidence=entries,
+        latest_run=passed_run,
+        active_authorizations=[],
+        now=datetime(2026, 9, 22, tzinfo=UTC),
+        has_recorded_or_real_validation=False,
+    )
+    assert readiness.workbench_ready is True
+    assert readiness.real_data_ready is False
+    assert "recorded_or_real_validation_missing" in {item.code for item in readiness.blockers}
+
+
+def test_e3_is_action_specific_and_requires_matching_unexpired_authorization() -> None:
+    scope, contracts, entries, passed_run = _configured_readiness_rows()
+    shop = next(item for item in entries if item.entry_code == "seller.shop.read")
+    shop.evidence_level = "E3"
+    shop.evidence_type = "real_account"
+    shop.status = "verified"
+    shop.subject_key = "seller-us"
+    shop.resource_id = "store_tenant_a"
+    shop.required_scope = "shop.read"
+    shop.valid_until = datetime(2026, 10, 1, tzinfo=UTC)
+    authorization = ExternalAuthorization(
+        tenant_id="tenant_a",
+        authorization_type="seller",
+        subject_id="seller-us",
+        resource_id="store_tenant_a",
+        scopes_json=["shop.read"],
+        status="active",
+        expires_at=datetime(2026, 10, 1, tzinfo=UTC),
+    )
+
+    readiness = evaluate_data_validation_readiness(
+        scope=scope,
+        field_contracts=contracts,
+        evidence=entries,
+        latest_run=passed_run,
+        active_authorizations=[authorization],
+        now=datetime(2026, 9, 22, tzinfo=UTC),
+        has_recorded_or_real_validation=False,
+    )
+    blockers = {(item.code, item.target_code) for item in readiness.blockers}
+    assert ("capability_e3_missing", "affiliate.orders.read") in blockers
+    assert ("capability_e3_missing", "seller.shop.read") not in blockers
+
+    shop.valid_until = datetime(2026, 9, 21, tzinfo=UTC)
+    expired = evaluate_data_validation_readiness(
+        scope=scope,
+        field_contracts=contracts,
+        evidence=entries,
+        latest_run=passed_run,
+        active_authorizations=[authorization],
+        now=datetime(2026, 9, 22, tzinfo=UTC),
+        has_recorded_or_real_validation=False,
+    )
+    assert ("capability_evidence_expired", "seller.shop.read") in {
+        (item.code, item.target_code) for item in expired.blockers
+    }
+
+
+@pytest.mark.parametrize(
+    ("subject", "resource", "scope_name", "authorization", "expected_code"),
+    (
+        ("wrong", "store_tenant_a", "shop.read", True, "authorization_missing"),
+        ("seller-us", "wrong-store", "shop.read", True, "capability_resource_mismatch"),
+        ("seller-us", "store_tenant_a", "wrong.scope", True, "authorization_missing"),
+        ("seller-us", "store_tenant_a", "shop.read", False, "authorization_missing"),
+    ),
+)
+def test_real_gate_rejects_subject_resource_scope_and_authorization_mismatch(
+    subject: str,
+    resource: str,
+    scope_name: str,
+    authorization: bool,
+    expected_code: str,
+) -> None:
+    scope, contracts, entries, passed_run = _configured_readiness_rows()
+    shop = next(item for item in entries if item.entry_code == "seller.shop.read")
+    shop.evidence_level = "E3"
+    shop.evidence_type = "real_account"
+    shop.status = "verified"
+    shop.subject_key = subject
+    shop.resource_id = resource
+    shop.required_scope = scope_name
+    shop.valid_until = datetime(2026, 10, 1, tzinfo=UTC)
+    auth_rows = (
+        [
+            ExternalAuthorization(
+                tenant_id="tenant_a",
+                authorization_type="seller",
+                subject_id="seller-us",
+                resource_id="store_tenant_a",
+                scopes_json=["shop.read"],
+                status="active",
+                expires_at=datetime(2026, 10, 1, tzinfo=UTC),
+            )
+        ]
+        if authorization
+        else []
+    )
+    readiness = evaluate_data_validation_readiness(
+        scope=scope,
+        field_contracts=contracts,
+        evidence=entries,
+        latest_run=passed_run,
+        active_authorizations=auth_rows,
+        now=datetime(2026, 9, 22, tzinfo=UTC),
+        has_recorded_or_real_validation=False,
+    )
+    assert (expected_code, "seller.shop.read") in {
+        (item.code, item.target_code) for item in readiness.blockers
+    }
