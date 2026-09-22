@@ -319,8 +319,8 @@ class TikTokDataValidationRunRead(BaseModel):
     status: str
     workbench_ready_snapshot: bool
     real_data_ready_snapshot: bool
-    checks_json: list[dict[str, Any]]
-    issues_json: list[dict[str, Any]]
+    checks: list[dict[str, Any]] = Field(validation_alias="checks_json")
+    issues: list[dict[str, Any]] = Field(validation_alias="issues_json")
     started_by_user_id: str
     created_at: datetime
 

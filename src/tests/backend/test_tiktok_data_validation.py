@@ -741,6 +741,8 @@ def test_mock_runs_are_appended_and_never_mark_real_data_ready() -> None:
         assert len(runs) == 2
         assert first.dataset_digest == second.dataset_digest
         assert first.status == second.status == "passed"
+        assert first.checks
+        assert first.issues == []
         assert first.real_data_ready_snapshot is False
         assert second.real_data_ready_snapshot is False
         serialized = json.dumps(
