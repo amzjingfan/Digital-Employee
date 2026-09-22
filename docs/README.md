@@ -52,6 +52,7 @@ The cross-border PRD and integrated plan refer to `prd/lan-multiuser-codex-memor
 
 ## Current designs and implementation plans
 
+- [TikTok P3-B0 runnable data validation workbench design, 2026-09-22](superpowers/specs/2026-09-22-tiktok-p3b0-data-validation-workbench-design.md)
 - [Casdoor production authentication hardening design, 2026-09-18](superpowers/specs/2026-09-18-casdoor-production-auth-hardening-design.md)
 - [Casdoor production authentication hardening implementation plan, 2026-09-18](superpowers/plans/2026-09-18-casdoor-production-auth-hardening.md)
 

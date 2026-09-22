@@ -501,3 +501,25 @@
 - Windows 运行限制：官方 supervisor 在本机将虚拟环境 Python 包装 PID 与实际 Uvicorn 子 PID分离，导致健康子进程存在时仍反复重启并产生端口冲突。经两轮父子进程和命令行核验后停止 supervisor，清理已确认的旧 Joukir 进程树，并将唯一稳定包装进程 PID 66924 写入忽略的 `.dev/app.pid`；未修改源码、配置内容或 ACL。`dev_down.ps1` 可据此停止整棵应用进程树，但当前运行态不提供自动重启。
 - 在线验证：`dev_status.ps1` 显示 `app running (66924)`、5173 listening、health ok；`GET /api/health` 返回 `{"status":"ok","app":"九骥 Joukir"}`，`GET /chat/`、`GET /enterprise/dashboard`、`GET /login` 均为 200，`POST /api/auth/oidc/logout` 为 200 且返回 `{"redirect_url":"/login"}`。实际监听子进程为 PID 58288，命令行为本仓库 `single_port_app:app --host 127.0.0.1 --port 5173`。
 - 剩余风险与下一步：完整后端基线和 Windows supervisor PID 跟踪仍需单独修复；本次只保证当前单实例稳定运行。生产 SSO 仍需运营者使用真实 Casdoor 会话完成登录、角色页面、前通道注销和再次登录验收。
+## 2026-09-22 — TikTok P3-B0 数据验证工作台设计（开始）
+
+- 目标：将 TikTok 模块 PRD V1.8 的 P3-B0 落成可运行、可审计的数据验证工作台，为 P3-B1 的看板、样品履约和指标字典提供明确输入门禁。
+- 范围：本步骤仅形成设计规格并核对现有 TikTok 专项基线；规划租户试点范围、字段契约、动作级能力证据、Mock 验证运行、工作台 API/UI、权限、RLS 与退出条件，尚不修改业务源码或数据库结构。
+- 已知阻塞：真实美国店铺部署与可调用授权尚未独立验收；Creator、Affiliate、Ads、LIVE 和消息能力不能由 Seller 权限或 Mock 结果推定。当前完整后端套件存在已记录的非绿色基线。
+- 隔离：工作在 `.worktrees/tiktok-p3b0-validation` 的 `codex/tiktok-p3b0-validation` 分支，保留主工作区未提交的认证、M2M 和监督器改动不动。
+- 安全边界：工作台不保存 Token、Cookie、原始 OAuth 载荷、原始第三方响应、达人地址或明文联系方式；Mock/文档/沙箱证据不得标记为真实账号数据就绪。
+
+## 2026-09-22 — TikTok P3-B0 数据验证工作台设计复核（开始）
+
+- 目标：对已批准方向形成的书面规格执行一致性、范围、链接和仓库差异复核，并记录现有 TikTok 专项测试基线。
+- 范围：检查设计规格与 PRD 19.1、现有租户/RLS/管理员权限约定、文档索引和 Mock/真实数据门禁是否一致；不修改业务源码或数据库结构。
+- 已知约束：书面规格尚待用户复核；按设计流程，本步骤通过后只提交设计文档，不提前进入实现计划或实现。
+
+## 2026-09-22 — TikTok P3-B0 数据验证工作台设计复核（完成）
+
+- 变更：新增 `docs/superpowers/specs/2026-09-22-tiktok-p3b0-data-validation-workbench-design.md`，并在 `docs/README.md` 建立索引；业务源码、数据库结构和运行配置未改动。
+- 规格结论：采用四张租户表承载 US 试点范围、字段契约、动作级能力证据和追加写验证运行；管理员可编辑和运行，成员只读；目录幂等初始化，编辑使用 revision；PostgreSQL 强制 RLS。
+- 关键门禁：`workbench_ready` 与 `real_data_ready` 独立计算；被阻塞能力允许形成如实盘点结论，但 Mock、文档、沙箱、登录成功或其他动作证据均不能把目标动作提升到 E3。首版缺少真实或脱敏录制回放入口，因此真实数据状态必须保持 false。
+- 基线验证：使用现有锁定虚拟环境运行 13 个 TikTok 专项测试文件，68 项在 49.30 秒内通过。文档结构检查确认要求章节齐全、无 TODO/TBD/FIXME，索引目标存在且只有一条索引；`git diff --check` 无内容错误，仅报告仓库既有的 Windows 换行转换提示。
+- 剩余风险：真实 US 店铺、Affiliate、Creator/Partner、Ads、LIVE、消息与客服动作尚无完整 E3；完整后端套件仍有已记录的其他基线失败。设计规格尚待用户书面复核，尚未形成实施计划或修改业务代码。
+- 下一步：用户复核本规格后，按写计划流程拆分红绿 TDD、migration/RLS、API、前端和双角色浏览器验收任务，再开始实现。
