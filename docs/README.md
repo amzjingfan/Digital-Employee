@@ -58,6 +58,7 @@ The cross-border PRD and integrated plan refer to `prd/lan-multiuser-codex-memor
 ## Current designs and implementation plans
 
 - [Open Plaza knowledge, SOP, and tool creation entries design, 2026-09-23](superpowers/specs/2026-09-23-open-plaza-create-entries-design.md)
+- [Open Plaza knowledge, SOP, and tool creation entries implementation plan, 2026-09-23](superpowers/plans/2026-09-23-open-plaza-create-entries.md)
 - [TikTok P3-B1 historical facts, dashboard and reconciliation design, 2026-09-23](superpowers/specs/2026-09-23-tiktok-p3b1-dashboard-fulfillment-design.md)
 - [TikTok P3-B1 historical facts, dashboard and reconciliation implementation plan, 2026-09-23](superpowers/plans/2026-09-23-tiktok-p3b1-dashboard-fulfillment.md)
 - [TikTok P3-B0 runnable data validation workbench design, 2026-09-22](superpowers/specs/2026-09-22-tiktok-p3b0-data-validation-workbench-design.md)
