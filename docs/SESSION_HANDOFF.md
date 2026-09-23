@@ -13,6 +13,12 @@ This file is mutable operational context. Re-check every process, port, branch, 
 - Blockers: authenticated browser acceptance and a real model response remain unverified because the browser inventory failed with `nodeRepl.fetch request failed`. The main checkout has unrelated uncommitted work, and the backend full-suite gate is not green; do not auto-merge this branch under the repository rule.
 - Exact next actions: review the branch diff, run a signed-in administrator check of `/enterprise/agents` when browser access is available, verify a default-model draft with ordinary non-sensitive position text, then decide how to resolve or explicitly accept the backend baseline and safely integrate without overwriting main's uncommitted files.
 
+## Open Plaza creation entries for knowledge, SOP, and tools (2026-09-23; design review gate)
+
+- Managed isolated worktree: `C:\Users\Administrator\.codex\worktrees\open-plaza-create-entries\joukir`, branch `codex/open-plaza-create-entries`, based on `main@6501350`. The main checkout had nine existing unrelated uncommitted paths when this work began; none has been overwritten. No push or source-branch deletion is authorized.
+- The user approved the conversational design: all signed-in users see the three new create buttons, as with Skill, while actual Open Plaza publication retains the existing administrator-only server checks. Non-administrators receive explicit click feedback. The written specification is `docs/superpowers/specs/2026-09-23-open-plaza-create-entries-design.md`; no product code has been changed.
+- Next actions: obtain user review/approval of the committed written specification. Only then invoke the implementation-planning skill, seek plan/execution approval, run an isolated baseline, implement with frontend regression tests, verify affected routes/roles, review, and merge linearly into local `main` while preserving its dirty state. Browser acceptance and dependency installation have not yet occurred.
+
 ## Knowledge graph PostgreSQL read fix (2026-09-23; pending integration)
 
 - Isolated branch `codex/knowledge-postgres-buckets` was created from `main@9156ac7` in a Codex-managed worktree. The main worktree retains nine unrelated uncommitted paths; no push or source-branch deletion was authorized.

@@ -1246,3 +1246,16 @@
 - Validation: focused backend generation and agent-permission tests 23 passed; frontend 69 files and 304 tests passed; frontend test typecheck, i18n check (4,412 translations), config check, production build, and 1,250-path test-layout guard passed. The new backend test file and focused backend lint selectors passed Ruff; whole changed backend-file Ruff still reports 78 pre-existing findings, with none on the new route or schemas. `git diff --check` passed. The enterprise router exposes the new POST path.
 - Remaining risks: no real model call or authenticated browser acceptance was possible. The browser connector returned `nodeRepl.fetch request failed`. The full backend run stopped after the documented advertising baseline failure at 14 passed and 1 failed: `test_ad_action_requires_approval_then_creates_7_14_30_day_reviews` expected `queued` but received `manual_resolution_required`.
 - Next recommended step: review and commit the isolated branch, then perform administrator browser acceptance and a real default-model generation in the intended environment. Do not merge while main's unrelated changes and the required backend gate remain unresolved.
+
+
+## 2026-09-23 — 开放广场三类资源创建入口设计（开始）
+
+- 目标：让知识库、SOP、工具广场与 Skill 广场一样提供创建开放内容入口。
+- 范围：入口对所有登录用户可见，继续复用现有管理员发布权限和各资源新建流程；普通用户点击时明确提示权限限制，不改后端授权、数据库或资源结构。
+- 已知阻塞：当前主工作树有九个既有未提交路径；本工作在独立 worktree 中进行。架构型设计需先形成并经用户审阅书面规范，然后才进入实现计划与代码。
+
+## 2026-09-23 — 开放广场三类资源创建入口设计（书面规范待审）
+
+- 修改文件：新增 `docs/superpowers/specs/2026-09-23-open-plaza-create-entries-design.md`，在 `docs/README.md` 建立索引，并更新本日志及 `docs/SESSION_HANDOFF.md`。产品代码、后端权限和真实数据均未改动。
+- 验证：设计核对了四种资源各自现有的新建路由与服务端广场管理员检查；规范完成占位符、内部一致性、范围和歧义自查；`git diff --check` 未发现补丁空白错误，仅提示文档工作区行尾转换。
+- 剩余风险与下一步：需要用户审阅并批准书面规范；之后才能编写实现计划、安装隔离工作区依赖、建立基线、按测试驱动方式实现并做角色页面验收。主工作树九个已有未提交路径须完整保留，集成前再次核对。
