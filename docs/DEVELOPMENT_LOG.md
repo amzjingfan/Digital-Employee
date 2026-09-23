@@ -1163,3 +1163,17 @@
 
 - 将上述 24 个代码、迁移、测试和文档路径提交于 `codex/tiktok-p3b2-creator-pool@91490b5`；提交前 `git diff --cached --check` 通过，`python src/tests/check_test_layout.py` 检查 1,245 个已跟踪路径通过。无推送、无源分支删除、无对主工作树既有九个未提交路径的修改。
 - 下一步仍是隔离 PostgreSQL 迁移/RLS、已发布租户策略版本和真实浏览器角色验收；这些门禁未通过前不将本切片合入主干。
+
+## 2026-09-23 — TikTok P3-B2 验收门禁与集成（开始）
+
+- 目标：按用户“实施下一步”的指示，验证 P3-B2 首切片的 PostgreSQL 正向迁移与租户 RLS、已发布 Casbin 策略下的 BD 授权和真实页面角色行为；门禁通过后按仓库规则线性合并。
+- 范围：仅使用隔离验收数据库或其他可回滚的测试环境，不改动已恢复生产/开发数据；保留主工作树九个未提交路径，禁止对外消息和付款，未授权不发布租户策略或推送分支。
+- 已知阻塞：此前浏览器桥报 `nodeRepl.fetch request failed`；隔离 PostgreSQL 连接未配置；既有租户发布版策略可能屏蔽 CSV 新权限。先核实当前可用环境和仓库验收脚本，不预设这些条件已经解决。
+
+## 2026-09-23 — TikTok P3-B2 隔离验收与角色模拟（完成）
+
+- 改动文件：新增 `src/tests/backend/test_postgres_tiktok_p3b2_creator_pool_live.py`，更新 `src/tests/backend/test_tiktok_creator_pool_api.py`、`docs/SESSION_HANDOFF.md` 及本日志。新 PostgreSQL 测试仅在显式指定一次性本地集群时运行，并校验数据目录标记及端口，避免触碰恢复的 55433 数据库。
+- 验证命令与结果：在独立 PostgreSQL 16 集群中运行该 opt-in 测试，正向迁移、租户 A/B/无上下文强制 RLS、跨租户写拒绝、事件外键与追加式触发器、逆向迁移均通过（1 passed）；`pytest -k tiktok` 为 175 passed、3 skipped；新增 Python 测试文件 Ruff 与 `git diff --check` 通过。使用临时 Vite 和 Playwright Edge、模拟 API/三类会话检查 `/enterprise/tiktok`，BD 认领请求、主管入池请求及内容专员入口隐藏均通过；截图仅存系统临时目录。
+- 剩余风险：模拟 API/角色不是实际 Casdoor 或已发布租户策略验收；一次性最小前置 schema 不能代替完整目标库迁移门禁。现有租户策略仍需人工审阅继任版本并发布，P3-B1 的实际浏览器/数据库及业务门禁仍未完成。主干有九个无关未提交路径，暂不合并。本步未改变真实租户策略、恢复的数据库、外部平台或付款能力。
+- 下一步：提交本分支测试与记录并复跑已跟踪测试布局守卫；关闭临时 Vite/PostgreSQL；在具备真实账号、策略审阅和安全集成条件后完成剩余验收，再按仓库规则线性合并。
+- 清理：临时 Vite 会话已停止；隔离 PostgreSQL 先正常停止，再在核对其绝对路径仍位于系统临时目录后删除。恢复的本地 PostgreSQL 服务没有被停止或修改。

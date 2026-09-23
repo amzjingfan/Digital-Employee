@@ -4,6 +4,13 @@ Last refreshed: 2026-09-23 (Asia/Shanghai)
 
 This file is mutable operational context. Re-check every process, port, branch, and test result before relying on it. It contains no credential values or connection strings.
 
+## TikTok P3-B2 acceptance follow-up (2026-09-23)
+
+- The P3-B2 branch remains isolated from `main@d88d231`. An opt-in live PostgreSQL test now checks the actual forward migration, two forced-RLS tables, least-privilege runtime visibility and write denial across tenants A/B/no context, same-tenant event-owner FK, append-only trigger, and rollback. It passed once against a disposable loopback PostgreSQL 16 cluster; the restored local database on port 55433 was not changed. This is a minimal referenced-schema integration test, not the full production database gate.
+- A synthetic published-tenant-policy regression proves that a tenant's old published Casbin text blocks the new BD claim route until a successor with the reviewed grants is published. No real tenant policy was changed. Mocked Edge browser smoke on `/enterprise/tiktok` passed for BD claim, supervisor intake, and content-specialist tab hiding; it checked emitted request payloads and screenshots. The Codex browser bridge still fails, and these mocked roles do not replace authenticated Casdoor acceptance.
+- Verification: TikTok backend matrix 175 passed/3 skipped; isolated PostgreSQL test 1 passed; focused Ruff and diff check passed. The frontend implementation was unchanged and retains the prior 69-file/300-test, typecheck, i18n, config and build results. Run the tracked test-layout guard after committing the new opt-in test.
+- The temporary Vite server was stopped and the disposable PostgreSQL cluster was stopped and removed after the checks. Exact next actions: complete authenticated role/page checks and reviewed published-policy rollout in a real tenant; verify the migration on the target acceptance schema and the P3-B1 gates. Main has nine unrelated uncommitted paths, including handoff/log files, so do not merge or overwrite them until a clean safe integration path exists. No external send/payment, push or branch deletion is authorized.
+
 ## TikTok P3-B2 internal creator claims (2026-09-23)
 
 - Current isolated worktree: `C:\Users\Administrator\.codex\worktrees\tiktok-p3b2-creator-pool\joukir`, branch `codex/tiktok-p3b2-creator-pool`, implementation commit `91490b5`, based on `main@d88d231`. P3-B1 was rebased and fast-forward merged to `main@d88d231` after the user requested the merge. Main's nine pre-existing uncommitted paths were preserved and restored; the local safety branch is `codex/preserve-main-before-p3b1-merge-20260923@0713346`. Nothing was pushed or deleted.
