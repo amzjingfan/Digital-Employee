@@ -13,6 +13,8 @@ from psycopg import sql
 MIGRATIONS = Path(__file__).resolve().parents[2] / "backend" / "migrations"
 UP = MIGRATIONS / "20260923_tiktok_p3b2_creator_pool_v1.sql"
 DOWN = MIGRATIONS / "20260923_tiktok_p3b2_creator_pool_v1.down.sql"
+TRANSFER_UP = MIGRATIONS / "20260923_tiktok_p3b2_owner_transfer_v1.sql"
+TRANSFER_DOWN = MIGRATIONS / "20260923_tiktok_p3b2_owner_transfer_v1.down.sql"
 
 pytestmark = pytest.mark.skipif(
     os.getenv("JOUKIR_RUN_P3B2_ISOLATED_PG") != "1",
@@ -83,6 +85,7 @@ def test_creator_pool_forward_rls_constraints_and_rollback() -> None:
               ('identity_b', 'tenant_b', 'creator_b');
         """)
         migrator.execute(UP.read_text(encoding="utf-8"))
+        migrator.execute(TRANSFER_UP.read_text(encoding="utf-8"))
         assert migrator.execute("""
             SELECT count(*) FROM pg_class
             WHERE relname IN ('tiktok_creator_pool', 'tiktok_creator_pool_events')
@@ -176,7 +179,22 @@ def test_creator_pool_forward_rls_constraints_and_rollback() -> None:
                 WHERE id='event_a'
             """)
 
+    with _connection(port, dbname, "staffdeck_runtime") as runtime:
+        runtime.execute("BEGIN")
+        runtime.execute("SELECT set_config('app.tenant_id', 'tenant_a', true)")
+        runtime.execute("""
+            INSERT INTO public.tiktok_creator_pool_events (
+              id, tenant_id, pool_id, event_type, actor_user_id,
+              previous_owner_user_id, new_owner_user_id, reason, created_at
+            ) VALUES (
+              'transfer_probe', 'tenant_a', 'pool_a', 'transferred',
+              'user_a', 'user_a', 'user_a', 'staff_change', now()
+            )
+        """)
+        runtime.execute("ROLLBACK")
+
     with _connection(port, dbname, "staffdeck_migrator") as migrator:
+        migrator.execute(TRANSFER_DOWN.read_text(encoding="utf-8"))
         migrator.execute(DOWN.read_text(encoding="utf-8"))
         assert migrator.execute("SELECT to_regclass('public.tiktok_creator_pool')").fetchone()[0] is None
         assert migrator.execute("""

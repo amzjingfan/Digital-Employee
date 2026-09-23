@@ -12,6 +12,8 @@ Store one tenant-scoped pool entry per canonical SocialCreator, linked to an act
 
 Claims and subsequent transitions compare the expected revision and state in the database update. Only an active TikTok BD may claim or record an effective follow-up for their own entry; only an operations supervisor or admin may intake and approve reflow. An overdue claim becomes a candidate first. A supervisor approval clears ownership; an owner follow-up that wins the revision race renews the deadline and cancels the candidate. PostgreSQL enforces tenant composite references on the pool and all event user IDs, forced RLS and narrow runtime grants in addition to service authorization.
 
+For personnel changes, a supervisor or admin may transfer a claimed or reflow-candidate entry to another active BD in the same tenant, or release it to the public pool. The same revision comparison applies. Transfer resets the follow-up deadline and cancels pending reflow; release clears the deadline. Both write an append-only event with prior/new owner, actor, server time and a fixed reason code, without storing free-text personnel details. The event-type constraint is extended by a separate migration so an already-applied pool migration remains unchanged.
+
 ## Alternatives considered
 
 Putting owner and due time on SocialCreator was rejected because those fields are TikTok workflow state, while SocialCreator is a reusable canonical identity. An automatic deadline-triggered return was rejected because a delayed or disputed follow-up needs human review. Last-write-wins updates were rejected because simultaneous BD claims could silently overwrite ownership.
@@ -19,6 +21,8 @@ Putting owner and due time on SocialCreator was rejected because those fields ar
 ## Consequences and rollback
 
 The pool cannot be populated until a verified TikTok identity with current evidence exists, and intake requires an explicit SLA rule version. Current state can be queried directly while event history remains auditable. The first interface lists up to 100 currently eligible creators from the Social catalog; pagination or search is a separate usability improvement. Tenants with a previously published Casbin policy must publish a reviewed successor containing the new creator-pool grants before BD POST actions work, because the published policy takes precedence over the repository CSV. The down migration drops both tables and their evidence, so it is suitable only before production data is retained; an in-use deployment requires a migration and retention decision.
+
+The owner-transfer migration can be rolled back only while no `transferred` or `released` event has been retained; PostgreSQL rejects the old event constraint otherwise. A deployed tenant with those events needs a deliberate retention and forward-repair decision rather than deleting audit rows for rollback.
 
 ## Evidence
 

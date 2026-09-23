@@ -5090,8 +5090,8 @@ class TikTokCreatorPoolEvent(SQLModel, table=True):
             name="fk_tiktok_creator_pool_event_new_owner", ondelete="RESTRICT",
         ),
         CheckConstraint(
-            "event_type IN ('entered', 'claimed', 'follow_up', 'reflow_proposed', 'reflow_approved')",
-            name="tiktok_creator_pool_event_type_check",
+            "event_type IN ('entered', 'claimed', 'follow_up', 'reflow_proposed', 'reflow_approved', 'transferred', 'released')",
+            name="tiktok_creator_pool_events_event_type_check",
         ),
         Index("ix_tiktok_creator_pool_event_tenant_pool", "tenant_id", "pool_id", "created_at"),
     )

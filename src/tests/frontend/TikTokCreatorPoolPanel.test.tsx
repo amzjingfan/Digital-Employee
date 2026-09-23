@@ -67,3 +67,27 @@ it('refreshes the pool after a stale claim', async () => {
   fireEvent.click(screen.getByRole('button', { name: '认领' }));
   await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2));
 });
+
+it('lets a supervisor transfer or release a claimed owner with the current revision', async () => {
+  const claimed = { ...publicEntry, state: 'claimed', owner_user_id: bd.id, revision: 2 };
+  vi.mocked(api.get).mockImplementation(async (path) => {
+    if (path.startsWith('/api/v1/social/creators')) return [];
+    return {
+      entries: [claimed], can_manage: true, can_claim: false,
+      assignable_bds: [{ id: bd.id, username: 'bd' }, { id: 'bd-2', username: 'replacement' }],
+    };
+  });
+  render(<TikTokCreatorPoolPanel currentUser={{ ...bd, business_role: 'operations_supervisor' }} />);
+  await waitFor(() => expect(screen.getByLabelText('转交给 Creator A')).toBeTruthy());
+  fireEvent.change(screen.getByLabelText('转交给 Creator A'), { target: { value: 'bd-2' } });
+  fireEvent.click(screen.getByRole('button', { name: '转交归属' }));
+  await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+    '/api/enterprise/tiktok/creator-assignments/entry-1',
+    { expected_revision: 2, target_user_id: 'bd-2', reason: 'staff_change' },
+  ));
+  fireEvent.click(screen.getByRole('button', { name: '释放到公海' }));
+  await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+    '/api/enterprise/tiktok/creator-assignments/entry-1',
+    { expected_revision: 2, target_user_id: null, reason: 'manual_release' },
+  ));
+});

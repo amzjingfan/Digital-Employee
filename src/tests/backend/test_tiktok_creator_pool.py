@@ -17,6 +17,7 @@ from app.tiktok.creator_pool import (
     CreatorPoolConflict,
     PoolIntakeRequest,
     approve_reflow,
+    assign_creator,
     claim_creator,
     enter_creator_pool,
     get_creator_pool,
@@ -223,3 +224,89 @@ def test_reflow_needs_supervisor_and_loses_race_to_owner_follow_up() -> None:
         )
         assert public.state == "public"
         assert public.owner_user_id is None
+
+
+def test_supervisor_transfer_resets_due_time_and_records_both_owners() -> None:
+    with _session() as db:
+        _, supervisor, bd, other_bd, creator, identity = _seed(db, "tenant_a")
+        entry = _intake(db, supervisor, creator, identity)
+        claim_creator(db, bd, entry.id, expected_revision=1, now=NOW)
+        changed = assign_creator(
+            db, supervisor, entry.id, expected_revision=2,
+            target_user_id=other_bd.id, reason="staff_change", now=NOW + timedelta(hours=4),
+        )
+        assert changed.owner_user_id == other_bd.id
+        assert changed.state == "claimed"
+        assert changed.follow_up_due_at == NOW + timedelta(hours=52)
+        event = db.exec(select(TikTokCreatorPoolEvent).where(
+            TikTokCreatorPoolEvent.event_type == "transferred",
+        )).one()
+        assert (event.previous_owner_user_id, event.new_owner_user_id) == (bd.id, other_bd.id)
+        assert event.reason == "staff_change"
+        with pytest.raises(HTTPException) as former_owner:
+            record_effective_follow_up(
+                db, bd, entry.id, expected_revision=3, evidence_ref=ACTION_REF, now=NOW,
+            )
+        assert former_owner.value.status_code == 403
+
+
+def test_supervisor_release_ends_assignment_and_stale_transfer_cannot_win() -> None:
+    with _session() as db:
+        _, supervisor, bd, other_bd, creator, identity = _seed(db, "tenant_a")
+        entry = _intake(db, supervisor, creator, identity)
+        claim_creator(db, bd, entry.id, expected_revision=1, now=NOW)
+        released = assign_creator(
+            db, supervisor, entry.id, expected_revision=2,
+            target_user_id=None, reason="manual_release", now=NOW,
+        )
+        assert (released.state, released.owner_user_id, released.follow_up_due_at) == (
+            "public", None, None,
+        )
+        event = db.exec(select(TikTokCreatorPoolEvent).where(
+            TikTokCreatorPoolEvent.event_type == "released",
+        )).one()
+        assert (event.previous_owner_user_id, event.new_owner_user_id) == (bd.id, None)
+        with pytest.raises(CreatorPoolConflict) as stale:
+            assign_creator(
+                db, supervisor, entry.id, expected_revision=2,
+                target_user_id=other_bd.id, reason="staff_change", now=NOW,
+            )
+        assert stale.value.revision == 3
+
+
+def test_transfer_rejects_inactive_foreign_or_non_bd_targets_and_bad_reasons() -> None:
+    with _session() as db:
+        _, supervisor, bd, other_bd, creator, identity = _seed(db, "tenant_a")
+        _, _, foreign_bd, _, _, _ = _seed(db, "tenant_b")
+        entry = _intake(db, supervisor, creator, identity)
+        claim_creator(db, bd, entry.id, expected_revision=1, now=NOW)
+        for target in (foreign_bd.id, supervisor.id):
+            with pytest.raises(CreatorPoolConflict, match="active_tenant_bd_required"):
+                assign_creator(
+                    db, supervisor, entry.id, expected_revision=2,
+                    target_user_id=target, reason="staff_change", now=NOW,
+                )
+        with pytest.raises(CreatorPoolConflict, match="creator_already_assigned"):
+            assign_creator(
+                db, supervisor, entry.id, expected_revision=2,
+                target_user_id=bd.id, reason="staff_change", now=NOW,
+            )
+        other_bd.status = "disabled"
+        db.add(other_bd)
+        db.commit()
+        with pytest.raises(CreatorPoolConflict, match="active_tenant_bd_required"):
+            assign_creator(
+                db, supervisor, entry.id, expected_revision=2,
+                target_user_id=other_bd.id, reason="staff_change", now=NOW,
+            )
+        with pytest.raises(CreatorPoolConflict, match="assignment_reason_invalid"):
+            assign_creator(
+                db, supervisor, entry.id, expected_revision=2,
+                target_user_id=None, reason="staff_change", now=NOW,
+            )
+        with pytest.raises(HTTPException) as denied:
+            assign_creator(
+                db, bd, entry.id, expected_revision=2,
+                target_user_id=None, reason="manual_release", now=NOW,
+            )
+        assert denied.value.status_code == 403

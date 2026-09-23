@@ -12,7 +12,10 @@ type Entry = {
   state: 'public' | 'claimed' | 'reflow_candidate';
   owner_user_id: string | null; follow_up_due_at: string | null; revision: number;
 };
-type Workspace = { entries: Entry[]; can_manage: boolean; can_claim: boolean };
+type Workspace = {
+  entries: Entry[]; can_manage: boolean; can_claim: boolean;
+  assignable_bds: { id: string; username: string }[];
+};
 type SocialCreator = {
   id: string; canonical_name: string; status: string;
   identities: { id: string; platform: string; public_handle: string; verified: boolean; status: string; latest_evidence: { id: string } | null }[];
@@ -31,6 +34,8 @@ export default function TikTokCreatorPoolPanel({ currentUser }: { currentUser: E
   const [ruleVersion, setRuleVersion] = useState('');
   const [windowHours, setWindowHours] = useState('');
   const [evidenceRefs, setEvidenceRefs] = useState<Record<string, string>>({});
+  const [assignmentTargets, setAssignmentTargets] = useState<Record<string, string>>({});
+  const [assignmentReasons, setAssignmentReasons] = useState<Record<string, 'staff_change' | 'assignment_correction'>>({});
 
   const load = useCallback(async () => {
     try {
@@ -130,6 +135,23 @@ export default function TikTokCreatorPoolPanel({ currentUser }: { currentUser: E
             </>}
             {workspace.can_manage && entry.state === 'claimed' && <Button variant="outline" disabled={busy} onClick={() => void mutate(`/api/enterprise/tiktok/creator-reflow-proposals/${entry.id}`, { expected_revision: entry.revision }, '已标记回流候选')}>提出回流</Button>}
             {workspace.can_manage && entry.state === 'reflow_candidate' && <Button variant="outline" disabled={busy} onClick={() => void mutate(`/api/enterprise/tiktok/creator-reflow-approvals/${entry.id}`, { expected_revision: entry.revision }, '回流已确认')}>确认回流</Button>}
+            {workspace.can_manage && entry.owner_user_id && entry.state !== 'public' && <>
+              <select className={inputClass} aria-label={`转交给 ${entry.creator_name}`} value={assignmentTargets[entry.id] ?? ''} onChange={(event) => setAssignmentTargets((current) => ({ ...current, [entry.id]: event.target.value }))}>
+                <option value="">选择接手 BD</option>
+                {(workspace.assignable_bds ?? []).filter((candidate) => candidate.id !== entry.owner_user_id).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.username}</option>)}
+              </select>
+              <select className={inputClass} aria-label={`转交原因 ${entry.creator_name}`} value={assignmentReasons[entry.id] ?? 'staff_change'} onChange={(event) => setAssignmentReasons((current) => ({ ...current, [entry.id]: event.target.value as 'staff_change' | 'assignment_correction' }))}>
+                <option value="staff_change">人员变动</option>
+                <option value="assignment_correction">归属纠正</option>
+              </select>
+              <Button variant="outline" disabled={busy || !assignmentTargets[entry.id]} onClick={() => void mutate(`/api/enterprise/tiktok/creator-assignments/${entry.id}`, {
+                expected_revision: entry.revision, target_user_id: assignmentTargets[entry.id],
+                reason: assignmentReasons[entry.id] ?? 'staff_change',
+              }, '达人归属已转交')}>转交归属</Button>
+              <Button variant="outline" disabled={busy} onClick={() => void mutate(`/api/enterprise/tiktok/creator-assignments/${entry.id}`, {
+                expected_revision: entry.revision, target_user_id: null, reason: 'manual_release',
+              }, '达人已释放到公海')}>释放到公海</Button>
+            </>}
           </div>
         </div>)}
         {workspace?.entries.length === 0 && <p className="text-[12px] text-[#66708a]">当前没有可见的达人池记录。</p>}

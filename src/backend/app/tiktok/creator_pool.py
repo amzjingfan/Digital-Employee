@@ -52,6 +52,16 @@ class PoolFollowUpRequest(PoolRevisionRequest):
     evidence_ref: str = Field(min_length=1, max_length=160)
 
 
+class PoolAssignmentRequest(PoolRevisionRequest):
+    target_user_id: str | None = Field(default=None, max_length=160)
+    reason: Literal["staff_change", "assignment_correction", "manual_release"]
+
+
+class PoolAssignableBD(BaseModel):
+    id: str
+    username: str
+
+
 class PoolEntryRead(BaseModel):
     id: str
     creator_id: str
@@ -72,6 +82,7 @@ class PoolWorkspace(BaseModel):
     entries: list[PoolEntryRead]
     can_manage: bool
     can_claim: bool
+    assignable_bds: list[PoolAssignableBD]
 
 
 def _clock(now: datetime | None) -> datetime:
@@ -146,8 +157,15 @@ def get_creator_pool(db: Session, user: User) -> PoolWorkspace:
         entries = [entry for entry in entries if (
             entry.state == "public" or entry.owner_user_id == user.id
         )]
+    candidates = db.exec(select(User).where(
+        User.tenant_id == user.tenant_id,
+        User.status == "active",
+        User.business_role == "tiktok_bd_specialist",
+    ).order_by(User.username, User.id)).all() if manager else []
     return PoolWorkspace(
         entries=[_read(db, entry) for entry in entries], can_manage=manager, can_claim=bd,
+        assignable_bds=[PoolAssignableBD(id=candidate.id, username=candidate.username)
+                        for candidate in candidates],
     )
 
 
@@ -334,4 +352,43 @@ def approve_reflow(
         db, user, entry, expected_revision=expected_revision,
         expected_state="reflow_candidate", new_state="public", new_owner=None,
         due_at=None, event_type="reflow_approved", reason="supervisor_approved", now=now,
+    )
+
+
+def assign_creator(
+    db: Session, user: User, entry_id: str, *, expected_revision: int,
+    target_user_id: str | None, reason: str, now: datetime | None = None,
+) -> PoolEntryRead:
+    _manager(user)
+    entry = _entry(db, user, entry_id)
+    if entry.revision != expected_revision:
+        raise CreatorPoolConflict(
+            "creator_pool_stale", current_owner_user_id=entry.owner_user_id,
+            revision=entry.revision,
+        )
+    if entry.state not in {"claimed", "reflow_candidate"}:
+        raise CreatorPoolConflict("creator_not_claimed")
+    if target_user_id is None:
+        if reason != "manual_release":
+            raise CreatorPoolConflict("assignment_reason_invalid")
+        new_state, event_type, due_at = "public", "released", None
+    else:
+        if reason not in {"staff_change", "assignment_correction"}:
+            raise CreatorPoolConflict("assignment_reason_invalid")
+        if target_user_id == entry.owner_user_id:
+            raise CreatorPoolConflict("creator_already_assigned")
+        target = db.exec(select(User).where(
+            User.tenant_id == user.tenant_id,
+            User.id == target_user_id,
+            User.status == "active",
+            User.business_role == "tiktok_bd_specialist",
+        )).first()
+        if target is None:
+            raise CreatorPoolConflict("active_tenant_bd_required")
+        new_state, event_type = "claimed", "transferred"
+        due_at = _clock(now) + timedelta(hours=entry.follow_up_window_hours)
+    return _transition(
+        db, user, entry, expected_revision=expected_revision, expected_state=entry.state,
+        new_state=new_state, new_owner=target_user_id, due_at=due_at,
+        event_type=event_type, reason=reason, now=now,
     )

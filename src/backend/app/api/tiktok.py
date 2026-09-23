@@ -16,12 +16,14 @@ from app.security.auth import get_current_user
 from app.tiktok.connector import TikTokConnectorRead, read_tiktok_resource
 from app.tiktok.creator_pool import (
     CreatorPoolConflict,
+    PoolAssignmentRequest,
     PoolEntryRead,
     PoolFollowUpRequest,
     PoolIntakeRequest,
     PoolRevisionRequest,
     PoolWorkspace,
     approve_reflow,
+    assign_creator,
     claim_creator,
     enter_creator_pool,
     get_creator_pool,
@@ -203,6 +205,19 @@ def creator_pool_reflow_approve(
 ) -> PoolEntryRead:
     return _creator_pool_action(db, lambda: approve_reflow(
         db, current_user, entry_id, expected_revision=request.expected_revision,
+    ))
+
+
+@router.post("/creator-assignments/{entry_id}", response_model=PoolEntryRead)
+def creator_pool_assign(
+    entry_id: str,
+    request: PoolAssignmentRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> PoolEntryRead:
+    return _creator_pool_action(db, lambda: assign_creator(
+        db, current_user, entry_id, expected_revision=request.expected_revision,
+        target_user_id=request.target_user_id, reason=request.reason,
     ))
 
 

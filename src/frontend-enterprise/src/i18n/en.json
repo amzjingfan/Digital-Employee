@@ -4394,5 +4394,14 @@
   "选择已核验达人": "Select a verified creator",
   "从同租户目录选择已核验 TikTok 达人，并指定明确的 SLA 规则版本。": "Select a verified TikTok creator from this tenant and specify the SLA rule version.",
   "来源证据：": "Source evidence:",
-  "跟进证据使用 evidence: 加 32 位十六进制编号；不要填写联系人或消息正文。": "Use evidence: followed by 32 hexadecimal digits for follow-up evidence; do not enter contacts or message text."
+  "跟进证据使用 evidence: 加 32 位十六进制编号；不要填写联系人或消息正文。": "Use evidence: followed by 32 hexadecimal digits for follow-up evidence; do not enter contacts or message text.",
+  "转交给 {1}": "Transfer to {1}",
+  "选择接手 BD": "Select receiving BD",
+  "转交原因 {1}": "Transfer reason {1}",
+  "人员变动": "Staff change",
+  "归属纠正": "Assignment correction",
+  "达人归属已转交": "Creator ownership transferred",
+  "转交归属": "Transfer ownership",
+  "达人已释放到公海": "Creator released to the public pool",
+  "释放到公海": "Release to public pool"
 }

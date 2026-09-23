@@ -36,6 +36,7 @@ _APPROVED_TIKTOK_ROUTES = {
     ("POST", "/bootstrap"),
     ("POST", "/bootstrap-assets"),
     ("POST", "/creator-claims/{entry_id}"),
+    ("POST", "/creator-assignments/{entry_id}"),
     ("POST", "/creator-follow-ups/{entry_id}"),
     ("POST", "/creator-pool"),
     ("POST", "/creator-reflow-approvals/{entry_id}"),
