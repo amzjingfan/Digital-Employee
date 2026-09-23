@@ -52,4 +52,4 @@
 
 - [x] Write a failing panel test for role-gated controls, creator selection and conflict refresh.
 - [x] Add the internal pool tab and panel, then run Vitest, typecheck, i18n, config and build.
-- [ ] Run the TikTok backend matrix, migration/static guard, Ruff and test-layout check; document real browser/PostgreSQL gates separately and commit the branch.
+- [x] Run the TikTok backend matrix, migration/static guard, Ruff and test-layout check; document real browser/PostgreSQL gates separately and commit the branch.

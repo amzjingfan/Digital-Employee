@@ -1158,3 +1158,8 @@
 - 审查指出自由文本证据引用可能进入追加式事件、事件前后 Owner 缺乏同租户外键，以及已有租户发布版 Casbin 策略会优先于仓库 CSV。修正 `creator_pool.py`：入池来源必须等于该身份的当前 SocialCreatorEvidence ID；跟进引用只接受 `evidence:` 加 32 位小写十六进制编号。同步调整目录选择器和帮助文案，防止自由文本通过工作台进入事件。`models.py` 与正向迁移新增前后 Owner 的 `(tenant_id, user_id)` 外键；静态迁移和负向行为测试先红后绿。已有租户发布版策略不自动覆盖，部署前需审阅并发布包含两条 BD 授权的新策略版本，此项保留为上线门禁。
 - 修正文件：`src/backend/app/tiktok/creator_pool.py`、`src/backend/app/db/models.py`、`src/backend/migrations/20260923_tiktok_p3b2_creator_pool_v1.sql`、`src/frontend-enterprise/src/pages/tiktok/TikTokCreatorPoolPanel.tsx`、`src/frontend-enterprise/src/pages/TikTokBusinessUnitPage.tsx`、`src/frontend-enterprise/src/i18n/en.json`、`src/tests/backend/test_tiktok_creator_pool.py`、`src/tests/backend/test_postgres_tiktok_p3b2_creator_pool_migration.py`、`src/tests/frontend/TikTokCreatorPoolPanel.test.tsx`，并更新设计、ADR 0004 与交接。
 - 复验：`python -m pytest -p no:cacheprovider -c pytest.ini src/tests/backend -k tiktok --basetemp=<系统临时目录> -q` 为 174 passed、2 skipped；前端完整 `npm --prefix src/frontend-enterprise test` 为 69 文件/300 项，类型检查、i18n（4,392 映射）、生产构建（2,168 模块）通过；聚焦 Ruff 和 `git diff --check` 通过。浏览器、真实 PostgreSQL 与已发布租户策略更新仍未完成，不能把自动化绿色结果当作上线批准。
+
+## 2026-09-23 — TikTok P3-B2 独立分支提交（完成）
+
+- 将上述 24 个代码、迁移、测试和文档路径提交于 `codex/tiktok-p3b2-creator-pool@91490b5`；提交前 `git diff --cached --check` 通过，`python src/tests/check_test_layout.py` 检查 1,245 个已跟踪路径通过。无推送、无源分支删除、无对主工作树既有九个未提交路径的修改。
+- 下一步仍是隔离 PostgreSQL 迁移/RLS、已发布租户策略版本和真实浏览器角色验收；这些门禁未通过前不将本切片合入主干。
