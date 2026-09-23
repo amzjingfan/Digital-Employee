@@ -60,6 +60,7 @@ export type PlatformKindDetailViewProps = {
   employeeStats: (agent: AgentProfileRead) => PlatformStat[];
   onBack: () => void;
   onRefresh: () => void;
+  createLabel?: string;
   onCreate?: () => void;
   onOpenItem: (item: PlatformDetailItem) => void;
   canManage?: boolean;
@@ -102,6 +103,7 @@ export default function PlatformKindDetailView({
   employeeStats,
   onBack,
   onRefresh,
+  createLabel = '创建开放 Skill',
   onCreate,
   onOpenItem,
   canManage = false,
@@ -140,7 +142,7 @@ export default function PlatformKindDetailView({
         {onCreate && (
           <UIButton onClick={onCreate} className="h-8 gap-1 rounded-[10px] bg-[#18181a] px-5 text-[12px] font-normal text-white hover:bg-[#303030]">
             <IconAdd className="size-3.5" />
-            创建开放 Skill
+            {createLabel}
           </UIButton>
         )}
         <UIButton
