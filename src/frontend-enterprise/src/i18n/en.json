@@ -570,6 +570,7 @@
   "改写失败，已保留当前草稿": "Rewrite failed. The current draft was retained.",
   "改写完成": "Rewrite complete",
   "概括这个数字员工的岗位边界、服务风格和执行重点": "Summarize this employee’s role boundaries, service style, and execution priorities.",
+  "按职责、工作边界、服务风格和执行重点填写": "Write under Responsibilities, Work Boundaries, Service Style, and Execution Priorities.",
   "概念": "Concept",
   "岗位": "Role",
   "岗位 Prompt": "Role Prompt",
@@ -4418,5 +4419,6 @@
   "生成中…": "Generating…",
   "生成草稿": "Generated draft",
   "保留原文": "Keep current text",
-  "替换描述": "Replace description"
+  "替换描述": "Replace description",
+  "正在生成岗位描述…": "Generating role description…"
 }

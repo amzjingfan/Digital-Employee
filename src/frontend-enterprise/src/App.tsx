@@ -7,7 +7,7 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
-import { api, ApiError, isAuthError, TENANT_ID } from "./api/client";
+import { api, ApiError, isAuthError, streamPost, TENANT_ID } from "./api/client";
 import {
   clearEnterpriseAuthSession,
   canAccessEnterpriseRoute,
@@ -165,7 +165,9 @@ function Shell({
     useState<AgentCreateFormState>(EMPTY_AGENT_FORM);
   const agentFormRef = useRef(agentForm);
   const descriptionRequestId = useRef(0);
+  const descriptionAbortRef = useRef<AbortController | null>(null);
   const [generatingDescription, setGeneratingDescription] = useState(false);
+  const [streamingDescription, setStreamingDescription] = useState("");
   const [pendingDescription, setPendingDescription] = useState("");
   const [modelConfigs, setModelConfigs] = useState<ModelConfigRead[]>([]);
   const [modelConfigsLoaded, setModelConfigsLoaded] = useState(false);
@@ -448,6 +450,7 @@ function Shell({
       copyFromAgentId: (isTeamScope(selectedAgentId) ? "" : selectedAgentId) || sourceAgents[0]?.id || "",
     });
     setPendingDescription("");
+    setStreamingDescription("");
     descriptionRequestId.current += 1;
     setAgentCreateOpen(true);
   }
@@ -455,8 +458,11 @@ function Shell({
   function handleAgentCreateOpenChange(open: boolean) {
     setAgentCreateOpen(open);
     if (!open) {
+      descriptionAbortRef.current?.abort();
+      descriptionAbortRef.current = null;
       descriptionRequestId.current += 1;
       setGeneratingDescription(false);
+      setStreamingDescription("");
       setPendingDescription("");
     }
   }
@@ -465,25 +471,44 @@ function Shell({
     const roleName = agentForm.roleName.trim();
     if (!roleName || generatingDescription) return;
     const requestId = ++descriptionRequestId.current;
+    const controller = new AbortController();
+    descriptionAbortRef.current = controller;
     setGeneratingDescription(true);
+    setStreamingDescription("");
     setPendingDescription("");
     try {
-      const draft = await api.post<{ description: string }>(
+      let draft = "";
+      let failed = false;
+      await streamPost(
         "/api/enterprise/agents/description-draft",
         { tenant_id: TENANT_ID, role_name: roleName },
+        ({ event, data }) => {
+          if (requestId !== descriptionRequestId.current) return;
+          if (event === "delta" && typeof data.text === "string") {
+            setStreamingDescription((previous) => previous + data.text);
+          } else if (event === "done" && typeof data.description === "string") {
+            draft = data.description;
+          } else if (event === "error") {
+            failed = true;
+          }
+        },
+        controller.signal,
       );
       if (requestId !== descriptionRequestId.current) return;
+      if (failed || !draft) throw new Error("DESCRIPTION_GENERATION_FAILED");
+      setStreamingDescription("");
       if (agentFormRef.current.roleName.trim() !== roleName) {
         notify.warning("职位已变化，请重新生成岗位描述");
         return;
       }
       if (agentFormRef.current.description.trim()) {
-        setPendingDescription(draft.description);
+        setPendingDescription(draft);
       } else {
-        setAgentForm((prev) => ({ ...prev, description: draft.description }));
+        setAgentForm((prev) => ({ ...prev, description: draft }));
       }
     } catch (error) {
       if (requestId === descriptionRequestId.current) {
+        setStreamingDescription("");
         notify.error(
           error instanceof ApiError && error.status === 409
             ? "请先配置可用的默认模型"
@@ -491,11 +516,13 @@ function Shell({
         );
       }
     } finally {
+      if (descriptionAbortRef.current === controller) descriptionAbortRef.current = null;
       if (requestId === descriptionRequestId.current) setGeneratingDescription(false);
     }
   }
 
   async function saveAgentCreateModal() {
+    if (generatingDescription) return;
     const name = agentForm.name.trim();
     if (!name) {
       notify.error("请填写数字员工姓名");
@@ -1000,6 +1027,11 @@ function Shell({
               <Input
                 value={agentForm.roleName}
                 onChange={(event) => {
+                  descriptionAbortRef.current?.abort();
+                  descriptionAbortRef.current = null;
+                  descriptionRequestId.current += 1;
+                  setGeneratingDescription(false);
+                  setStreamingDescription("");
                   setPendingDescription("");
                   setAgentForm((prev) => ({
                     ...prev,
@@ -1093,8 +1125,14 @@ function Shell({
                     description: event.target.value,
                   }));
                 }}
-                placeholder="概括这个数字员工的岗位边界、服务风格和执行重点"
+                placeholder="按职责、工作边界、服务风格和执行重点填写"
               />
+              {generatingDescription && streamingDescription && (
+                <div aria-live="polite" className="grid gap-[8px] rounded-[10px] border border-border bg-muted/30 p-[10px] text-[13px]">
+                  <span className="font-semibold">正在生成岗位描述…</span>
+                  <p className="whitespace-pre-wrap">{streamingDescription}</p>
+                </div>
+              )}
               {pendingDescription && (
                 <div aria-live="polite" className="grid gap-[8px] rounded-[10px] border border-border bg-muted/30 p-[10px] text-[13px]">
                   <span className="font-semibold">生成草稿</span>
@@ -1124,6 +1162,7 @@ function Shell({
             </UIButton>
             <UIButton
               className={DIALOG_PRIMARY_BUTTON_CLASS}
+              disabled={generatingDescription}
               onClick={() => void saveAgentCreateModal()}
             >
               创建

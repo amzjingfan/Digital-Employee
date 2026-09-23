@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import json
+import re
+from contextlib import suppress
 from copy import deepcopy
 from datetime import UTC, datetime
 from time import sleep
@@ -7,6 +11,7 @@ from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlmodel import Session, select
 
@@ -39,7 +44,6 @@ from app.agents.schema import (
     AgentAPICredentialCreateRequest,
     AgentAPICredentialRead,
     AgentDescriptionGenerateRequest,
-    AgentDescriptionGenerateResponse,
     AgentModelsUpdateRequest,
     AgentProfileCreateRequest,
     AgentProfileRead,
@@ -92,6 +96,7 @@ from app.db.models import (
 )
 from app.llm.client import LLMClient, LLMError
 from app.llm.model_config_resolver import resolve_model_config_for_runtime
+from app.llm.protocol_drivers import CancellationToken
 from app.public_api.auth import generate_api_key
 from app.public_api.credential_profiles import (
     AGENT_KEY_ALLOWED_SCOPES,
@@ -118,9 +123,14 @@ scope_router = APIRouter(prefix="/api/enterprise/agent-scope", tags=["enterprise
 STAFFDECK_AGENT_API_CLIENT_NAME = "九骥 Joukir 员工 API 密钥"
 AGENT_DESCRIPTION_PROMPT = (
     "你为新建数字员工撰写简短的中文岗位描述。仅根据用户填写的职位，"
-    "概括岗位边界、核心职责、服务风格和执行重点。不要承诺未提供的工具、权限或外部系统能力。"
-    "控制在80至160个汉字。只返回 JSON 对象："
-    '{"description":"..."}。'
+    "依次写四个标题：职责、工作边界、服务风格、执行重点。"
+    "每个标题单独一行，格式严格为“职责：”等，下一行写简短正文，各部分用空行分隔。"
+    "不要输出开场白、Markdown 标记或 JSON；不要承诺未提供的工具、权限或外部系统能力。"
+    "四部分合计控制在 400 个汉字以内。"
+)
+AGENT_DESCRIPTION_HEADINGS = ("职责", "工作边界", "服务风格", "执行重点")
+AGENT_DESCRIPTION_HEADING_PATTERN = re.compile(
+    r"(?m)^[ \t]*(职责|工作边界|服务风格|执行重点)[：:][ \t]*"
 )
 
 
@@ -215,12 +225,12 @@ def create_agent(
     return agent_read(row, _bindings_by_agent(db, request.tenant_id).get(row.id, []))
 
 
-@enterprise_router.post("/description-draft", response_model=AgentDescriptionGenerateResponse)
+@enterprise_router.post("/description-draft")
 def generate_agent_description(
     request: AgentDescriptionGenerateRequest,
     db: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)],
-) -> AgentDescriptionGenerateResponse:
+) -> StreamingResponse:
     _ensure_request_tenant(request.tenant_id, current_user)
     role_name = request.role_name.strip()
     if not role_name:
@@ -236,16 +246,75 @@ def generate_agent_description(
     if default_model is None:
         raise HTTPException(status_code=409, detail="DEFAULT_MODEL_NOT_CONFIGURED")
     model = resolve_model_config_for_runtime(db, request.tenant_id, default_model.id)
-    try:
-        raw = LLMClient(model).generate_json(
-            AGENT_DESCRIPTION_PROMPT, {"role_name": role_name}
-        )
-    except LLMError as exc:
-        raise HTTPException(status_code=502, detail="DESCRIPTION_GENERATION_FAILED") from exc
-    description = raw.get("description") if isinstance(raw, dict) else None
-    if not isinstance(description, str) or not description.strip() or len(description) > 400:
-        raise HTTPException(status_code=502, detail="DESCRIPTION_GENERATION_FAILED")
-    return AgentDescriptionGenerateResponse(description=description.strip())
+
+    async def stream_events():
+        parts: list[str] = []
+        length = 0
+        cancellation = CancellationToken()
+        client: LLMClient | None = None
+        try:
+            client = LLMClient(model)
+            stream = client.generate_text_stream(
+                AGENT_DESCRIPTION_PROMPT,
+                {"role_name": role_name},
+                cancellation=cancellation,
+            )
+            sentinel = object()
+            while True:
+                # Model reads block in a worker thread so disconnect cancellation reaches finally.
+                chunk = await asyncio.to_thread(next, stream, sentinel)
+                if chunk is sentinel:
+                    break
+                length += len(chunk)
+                if length > 1200:
+                    yield _description_sse("error", {"code": "DESCRIPTION_GENERATION_FAILED"})
+                    return
+                parts.append(chunk)
+                yield _description_sse("delta", {"text": chunk})
+        except LLMError:
+            yield _description_sse("error", {"code": "DESCRIPTION_GENERATION_FAILED"})
+            return
+        finally:
+            cancellation.cancel()
+            if client is not None:
+                close = getattr(getattr(client, "client", None), "close", None)
+                if callable(close):
+                    with suppress(Exception):
+                        close()
+        description = _normalize_agent_description("".join(parts))
+        if description is None:
+            yield _description_sse("error", {"code": "DESCRIPTION_GENERATION_FAILED"})
+            return
+        yield _description_sse("done", {"description": description})
+
+    return StreamingResponse(
+        stream_events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _normalize_agent_description(text: str) -> str | None:
+    matches = list(AGENT_DESCRIPTION_HEADING_PATTERN.finditer(text))
+    if len(matches) != 4 or tuple(match.group(1) for match in matches) != AGENT_DESCRIPTION_HEADINGS:
+        return None
+    if text[:matches[0].start()].strip():
+        return None
+    sections = [
+        text[match.end():matches[index + 1].start() if index < 3 else len(text)].strip()
+        for index, match in enumerate(matches)
+    ]
+    if any(not section for section in sections):
+        return None
+    description = "\n\n".join(
+        f"{heading}：\n{section}"
+        for heading, section in zip(AGENT_DESCRIPTION_HEADINGS, sections, strict=True)
+    )
+    return description if len(description) <= 600 else None
+
+
+def _description_sse(event: str, data: dict[str, str]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
 @enterprise_router.get("/{agent_id}", response_model=AgentProfileRead)

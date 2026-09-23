@@ -58,6 +58,24 @@ function jsonResponse(body: unknown): Response {
   } as Response;
 }
 
+const structuredDescription = '职责：\n整理财务资料。\n\n工作边界：\n异常交由授权人员确认。\n\n服务风格：\n清晰审慎。\n\n执行重点：\n核对记录。';
+
+function descriptionStream(description: string): Response {
+  const encoder = new TextEncoder();
+  return {
+    ok: true,
+    status: 200,
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ text: description.slice(0, 15) })}\n\n`));
+        controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ text: description.slice(15) })}\n\n`));
+        controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ description })}\n\n`));
+        controller.close();
+      },
+    }),
+  } as Response;
+}
+
 // 提供一个可用模型配置，避免聊天页弹出模型配置引导（jsdom 下其内部数据为空会报错）。
 const modelConfig = {
   id: 'model-1',
@@ -80,7 +98,7 @@ const modelConfig = {
   enabled: true,
 };
 
-function stubAppFetch(generatedDescription?: string) {
+function stubAppFetch(generatedDescription?: string, generationStream?: ReadableStream<Uint8Array>) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = (init?.method || 'GET').toUpperCase();
@@ -88,7 +106,9 @@ function stubAppFetch(generatedDescription?: string) {
       return jsonResponse({ session_id: 'session-tl-1' });
     }
     if (method === 'POST' && url.includes('/api/enterprise/agents/description-draft')) {
-      return jsonResponse({ description: generatedDescription || '' });
+      return generationStream
+        ? { ok: true, status: 200, body: generationStream } as Response
+        : descriptionStream(generatedDescription || structuredDescription);
     }
     if (url.includes('/api/auth/me')) return jsonResponse(authUser);
     if (url.includes('/api/enterprise/agents')) return jsonResponse([agent]);
@@ -141,7 +161,7 @@ beforeEach(() => {
 describe('new digital employee description draft', () => {
   it('generates an editable draft from the position without creating an employee', async () => {
     const user = userEvent.setup();
-    const fetchMock = stubAppFetch('负责整理财务资料，异常事项交由人工确认。');
+    const fetchMock = stubAppFetch(structuredDescription);
     window.history.pushState({}, '', '/enterprise/agents');
     render(<I18nProvider><App /></I18nProvider>);
 
@@ -151,10 +171,10 @@ describe('new digital employee description draft', () => {
     await user.type(screen.getByPlaceholderText('例如 研发工程师、财务助理'), '财务助理');
     await user.click(generate);
 
-    const description = screen.getByPlaceholderText('概括这个数字员工的岗位边界、服务风格和执行重点') as HTMLTextAreaElement;
-    await waitFor(() => expect(description.value).toBe('负责整理财务资料，异常事项交由人工确认。'));
+    const description = screen.getByPlaceholderText('按职责、工作边界、服务风格和执行重点填写') as HTMLTextAreaElement;
+    await waitFor(() => expect(description.value).toBe(structuredDescription));
     await user.type(description, ' 请核对。');
-    expect(description.value).toBe('负责整理财务资料，异常事项交由人工确认。 请核对。');
+    expect(description.value).toBe(`${structuredDescription} 请核对。`);
     const generationCall = fetchMock.mock.calls.find(([url, init]) =>
       String(url).includes('/api/enterprise/agents/description-draft') && init?.method === 'POST'
     );
@@ -169,23 +189,71 @@ describe('new digital employee description draft', () => {
 
   it('keeps existing text until the user chooses to replace it', async () => {
     const user = userEvent.setup();
-    stubAppFetch('新生成的岗位描述');
+    stubAppFetch(structuredDescription);
     window.history.pushState({}, '', '/enterprise/agents');
     render(<I18nProvider><App /></I18nProvider>);
 
     await user.click(await screen.findByRole('button', { name: /创建新员工/ }));
     await user.type(screen.getByPlaceholderText('例如 研发工程师、财务助理'), '财务助理');
-    const description = screen.getByPlaceholderText('概括这个数字员工的岗位边界、服务风格和执行重点') as HTMLTextAreaElement;
+    const description = screen.getByPlaceholderText('按职责、工作边界、服务风格和执行重点填写') as HTMLTextAreaElement;
     await user.type(description, '我写的描述');
     await user.click(screen.getByRole('button', { name: 'AI 生成' }));
 
-    expect(await screen.findByText('新生成的岗位描述')).toBeTruthy();
+    expect(await screen.findByText(/职责：/)).toBeTruthy();
     expect(description.value).toBe('我写的描述');
     await user.click(screen.getByRole('button', { name: '保留原文' }));
     expect(description.value).toBe('我写的描述');
     await user.click(screen.getByRole('button', { name: 'AI 生成' }));
     await user.click(await screen.findByRole('button', { name: '替换描述' }));
-    expect(description.value).toBe('新生成的岗位描述');
+    expect(description.value).toBe(structuredDescription);
+  });
+
+  it('shows streamed text before completion and only then fills an empty description', async () => {
+    const user = userEvent.setup();
+    const encoder = new TextEncoder();
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const stream = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
+    stubAppFetch(undefined, stream);
+    window.history.pushState({}, '', '/enterprise/agents');
+    render(<I18nProvider><App /></I18nProvider>);
+
+    await user.click(await screen.findByRole('button', { name: /创建新员工/ }));
+    await user.type(screen.getByPlaceholderText('例如 研发工程师、财务助理'), '财务助理');
+    const description = screen.getByPlaceholderText('按职责、工作边界、服务风格和执行重点填写') as HTMLTextAreaElement;
+    await user.click(screen.getByRole('button', { name: 'AI 生成' }));
+    expect((screen.getByRole('button', { name: '创建' }) as HTMLButtonElement).disabled).toBe(true);
+    controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ text: '职责：\n整理财务资料。' })}\n\n`));
+    expect(await screen.findByText(/职责：/)).toBeTruthy();
+    expect(description.value).toBe('');
+
+    controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ description: structuredDescription })}\n\n`));
+    controller.close();
+    await waitFor(() => expect(description.value).toBe(structuredDescription));
+    expect((screen.getByRole('button', { name: '创建' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('discards a partial stream when the position changes', async () => {
+    const user = userEvent.setup();
+    const encoder = new TextEncoder();
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const stream = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
+    stubAppFetch(undefined, stream);
+    window.history.pushState({}, '', '/enterprise/agents');
+    render(<I18nProvider><App /></I18nProvider>);
+
+    await user.click(await screen.findByRole('button', { name: /创建新员工/ }));
+    const position = screen.getByPlaceholderText('例如 研发工程师、财务助理');
+    await user.type(position, '财务助理');
+    const description = screen.getByPlaceholderText('按职责、工作边界、服务风格和执行重点填写') as HTMLTextAreaElement;
+    await user.click(screen.getByRole('button', { name: 'AI 生成' }));
+    controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ text: '职责：\n整理财务资料。' })}\n\n`));
+    expect(await screen.findByText(/职责：/)).toBeTruthy();
+
+    await user.type(position, '高级');
+    controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ description: structuredDescription })}\n\n`));
+    controller.close();
+    await waitFor(() => expect(screen.queryByText('正在生成岗位描述…')).toBeNull());
+    expect(description.value).toBe('');
   });
 });
 

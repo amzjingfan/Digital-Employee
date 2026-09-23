@@ -29,10 +29,6 @@ class AgentDescriptionGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class AgentDescriptionGenerateResponse(BaseModel):
-    description: str
-
-
 class AgentProfileUpdateRequest(BaseModel):
     tenant_id: str
     name: Optional[str] = None
