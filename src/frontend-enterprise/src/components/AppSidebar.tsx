@@ -554,7 +554,7 @@ function CollapsedSidebar({
         </Tooltip>
       </div>
 
-      <div className="flex w-full flex-col items-center gap-[12px]">
+      <nav aria-label="管理菜单" className="no-scrollbar flex min-h-0 w-full flex-1 flex-col items-center gap-[12px] overflow-y-auto">
         {primaryItems.map((item) => (
           <CollapsedNavButton
             key={item.route}
@@ -567,10 +567,10 @@ function CollapsedSidebar({
           />
         ))}
         <div className="h-px w-full bg-sidebar-border" />
-      </div>
+      </nav>
 
-      <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-between">
-        <div className="flex w-[38px] flex-col items-center gap-[8px] rounded-[10px] border-[0.5px] border-[#e3e7f1] bg-white px-[2px] pt-[6px] pb-[8px]">
+      <div role="region" aria-label="员工快捷区" className="flex min-h-[120px] max-h-[40%] w-full shrink-0 flex-col items-center">
+        <div className="no-scrollbar flex min-h-0 w-[38px] flex-1 flex-col items-center gap-[8px] overflow-y-auto rounded-[10px] border-[0.5px] border-[#e3e7f1] bg-white px-[2px] pt-[6px] pb-[8px]">
           <CollapsedAgentSwitcher
             sidebarAgent={sidebarAgent}
             scopeAgents={scopeAgents}
@@ -609,7 +609,7 @@ function CollapsedSidebar({
           </div>
         </div>
 
-        <div className="flex items-center justify-center pb-[20px]">
+        <div className="flex shrink-0 items-center justify-center pb-[20px]">
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -683,7 +683,7 @@ function ManagementSidebar({
   return (
     <Sidebar collapsible="icon" className={SIDEBAR_SHELL_CLASS}>
       <div className="flex h-full w-(--sidebar-width) shrink-0 flex-col">
-      <SidebarHeader className="gap-[24px] px-[20px] pt-[42px] group-data-[collapsible=icon]:px-[20px]">
+      <SidebarHeader className="shrink-0 px-[20px] pt-[42px] pb-[24px]">
         <div className="flex items-center justify-between">
           <button type="button" title="开放广场">
             <BrandLogo wordmarkClassName="group-data-[collapsible=icon]:hidden" />
@@ -701,6 +701,9 @@ function ManagementSidebar({
           )}
         </div>
 
+      </SidebarHeader>
+
+      <nav aria-label="管理菜单" className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-[20px]">
         <div className="flex flex-col gap-[18px]">
           <SidebarMenu className="gap-[10px]">
             {primaryItems.map((item) => (
@@ -715,9 +718,9 @@ function ManagementSidebar({
           </SidebarMenu>
           <div className="h-px w-full bg-sidebar-border group-data-[collapsible=icon]:hidden" />
         </div>
-      </SidebarHeader>
+      </nav>
 
-      <SidebarContent className="px-[20px] group-data-[collapsible=icon]:px-[20px]">
+      <SidebarContent role="region" aria-label="员工快捷区" className="max-h-[40%] min-h-[120px] flex-none shrink-0 px-[20px]">
         <div
           className={cn(
             'mt-[36px] mb-[24px] flex flex-col gap-[8px] rounded-[20px] border-[0.5px] border-[#e3e7f1] bg-sidebar px-[4px] pt-[6px] pb-[8px]',
@@ -751,7 +754,7 @@ function ManagementSidebar({
         </div>
       </SidebarContent>
 
-      <SidebarFooter className="px-[20px] pb-[20px] group-data-[collapsible=icon]:px-[20px]">
+      <SidebarFooter className="shrink-0 px-[20px] pb-[20px]">
         <SidebarFooterActions onOpenChat={onOpenChat} />
       </SidebarFooter>
       </div>

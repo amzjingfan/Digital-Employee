@@ -72,6 +72,8 @@ function renderSidebar(props: {
   onSelectAgent?: (value: string) => void;
   scopeTeams?: TeamRead[];
   allowedRoutes?: ReadonlySet<string>;
+  isAdmin?: boolean;
+  sidebarAgent?: AgentProfileRead;
 }) {
   return render(
     <I18nProvider>
@@ -80,8 +82,9 @@ function renderSidebar(props: {
           <AppSidebar
             selected="/enterprise/dashboard"
             onNavigate={() => {}}
-            isAdmin={false}
+            isAdmin={props.isAdmin ?? false}
             allowedRoutes={props.allowedRoutes}
+            sidebarAgent={props.sidebarAgent}
             scopeAgents={[agent]}
             scopeTeams={props.scopeTeams ?? [team]}
             selectedAgentId={props.selectedAgentId}
@@ -104,6 +107,30 @@ beforeEach(() => {
 });
 
 describe('AppSidebar agent switcher team group', () => {
+  it('keeps the current employee reachable with the full admin menu, expanded and collapsed', async () => {
+    const user = userEvent.setup();
+    renderSidebar({ selectedAgentId: agent.id, sidebarAgent: agent, isAdmin: true });
+
+    const expandedNav = screen.getByRole('navigation', { name: '管理菜单' });
+    const expandedEmployee = screen.getByRole('region', { name: '员工快捷区' });
+    expect(expandedNav.classList.contains('min-h-0')).toBe(true);
+    expect(expandedNav.classList.contains('overflow-y-auto')).toBe(true);
+    expect(expandedEmployee.classList.contains('shrink-0')).toBe(true);
+    expect(expandedEmployee.classList.contains('max-h-[40%]')).toBe(true);
+    expect(within(expandedEmployee).getByText('当前员工')).toBeTruthy();
+    expect(screen.getByText('权限审计')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '收起边栏' }));
+
+    const collapsedNav = screen.getByRole('navigation', { name: '管理菜单' });
+    const collapsedEmployee = screen.getByRole('region', { name: '员工快捷区' });
+    expect(collapsedNav.classList.contains('min-h-0')).toBe(true);
+    expect(collapsedNav.classList.contains('overflow-y-auto')).toBe(true);
+    expect(collapsedEmployee.classList.contains('shrink-0')).toBe(true);
+    expect(collapsedEmployee.classList.contains('max-h-[40%]')).toBe(true);
+    expect(within(collapsedEmployee).getByRole('button', { name: '切换当前员工' })).toBeTruthy();
+  });
+
   it('hides modules that are absent from the server capability manifest', () => {
     renderSidebar({
       selectedAgentId: 'agent-1',
