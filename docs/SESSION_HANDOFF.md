@@ -4,6 +4,14 @@ Last refreshed: 2026-09-23 (Asia/Shanghai)
 
 This file is mutable operational context. Re-check every process, port, branch, and test result before relying on it. It contains no credential values or connection strings.
 
+## Knowledge graph PostgreSQL read fix (2026-09-23; pending integration)
+
+- Isolated branch `codex/knowledge-postgres-buckets` was created from `main@9156ac7` in a Codex-managed worktree. The main worktree retains nine unrelated uncommitted paths; no push or source-branch deletion was authorized.
+- `src/backend/app/api/knowledge.py` now applies `CAST(... AS BLOB)` only for SQLite when reading document buckets and bucket chunks. PostgreSQL receives native text/JSON columns; tenant predicates and RLS context are unchanged. `src/tests/backend/test_knowledge_bucket_dialects.py` covers both generated PostgreSQL queries and SQLite legacy-byte decoding. The two PostgreSQL regression cases failed before the code change and all three cases passed afterward.
+- Focused backend validation: 44 passed for the new test and existing knowledge-base test file. A read-only probe against the restored local PostgreSQL instance executed both queries, then decoded the same logged document's 1 bucket and 6 chunks without exposing content or writing data. New test-file Ruff passed; the existing `knowledge.py` file has 29 unrelated pre-existing Ruff findings, with none in the changed lines.
+- Full backend suite is not green: its first failure is `test_ad_action_requires_approval_then_creates_7_14_30_day_reviews`, which expects `queued` but receives `manual_resolution_required`. The exact test fails identically on untouched `main`; this is not a knowledge regression. The user explicitly accepted this baseline failure as an integration exception for the knowledge fix, but independent review and merge safety still apply.
+- Next actions: complete independent code review, commit and run the tracked test-layout guard, then safely linear-merge into `main` while preserving its nine dirty paths. Recheck merged-tree focused tests and the live route when an authenticated browser session is available.
+
 ## TikTok P3-B2 owner transfer follow-up (2026-09-23)
 
 - The first E03 creator-pool branch was fast-forwarded into local `main@7ebcad4` at the user's request. Main's nine prior uncommitted paths were preserved in `stash@{0}` named `preserve-main-before-p3b2-merge-20260923`, restored, and checked: six non-overlapping files match their saved Git blobs; all original lines in three overlapping documents remain. The safety stash is retained. The merged TikTok backend suite passed 175/3 skipped, frontend 69 files/300 tests and the 1,246-path tracked test-layout guard passed. Nothing was pushed or deleted.
