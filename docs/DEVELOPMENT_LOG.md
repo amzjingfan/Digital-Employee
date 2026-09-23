@@ -1128,3 +1128,8 @@
 - 结果：Casbin 明确授权分配 BD 的逐条核对和所有潜在试点 Owner 的确认入口，服务仍要求精确活跃 Owner 身份；普通 BD 仅见本人分配事实。BD 每条结论需填写脱敏对照证据编号；Owner 对候选历史来源单独声明并登记证据编号。确认摘要绑定批次、recorded run、事实和对照引用，recorded 审批过期会撤销就绪显示。指标要求显式 UTC 时段，最新定义版本不会套算旧批次。页面把计数标为“候选历史已核对”，避免把管理员申报当作已证实来源。
 - 验证命令与结果：`python -m pytest -q -p no:cacheprovider -c pytest.ini --basetemp=<系统临时目录> <src/tests/backend/test_tiktok* 与 test_postgres_tiktok* 文件>` 为 165 passed；`npm --prefix src/frontend-enterprise test` 为 68 files/297 passed；`npm --prefix src/frontend-enterprise run test:typecheck`、`run i18n:check`（4,359 映射）、`run config:check`、`run build`（2,167 模块）均通过；`python -m ruff check --no-cache` 对本次 Python 文件通过，共享 `models.py` 用仓库既有 `--ignore UP045,FURB157` 通过；`git diff --check` 通过。构建保留既有大 chunk 提示。
 - 未验证与下一步：浏览器 inventory 再次返回 `nodeRepl.fetch request failed`，没有执行真实角色/路由视觉验收；未获得安全的 PostgreSQL 连接与验收门禁，因此迁移/RLS 仅为静态测试。当前通过的是功能测试与合成样本，非 E3、真实授权、30 条业务历史核对或生产批准。提交分支后运行 tracked 测试布局守卫；恢复浏览器和 PostgreSQL 验收后再考虑安全线性合并。主干已前进至 `ed6d4c7` 并有无关改动，不在本步修改。
+
+## 2026-09-23 — TikTok P3-B1 审查修正提交与布局验收（完成）
+
+- 审查修正已提交到独立分支 `codex/tiktok-p3b1-dashboard-reconciliation@b371dd5`，主工作树没有被修改或合并。
+- 提交后执行 `python src/tests/check_test_layout.py`，1,230 个 tracked 路径符合 `src/tests` 边界；分支工作区干净。真实浏览器与 PostgreSQL 验收仍为下一步的必要条件。
