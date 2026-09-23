@@ -159,6 +159,13 @@ def validate_recorded_payload(raw: object) -> TikTokRecordedValidationRequest:
         raise TikTokRecordedValidationInputError("recorded_schema_invalid") from None
 
 
+def validate_recorded_dataset_shape(dataset: object) -> None:
+    """Reuse the same sensitive-key and flat-record boundary for approved history."""
+
+    _reject_sensitive_keys(dataset)
+    _validate_dataset_shape({"dataset": dataset})
+
+
 async def read_recorded_validation_request(
     request: Request,
 ) -> TikTokRecordedValidationRequest:

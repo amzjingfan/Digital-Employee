@@ -4826,3 +4826,182 @@ class TikTokDataValidationRun(SQLModel, table=True):
     contract_digest: str | None = Field(default=None, index=True)
     attestation_version: str | None = None
     created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
+class TikTokHistoryBatch(SQLModel, table=True):
+    """Approved replay promoted into a traceable, tenant-owned historical batch."""
+
+    __tablename__ = "tiktok_history_batches"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_tiktok_history_batch_tenant_id"),
+        UniqueConstraint("tenant_id", "recorded_run_id", name="uq_tiktok_history_batch_run"),
+        ForeignKeyConstraint(
+            ["tenant_id", "recorded_run_id"],
+            ["tiktok_data_validation_runs.tenant_id", "tiktok_data_validation_runs.id"],
+            name="fk_tiktok_history_batch_run",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "scope_id"],
+            ["tiktok_data_validation_scopes.tenant_id", "tiktok_data_validation_scopes.id"],
+            name="fk_tiktok_history_batch_scope",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "assigned_bd_user_id"],
+            ["users.tenant_id", "users.id"],
+            name="fk_tiktok_history_batch_assignee",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "imported_by_user_id"],
+            ["users.tenant_id", "users.id"],
+            name="fk_tiktok_history_batch_importer",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "source_kind IN ('synthetic', 'approved_redacted_history')",
+            name="tiktok_history_batch_source_check",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("tiktok_hist_batch"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    recorded_run_id: str = Field(index=True)
+    scope_id: str = Field(index=True)
+    source_kind: str = Field(index=True)
+    source_label: str
+    assigned_bd_user_id: str = Field(index=True)
+    imported_by_user_id: str
+    dataset_digest: str
+    metric_version: int = 1
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
+class TikTokHistoryFact(SQLModel, table=True):
+    """Canonical six-domain values; never an unfiltered provider response."""
+
+    __tablename__ = "tiktok_history_facts"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_tiktok_history_fact_tenant_id"),
+        UniqueConstraint(
+            "tenant_id", "scope_id", "source_label", "domain", "business_key", "observed_at",
+            name="uq_tiktok_history_fact_identity",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "batch_id"],
+            ["tiktok_history_batches.tenant_id", "tiktok_history_batches.id"],
+            name="fk_tiktok_history_fact_batch",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "scope_id"],
+            ["tiktok_data_validation_scopes.tenant_id", "tiktok_data_validation_scopes.id"],
+            name="fk_tiktok_history_fact_scope",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "domain IN ('sample', 'order', 'logistics', 'video', 'attribution', 'gmv')",
+            name="tiktok_history_fact_domain_check",
+        ),
+        Index("ix_tiktok_history_fact_tenant_domain_observed", "tenant_id", "domain", "observed_at"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("tiktok_hist_fact"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    scope_id: str = Field(index=True)
+    batch_id: str = Field(index=True)
+    source_label: str
+    domain: str = Field(index=True)
+    business_key: str = Field(index=True)
+    observed_at: datetime = Field(index=True)
+    values_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    fact_digest: str
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class TikTokHistoryMetricDefinition(SQLModel, table=True):
+    """Immutable versioned meaning of a dashboard metric."""
+
+    __tablename__ = "tiktok_history_metric_definitions"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "code", "version", name="uq_tiktok_history_metric_version"),
+        CheckConstraint("version > 0", name="tiktok_history_metric_version_check"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("tiktok_hist_metric"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    code: str = Field(index=True)
+    version: int = 1
+    label: str
+    formula: str
+    unit: str
+    numerator: str | None = None
+    denominator: str | None = None
+    timezone: str = "UTC"
+    window: str = "selected_period"
+    status: str = "defined"
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class TikTokHistoryReconciliation(SQLModel, table=True):
+    """Append-only human comparison for one historical fact."""
+
+    __tablename__ = "tiktok_history_reconciliations"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "fact_id"],
+            ["tiktok_history_facts.tenant_id", "tiktok_history_facts.id"],
+            name="fk_tiktok_history_reconciliation_fact",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "reviewed_by_user_id"],
+            ["users.tenant_id", "users.id"],
+            name="fk_tiktok_history_reconciliation_reviewer",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "verdict IN ('matched', 'difference', 'needs_review')",
+            name="tiktok_history_reconciliation_verdict_check",
+        ),
+        Index("ix_tiktok_history_reconciliation_tenant_fact", "tenant_id", "fact_id"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("tiktok_hist_review"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    fact_id: str = Field(index=True)
+    verdict: str
+    reason: str
+    reviewed_by_user_id: str
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
+class TikTokHistorySignoff(SQLModel, table=True):
+    """Business Owner's immutable acknowledgement of a reviewed snapshot."""
+
+    __tablename__ = "tiktok_history_signoffs"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "scope_id"],
+            ["tiktok_data_validation_scopes.tenant_id", "tiktok_data_validation_scopes.id"],
+            name="fk_tiktok_history_signoff_scope",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "confirmed_by_user_id"],
+            ["users.tenant_id", "users.id"],
+            name="fk_tiktok_history_signoff_owner",
+            ondelete="RESTRICT",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("tiktok_hist_signoff"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    scope_id: str = Field(index=True)
+    scope_revision: int
+    review_digest: str
+    reviewed_count: int
+    approval_ref: str
+    confirmed_by_user_id: str
+    created_at: datetime = Field(default_factory=utc_now, index=True)

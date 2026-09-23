@@ -14,6 +14,7 @@ Start a development session with the durable memory and current handoff below. P
 - [Architecture decision records](adr/README.md)
 - [ADR 0001: main repository layout and history preservation](adr/0001-main-repository-layout.md)
 - [ADR 0002: preserve task execution evidence when users delete conversations](adr/0002-task-session-deletion-retention.md)
+- [ADR 0003: TikTok recorded validation and historical facts](adr/0003-tiktok-recorded-validation-and-history-facts.md)
 - [Repository agent rules](../AGENTS.md)
 - [Contribution and GitHub Flow guide](../CONTRIBUTING.md)
 - [Repository test guide](../src/tests/README.md)
@@ -53,6 +54,8 @@ The cross-border PRD and integrated plan refer to `prd/lan-multiuser-codex-memor
 
 ## Current designs and implementation plans
 
+- [TikTok P3-B1 historical facts, dashboard and reconciliation design, 2026-09-23](superpowers/specs/2026-09-23-tiktok-p3b1-dashboard-fulfillment-design.md)
+- [TikTok P3-B1 historical facts, dashboard and reconciliation implementation plan, 2026-09-23](superpowers/plans/2026-09-23-tiktok-p3b1-dashboard-fulfillment.md)
 - [TikTok P3-B0 runnable data validation workbench design, 2026-09-22](superpowers/specs/2026-09-22-tiktok-p3b0-data-validation-workbench-design.md)
 - [TikTok P3-B0 approved recorded-data validation design, 2026-09-22](superpowers/specs/2026-09-22-tiktok-p3b0-recorded-validation-design.md)
 - [TikTok P3-B0 approved recorded-data validation implementation plan, 2026-09-22](superpowers/plans/2026-09-22-tiktok-p3b0-recorded-validation.md)

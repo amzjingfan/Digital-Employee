@@ -4,6 +4,14 @@ Last refreshed: 2026-09-23 (Asia/Shanghai)
 
 This file is mutable operational context. Re-check every process, port, branch, and test result before relying on it. It contains no credential values or connection strings.
 
+## TikTok P3-B1 historical facts and reconciliation slice (2026-09-23)
+
+- Active isolated worktree: `C:\Users\Administrator\.codex\worktrees\tiktok-p3b1-dashboard-reconciliation\joukir`, branch `codex/tiktok-p3b1-dashboard-reconciliation`, based on `main@67f3e42`. Main retains seven unrelated uncommitted paths, backed up on `codex/preserve-main-before-concurrency-merge-20260922@bb9c9f2`; preserve them unchanged.
+- Implemented five append-only, tenant-scoped historical tables; a strict import bound to an approved P3-B0 recorded run; normalized six-domain facts; v1 metric definitions; domain/creator/product/date filters and pagination; assigned-BD review; and a 30-distinct-business-key Owner snapshot. Synthetic facts never count. Owner signoff becomes stale when the latest review or scope revision changes. UI exposes administrator import, BD review and Owner confirmation according to each role.
+- Verified after the duplicate-observation fix: full TikTok backend matrix 161 passed; frontend 68 files/297 tests, test typecheck, i18n, config and 2,167-module production build passed; layout guard accepted 1,219 tracked paths; focused Ruff passed. The latest i18n catalog check covered 4,352 English translations.
+- Browser control inventory again returned no browsers and `nodeRepl.fetch request failed`; administrator/member/Owner route visuals remain unverified. `STAFFDECK_RUN_POSTGRES_ACCEPTANCE` and `DATABASE_URL` were absent from the process environment; the new PostgreSQL migration has static coverage only, not live application or RLS acceptance. No real E3, live authorization or 30 approved business facts have been observed.
+- Exact next actions: review the branch against `main@67f3e42` and the approved P3-B1 spec, update the completion log and commit the branch. When browser control and a safe PostgreSQL acceptance environment are available, verify migration/RLS and administrator, assigned BD, unrelated member and Owner views. Do not mark P3-B1 exit or production readiness from the test fixtures. Merge only after the required UI/database acceptance and repository checks can be satisfied without touching the seven main-worktree paths.
+
 ## TikTok recorded concurrency hardening (2026-09-22)
 
 - `codex/tiktok-recorded-concurrency@608ccce` has been squash-applied to `main` after the merged tree passed the 149-test TikTok matrix, the 1,219-path layout guard, focused Ruff and staged diff checks. The source branch remains local and has not been pushed or deleted.

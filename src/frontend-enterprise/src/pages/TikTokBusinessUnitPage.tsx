@@ -6,6 +6,7 @@ import AppHeader from '@/components/AppHeader';
 import { notify } from '@/components/ui/app-toast';
 import { Button } from '@/components/ui/button';
 import TikTokDataValidationPanel from '@/pages/tiktok/TikTokDataValidationPanel';
+import TikTokHistoryPanel from '@/pages/tiktok/TikTokHistoryPanel';
 
 type Role = { key: string; label: string; casdoor_group: string; description: string };
 type Unit = { id: string; parent_id?: string | null; unit_type: string; code: string; name: string; status: string; revision: number; role_key?: string | null };
@@ -27,7 +28,7 @@ type ExceptionMatrixItem = { sop_id: string; title: string; scenario: string; ex
 type ExceptionMatrixReport = { execution_mode: string; status: string; sop_count: number; scenario_count: number; total_count: number; passed_count: number; failed_count: number; external_writes: boolean; items: ExceptionMatrixItem[] };
 type M2MVerificationItem = { agent_id?: string | null; application?: string | null; status: 'verified' | 'failed'; subject?: string | null; expires_at?: string | null; error_code?: string | null };
 type M2MVerificationReport = { tenant_id: string; verified_count: number; failed_count: number; items: M2MVerificationItem[] };
-type TikTokTab = 'overview' | 'employees' | 'assets' | 'tasks' | 'skills' | 'risk' | 'data-validation';
+type TikTokTab = 'overview' | 'employees' | 'assets' | 'tasks' | 'skills' | 'risk' | 'data-validation' | 'history';
 
 type Props = { currentUser: EnterpriseAuthUser; onLogout: () => void };
 
@@ -287,6 +288,7 @@ export default function TikTokBusinessUnitPage({ currentUser, onLogout }: Props)
           ['skills', 'SOP / Skill'],
           ['risk', '风险与 KPI'],
           ['data-validation', '数据验证'],
+          ['history', '历史事实与对照'],
         ] as const).map(([tab, label]) => (
           <button
             key={tab}
@@ -489,6 +491,7 @@ export default function TikTokBusinessUnitPage({ currentUser, onLogout }: Props)
       {activeTab === 'data-validation' && (
         <TikTokDataValidationPanel currentUser={currentUser} />
       )}
+      {activeTab === 'history' && <TikTokHistoryPanel currentUser={currentUser} />}
     </div>
   );
 }

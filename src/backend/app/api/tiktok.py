@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -41,6 +42,20 @@ from app.tiktok.official import (
     TikTokOfficialError,
     exchange_official_authorization,
     start_official_authorization,
+)
+from app.tiktok.p3b1_history import (
+    HistoryConfirmRequest,
+    HistoryConflict,
+    HistoryImportResult,
+    HistorySignoffRead,
+    HistoryWorkspace,
+    ReconciliationRead,
+    ReconciliationRequest,
+    confirm_history_reconciliation,
+    get_history_workspace,
+    import_history,
+    read_history_import_request,
+    record_reconciliation,
 )
 from app.tiktok.recorded_validation import (
     TikTokRecordedValidationInputError,
@@ -96,6 +111,86 @@ from app.tiktok.shadow import (
 )
 
 router = APIRouter(prefix="/api/enterprise/tiktok", tags=["enterprise-tiktok"])
+
+
+@router.get("/history", response_model=HistoryWorkspace)
+def history_workspace(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+    domain: str | None = None,
+    creator_id: str | None = None,
+    product_id: str | None = None,
+    assigned_bd_user_id: str | None = None,
+    observed_from: datetime | None = None,
+    observed_until: datetime | None = None,
+    page: int = 1,
+    limit: int = 100,
+) -> HistoryWorkspace:
+    return get_history_workspace(
+        db, current_user, domain=domain, creator_id=creator_id, product_id=product_id,
+        assigned_bd_user_id=assigned_bd_user_id, observed_from=observed_from,
+        observed_until=observed_until, page=page, limit=limit,
+    )
+
+
+@router.post("/history/import", response_model=HistoryImportResult)
+async def history_import(
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> HistoryImportResult:
+    from app.security.permissions import ensure_tenant_admin
+
+    ensure_tenant_admin(current_user.tenant_id, current_user)
+    try:
+        payload = await read_history_import_request(request)
+        return import_history(db, current_user, payload)
+    except TikTokRecordedValidationInputError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"code": exc.code, "message": exc.code},
+        ) from exc
+    except HistoryConflict as exc:
+        db.rollback()
+        raise _history_http_error(exc) from exc
+
+
+@router.post("/history/facts/{fact_id}/reconciliations", response_model=ReconciliationRead)
+def history_reconcile(
+    fact_id: str,
+    request: ReconciliationRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> ReconciliationRead:
+    try:
+        return record_reconciliation(db, current_user, fact_id, request)
+    except HistoryConflict as exc:
+        db.rollback()
+        raise _history_http_error(exc) from exc
+
+
+@router.post("/history/confirm", response_model=HistorySignoffRead)
+def history_confirm(
+    request: HistoryConfirmRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> HistorySignoffRead:
+    try:
+        return confirm_history_reconciliation(
+            db, current_user, approval_ref=request.approval_ref
+        )
+    except HistoryConflict as exc:
+        db.rollback()
+        raise _history_http_error(exc) from exc
+
+
+def _history_http_error(exc: HistoryConflict) -> HTTPException:
+    code = str(exc)
+    return HTTPException(
+        status_code=404 if code.endswith("_not_found") else 409,
+        detail={"code": code, "message": code},
+    )
 
 
 @router.get("/data-validation", response_model=TikTokDataValidationWorkspace)

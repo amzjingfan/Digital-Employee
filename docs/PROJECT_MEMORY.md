@@ -53,6 +53,12 @@ This file contains stable facts and working agreements. Read it with `SESSION_HA
 - Approved recorded validation accepts a browser-selected JSON request only within a 2 MiB actual-byte limit. It permits the six catalog collections, the current 30 business fields, and reserved `observed_at` validation metadata; rejects unknown/nested/sensitive-key and non-finite JSON input; and never persists the raw dataset, source filename, or value-level errors.
 - A recorded run requires an active same-tenant approver distinct from the executing administrator, timezone-aware approval/data-period metadata, and a sanitization attestation. It evaluates freshness against `replay_as_of`, stores the scope revision and contract digest, and becomes stale after scope, contract, catalog, or approval changes. Mock and recorded latest runs are selected independently; recorded success never upgrades action evidence to E3.
 
+## TikTok P3-B1 historical-fact boundary
+
+- A passed P3-B0 recorded run stores no business values. P3-B1 imports a matching approved sanitized dataset into separate tenant-scoped, append-only historical batches and six-domain normalized facts; it does not infer facts from the run summary alone. See [ADR 0003](adr/0003-tiktok-recorded-validation-and-history-facts.md).
+- Versioned metric definitions, latest business-key observations, BD-assigned append-only reconciliations and a scope-revision-bound Owner signoff form the first dashboard/review slice. Missing source data is unknown, not zero; mixed GMV currencies are not summed.
+- Synthetic and Mock facts never count toward the 30-record business review gate. A passed recorded run or an Owner review snapshot does not establish E3 authorization, a successful live API read, or production readiness.
+
 ## Git history and repository workflow
 
 - This repository is an independent clone with no Git object alternates. It preserves the complete 44-commit handover history and original commit IDs.
