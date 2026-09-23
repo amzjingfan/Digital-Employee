@@ -124,6 +124,13 @@ const PLATFORM_CONFIGS: PlatformConfig[] = [
 
 const PLATFORM_BY_KIND = new Map(PLATFORM_CONFIGS.map((item) => [item.kind, item]));
 
+const PLATFORM_CREATION: Partial<Record<PlatformKind, { label: string; path: string }>> = {
+  knowledge: { label: '创建开放知识库', path: '/enterprise/knowledge/new' },
+  'general-skills': { label: '创建开放 Skill', path: '/enterprise/general-skills/new?scope=gallery' },
+  skills: { label: '创建开放 SOP', path: '/enterprise/skills/distill?mode=create' },
+  tools: { label: '创建开放工具', path: '/enterprise/tools/new' },
+};
+
 // SD1 line glyph shown in each column header, matching the sidebar mapping.
 const PLATFORM_ICON: Record<PlatformKind, ComponentType<SVGProps<SVGSVGElement>>> = {
   agents: IconAgents,
@@ -514,9 +521,30 @@ export default function OpenPlatformPage({
     );
   }
 
+  function createOpenResource(platformKind: PlatformKind) {
+    const creation = PLATFORM_CREATION[platformKind];
+    if (!creation) return;
+    if (!isAdmin) {
+      notify.error('仅管理员可以创建开放广场内容');
+      return;
+    }
+    if (!overallAgent) {
+      notify.error('暂时无法找到开放广场');
+      return;
+    }
+    window.localStorage.setItem(ENTERPRISE_AGENT_STORAGE_KEY, overallAgent.id);
+    window.dispatchEvent(new CustomEvent('ultrarag-enterprise-agent-scope-change', {
+      detail: { agentId: overallAgent.id },
+    }));
+    navigate(platformKind === 'skills'
+      ? `${creation.path}&agent_id=${encodeURIComponent(overallAgent.id)}`
+      : creation.path);
+  }
+
   if (selectedKind) {
     const config = PLATFORM_BY_KIND.get(selectedKind) || PLATFORM_CONFIGS[0];
     const PlatformIcon = PLATFORM_ICON[selectedKind];
+    const creation = PLATFORM_CREATION[selectedKind];
     return (
       <>
         <PlatformKindDetailView
@@ -531,18 +559,8 @@ export default function OpenPlatformPage({
           employeeStats={employeeStats}
           onBack={() => navigate('/enterprise/platform')}
           onRefresh={() => void loadPlatformData()}
-          onCreate={selectedKind === 'general-skills' ? () => {
-            const overall = agents.find((item) => item.is_overall);
-            if (!overall) {
-              notify.error('暂时无法找到开放广场');
-              return;
-            }
-            window.localStorage.setItem(ENTERPRISE_AGENT_STORAGE_KEY, overall.id);
-            window.dispatchEvent(new CustomEvent('ultrarag-enterprise-agent-scope-change', {
-              detail: { agentId: overall.id },
-            }));
-            navigate('/enterprise/general-skills/new?scope=gallery');
-          } : undefined}
+          createLabel={creation?.label}
+          onCreate={creation ? () => createOpenResource(selectedKind) : undefined}
           onOpenItem={(item) => setDetailItem({ kind: selectedKind, item })}
           canManage={canManagePlatform && selectedKind === 'agents'}
           unpublishingItemId={deletingItemKey.startsWith('agents:')
