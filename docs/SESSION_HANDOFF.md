@@ -15,11 +15,11 @@ This file is mutable operational context. Re-check every process, port, branch, 
 
 ## Task-linked conversation deletion fix (2026-09-22)
 
-- Implementation is in managed worktree `C:\Users\Administrator\.codex\worktrees\fix-task-session-delete\joukir` on branch `codex/fix-task-session-delete`, based on `main@c13dc9d`. Initial implementation commit `679fb68` received independent review; its two Important findings are addressed in the current follow-up and require final re-review before integration.
+- Implementation is in managed worktree `C:\Users\Administrator\.codex\worktrees\fix-task-session-delete\joukir` on branch `codex/fix-task-session-delete`, based on `main@c13dc9d`. Initial commit `679fb68` plus review-fix commit `52d92fe` received independent review; the final review found no Critical, Important, or Minor issue and marked the branch ready to merge.
 - Ordinary user conversations retain physical deletion. A conversation referenced by a same-tenant `WorkTaskRun` receives `deleted_at`, disappears from user chat and human-handoff lists, and is rejected by user chat, handoff-reply, and feedback guards while its session, messages, Harness state/workspace, handoff/feedback records, and task execution evidence remain available internally. ADR 0002 records the decision.
 - The reversible PostgreSQL migration adds `public.sessions.deleted_at TIMESTAMP WITHOUT TIME ZONE`, its index, a unique `(tenant_id, id)` session key, and a matching restrictive `(tenant_id, session_id)` task-run foreign key. It was statically verified but was not applied to the restored local PostgreSQL database; no real PostgreSQL acceptance is claimed.
 - The review-fix matrix passed 100 backend tests with the Windows symlink case excluded; the team-workspace matrix passed 10 tests with the known hanging orphan-cleanup case excluded. Focused Ruff gates and the unstaged whitespace check pass. Fresh staged layout/diff validation remains to be run after the follow-up is staged.
-- Exact next actions: run final staged verification, commit the review follow-up, obtain re-review, then merge linearly into `main` only if its unrelated dirty worktree can be preserved safely. Apply the migration before restarting the updated service and repeat the original browser delete action.
+- Exact next actions: merge linearly into `main` only if its unrelated dirty worktree can be preserved safely. Apply the migration before restarting the updated service and repeat the original browser delete action; real PostgreSQL migration/rollback remains unverified in this branch.
 
 ## TikTok P3-B0 approved recorded-data validation implementation (2026-09-22)
 
