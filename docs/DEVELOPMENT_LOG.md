@@ -1232,3 +1232,17 @@
 - 已知阻塞：主工作树仍有九个无关未提交路径，其中两份文档与本分支修改重叠；全量后端广告测试失败已获用户明确允许作为本次基线例外。
 - 审查结果：对 `9156ac7..1519b8c` 的独立只读审查未发现 Critical、Important、Minor 问题，确认两条读取路径保留租户参数和 RLS 上下文；建议合并后在已登录页面复核。提交后测试布局守卫对 1,249 个已跟踪路径通过，隔离分支工作区干净。
 - 下一步：保存主工作树未提交状态及校验摘要，执行线性合并并恢复九个原有路径；复跑合并树的知识库测试，保留安全备份直到确认无遗漏。
+## 2026-09-23 — Digital employee description AI draft (start)
+
+- Objective: add an AI generation action for the new digital employee role description.
+- Scope: tenant-authorized draft generation, create-dialog interaction, and focused regression coverage.
+- Known blockers: the isolated worktree has no local frontend dependencies or backend virtual environment; the main checkout contains unrelated uncommitted work and will remain untouched.
+
+### Result
+
+- Changed files: `src/backend/app/agents/schema.py`, `src/backend/app/api/agents.py`, `src/frontend-enterprise/src/App.tsx`, `src/frontend-enterprise/src/i18n/en.json`, `src/tests/backend/test_agent_description_generation.py`, and `src/tests/frontend/App.test.tsx`.
+- The create dialog now requests a role-based AI draft from the tenant default model. Existing description text stays intact until the user chooses to replace it. Closing the dialog or changing the position invalidates an in-flight result.
+- Automatic approval review rejected forwarding a copied employee description to the configured model because the destination and sensitive payload were not authorized. The accepted implementation sends only the position entered for this request; the request schema rejects copied employee content.
+- Validation: focused backend generation and agent-permission tests 23 passed; frontend 69 files and 304 tests passed; frontend test typecheck, i18n check (4,412 translations), config check, production build, and 1,250-path test-layout guard passed. The new backend test file and focused backend lint selectors passed Ruff; whole changed backend-file Ruff still reports 78 pre-existing findings, with none on the new route or schemas. `git diff --check` passed. The enterprise router exposes the new POST path.
+- Remaining risks: no real model call or authenticated browser acceptance was possible. The browser connector returned `nodeRepl.fetch request failed`. The full backend run stopped after the documented advertising baseline failure at 14 passed and 1 failed: `test_ad_action_requires_approval_then_creates_7_14_30_day_reviews` expected `queued` but received `manual_resolution_required`.
+- Next recommended step: review and commit the isolated branch, then perform administrator browser acceptance and a real default-model generation in the intended environment. Do not merge while main's unrelated changes and the required backend gate remain unresolved.

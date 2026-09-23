@@ -4405,5 +4405,14 @@
   "达人归属已转交": "Creator ownership transferred",
   "转交归属": "Transfer ownership",
   "达人已释放到公海": "Creator released to the public pool",
-  "释放到公海": "Release to public pool"
+  "释放到公海": "Release to public pool",
+  "职位已变化，请重新生成岗位描述": "The position changed. Generate the description again.",
+  "请先配置可用的默认模型": "Configure an available default model first.",
+  "岗位描述生成失败，请稍后重试": "Could not generate the role description. Try again later.",
+  "先填写职位": "Enter a position first.",
+  "AI 生成": "Generate with AI",
+  "生成中…": "Generating…",
+  "生成草稿": "Generated draft",
+  "保留原文": "Keep current text",
+  "替换描述": "Replace description"
 }

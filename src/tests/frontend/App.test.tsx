@@ -80,12 +80,15 @@ const modelConfig = {
   enabled: true,
 };
 
-function stubAppFetch() {
+function stubAppFetch(generatedDescription?: string) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = (init?.method || 'GET').toUpperCase();
     if (method === 'POST' && url.includes('/tl/session')) {
       return jsonResponse({ session_id: 'session-tl-1' });
+    }
+    if (method === 'POST' && url.includes('/api/enterprise/agents/description-draft')) {
+      return jsonResponse({ description: generatedDescription || '' });
     }
     if (url.includes('/api/auth/me')) return jsonResponse(authUser);
     if (url.includes('/api/enterprise/agents')) return jsonResponse([agent]);
@@ -133,6 +136,57 @@ beforeEach(() => {
   window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ token: 'token-1', user: authUser }));
   window.localStorage.setItem('staffdeck_onboarding_guide_seen', '1');
   window.localStorage.setItem('staffdeck_quick_start_guide_seen', '1');
+});
+
+describe('new digital employee description draft', () => {
+  it('generates an editable draft from the position without creating an employee', async () => {
+    const user = userEvent.setup();
+    const fetchMock = stubAppFetch('负责整理财务资料，异常事项交由人工确认。');
+    window.history.pushState({}, '', '/enterprise/agents');
+    render(<I18nProvider><App /></I18nProvider>);
+
+    await user.click(await screen.findByRole('button', { name: /创建新员工/ }));
+    const generate = screen.getByRole('button', { name: 'AI 生成' });
+    expect((generate as HTMLButtonElement).disabled).toBe(true);
+    await user.type(screen.getByPlaceholderText('例如 研发工程师、财务助理'), '财务助理');
+    await user.click(generate);
+
+    const description = screen.getByPlaceholderText('概括这个数字员工的岗位边界、服务风格和执行重点') as HTMLTextAreaElement;
+    await waitFor(() => expect(description.value).toBe('负责整理财务资料，异常事项交由人工确认。'));
+    await user.type(description, ' 请核对。');
+    expect(description.value).toBe('负责整理财务资料，异常事项交由人工确认。 请核对。');
+    const generationCall = fetchMock.mock.calls.find(([url, init]) =>
+      String(url).includes('/api/enterprise/agents/description-draft') && init?.method === 'POST'
+    );
+    expect(JSON.parse(String(generationCall?.[1]?.body))).toEqual({
+      tenant_id: 'tenant_demo',
+      role_name: '财务助理',
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) =>
+      String(url).endsWith('/api/enterprise/agents') && init?.method === 'POST'
+    )).toBe(false);
+  });
+
+  it('keeps existing text until the user chooses to replace it', async () => {
+    const user = userEvent.setup();
+    stubAppFetch('新生成的岗位描述');
+    window.history.pushState({}, '', '/enterprise/agents');
+    render(<I18nProvider><App /></I18nProvider>);
+
+    await user.click(await screen.findByRole('button', { name: /创建新员工/ }));
+    await user.type(screen.getByPlaceholderText('例如 研发工程师、财务助理'), '财务助理');
+    const description = screen.getByPlaceholderText('概括这个数字员工的岗位边界、服务风格和执行重点') as HTMLTextAreaElement;
+    await user.type(description, '我写的描述');
+    await user.click(screen.getByRole('button', { name: 'AI 生成' }));
+
+    expect(await screen.findByText('新生成的岗位描述')).toBeTruthy();
+    expect(description.value).toBe('我写的描述');
+    await user.click(screen.getByRole('button', { name: '保留原文' }));
+    expect(description.value).toBe('我写的描述');
+    await user.click(screen.getByRole('button', { name: 'AI 生成' }));
+    await user.click(await screen.findByRole('button', { name: '替换描述' }));
+    expect(description.value).toBe('新生成的岗位描述');
+  });
 });
 
 afterEach(() => {

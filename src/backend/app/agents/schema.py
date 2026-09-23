@@ -22,6 +22,17 @@ class AgentProfileCreateRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class AgentDescriptionGenerateRequest(BaseModel):
+    tenant_id: str
+    role_name: str = Field(max_length=80)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AgentDescriptionGenerateResponse(BaseModel):
+    description: str
+
+
 class AgentProfileUpdateRequest(BaseModel):
     tenant_id: str
     name: Optional[str] = None

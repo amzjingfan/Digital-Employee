@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -7,7 +7,7 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
-import { api, isAuthError, TENANT_ID } from "./api/client";
+import { api, ApiError, isAuthError, TENANT_ID } from "./api/client";
 import {
   clearEnterpriseAuthSession,
   canAccessEnterpriseRoute,
@@ -163,11 +163,18 @@ function Shell({
   const [agentCreateOpen, setAgentCreateOpen] = useState(false);
   const [agentForm, setAgentForm] =
     useState<AgentCreateFormState>(EMPTY_AGENT_FORM);
+  const agentFormRef = useRef(agentForm);
+  const descriptionRequestId = useRef(0);
+  const [generatingDescription, setGeneratingDescription] = useState(false);
+  const [pendingDescription, setPendingDescription] = useState("");
   const [modelConfigs, setModelConfigs] = useState<ModelConfigRead[]>([]);
   const [modelConfigsLoaded, setModelConfigsLoaded] = useState(false);
   const isMobile = useIsMobile();
   const isAdmin = isEnterpriseAdmin(auth.user);
   const canCreateAgents = canUseEnterpriseCapability(auth.user, "agents", "create");
+  useEffect(() => {
+    agentFormRef.current = agentForm;
+  }, [agentForm]);
   const allowedEnterpriseRoutes = useMemo(
     () => new Set(
       Object.values(EnterpriseRoute).filter((route) => (
@@ -393,6 +400,7 @@ function Shell({
 
   const scopeAgents = agents.filter(canUseAgentScope);
   const hasUsableModelConfig = modelConfigs.some((item) => item.enabled);
+  const hasDefaultModelConfig = modelConfigs.some((item) => item.enabled && item.is_default);
   const showModelSetupNotice = guidesCompleted && modelConfigsLoaded && !hasUsableModelConfig;
   const modelSetupNoticeText = isAdmin
     ? t("还没有可用模型配置，数字员工暂不能调用模型。请先完成模型配置。")
@@ -439,7 +447,52 @@ function Shell({
       ...EMPTY_AGENT_FORM,
       copyFromAgentId: (isTeamScope(selectedAgentId) ? "" : selectedAgentId) || sourceAgents[0]?.id || "",
     });
+    setPendingDescription("");
+    descriptionRequestId.current += 1;
     setAgentCreateOpen(true);
+  }
+
+  function handleAgentCreateOpenChange(open: boolean) {
+    setAgentCreateOpen(open);
+    if (!open) {
+      descriptionRequestId.current += 1;
+      setGeneratingDescription(false);
+      setPendingDescription("");
+    }
+  }
+
+  async function generateAgentDescription() {
+    const roleName = agentForm.roleName.trim();
+    if (!roleName || generatingDescription) return;
+    const requestId = ++descriptionRequestId.current;
+    setGeneratingDescription(true);
+    setPendingDescription("");
+    try {
+      const draft = await api.post<{ description: string }>(
+        "/api/enterprise/agents/description-draft",
+        { tenant_id: TENANT_ID, role_name: roleName },
+      );
+      if (requestId !== descriptionRequestId.current) return;
+      if (agentFormRef.current.roleName.trim() !== roleName) {
+        notify.warning("职位已变化，请重新生成岗位描述");
+        return;
+      }
+      if (agentFormRef.current.description.trim()) {
+        setPendingDescription(draft.description);
+      } else {
+        setAgentForm((prev) => ({ ...prev, description: draft.description }));
+      }
+    } catch (error) {
+      if (requestId === descriptionRequestId.current) {
+        notify.error(
+          error instanceof ApiError && error.status === 409
+            ? "请先配置可用的默认模型"
+            : "岗位描述生成失败，请稍后重试",
+        );
+      }
+    } finally {
+      if (requestId === descriptionRequestId.current) setGeneratingDescription(false);
+    }
   }
 
   async function saveAgentCreateModal() {
@@ -504,7 +557,7 @@ function Shell({
       );
       await loadAgents();
       changeAgentScope(created.id);
-      setAgentCreateOpen(false);
+      handleAgentCreateOpenChange(false);
       notify.success("数字员工创建成功");
     } catch (error) {
       notify.error(error instanceof Error ? error.message : "创建数字员工失败");
@@ -906,7 +959,7 @@ function Shell({
           )}
         </div>
       </div>
-      <Dialog open={agentCreateOpen} onOpenChange={setAgentCreateOpen}>
+      <Dialog open={agentCreateOpen} onOpenChange={handleAgentCreateOpenChange}>
         <DialogContent className="flex max-h-[calc(100dvh-32px)] w-[calc(100%-32px)] flex-col gap-0 overflow-hidden rounded-[16px] p-0 sm:max-w-[520px]">
           <DialogTitle className="shrink-0 px-[24px] py-[16px] text-[16px] font-semibold text-foreground">
             新建数字员工
@@ -946,12 +999,13 @@ function Shell({
               职位
               <Input
                 value={agentForm.roleName}
-                onChange={(event) =>
+                onChange={(event) => {
+                  setPendingDescription("");
                   setAgentForm((prev) => ({
                     ...prev,
                     roleName: event.target.value,
-                  }))
-                }
+                  }));
+                }}
                 placeholder="例如 研发工程师、财务助理"
               />
             </label>
@@ -1011,26 +1065,60 @@ function Shell({
                 }
               />
             </label>
-            <label>
-              岗位描述
+            <div className="grid gap-[6px]">
+              <div className="flex items-center justify-between gap-[8px]">
+                <label htmlFor="new-agent-description" className="text-[13px] font-bold text-muted-foreground">
+                  岗位描述
+                </label>
+                <UIButton
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-[28px] px-[10px] text-[12px]"
+                  disabled={!agentForm.roleName.trim() || !modelConfigsLoaded || !hasDefaultModelConfig || generatingDescription}
+                  title={!hasDefaultModelConfig ? "请先配置可用的默认模型" : !agentForm.roleName.trim() ? "先填写职位" : undefined}
+                  onClick={() => void generateAgentDescription()}
+                >
+                  {generatingDescription ? "生成中…" : "AI 生成"}
+                </UIButton>
+              </div>
               <Textarea
+                id="new-agent-description"
                 rows={3}
                 value={agentForm.description}
-                onChange={(event) =>
+                onChange={(event) => {
+                  setPendingDescription("");
                   setAgentForm((prev) => ({
                     ...prev,
                     description: event.target.value,
-                  }))
-                }
+                  }));
+                }}
                 placeholder="概括这个数字员工的岗位边界、服务风格和执行重点"
               />
-            </label>
+              {pendingDescription && (
+                <div aria-live="polite" className="grid gap-[8px] rounded-[10px] border border-border bg-muted/30 p-[10px] text-[13px]">
+                  <span className="font-semibold">生成草稿</span>
+                  <p className="whitespace-pre-wrap">{pendingDescription}</p>
+                  <div className="flex justify-end gap-[8px]">
+                    <UIButton type="button" variant="ghost" size="sm" onClick={() => setPendingDescription("")}>
+                      保留原文
+                    </UIButton>
+                    <UIButton type="button" size="sm" onClick={() => {
+                      setAgentForm((prev) => ({ ...prev, description: pendingDescription }));
+                      setPendingDescription("");
+                    }}>
+                      替换描述
+                    </UIButton>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           <div className={cn(DIALOG_FOOTER_CLASS, "shrink-0 border-t border-border")}>
             <UIButton
               variant="outline"
               className={DIALOG_CANCEL_BUTTON_CLASS}
-              onClick={() => setAgentCreateOpen(false)}
+              onClick={() => handleAgentCreateOpenChange(false)}
             >
               取消
             </UIButton>

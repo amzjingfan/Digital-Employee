@@ -4,6 +4,15 @@ Last refreshed: 2026-09-23 (Asia/Shanghai)
 
 This file is mutable operational context. Re-check every process, port, branch, and test result before relying on it. It contains no credential values or connection strings.
 
+## Digital employee role description AI draft (2026-09-23; isolated)
+
+- Current worktree: `C:\Users\Administrator\.codex\worktrees\agent-description-ai\joukir`, branch `codex/agent-description-ai`, forked from local `main@6501350`. The main worktree's unrelated nine uncommitted paths have not been touched. No push or source-branch deletion was authorized.
+- The new creation-dialog action generates a short editable role description from the entered position using the tenant's enabled default model. Existing text is previewed before replacement; draft generation does not create the employee. The server checks tenant identity, rejects copied employee content in the request, and never persists the generated draft.
+- Auto-review rejected a proposed copied-source description model payload because it could expose internal employee text to a model-configured destination without specific authorization. The implemented request sends only `role_name`.
+- Verified: focused backend generation/permission tests 23 passed; frontend 69 files/304 tests, test typecheck, i18n coverage (4,412 translations), config check, production build, 1,250-path test-layout guard and diff check passed. The new backend test file and focused backend lint selectors passed Ruff; whole changed backend-file Ruff retains 78 existing findings. The enterprise router exposes the new POST path. The full backend suite stopped at the known advertising expectation mismatch after 14 passes.
+- Blockers: authenticated browser acceptance and a real model response remain unverified because the browser inventory failed with `nodeRepl.fetch request failed`. The main checkout has unrelated uncommitted work, and the backend full-suite gate is not green; do not auto-merge this branch under the repository rule.
+- Exact next actions: review the branch diff, run a signed-in administrator check of `/enterprise/agents` when browser access is available, verify a default-model draft with ordinary non-sensitive position text, then decide how to resolve or explicitly accept the backend baseline and safely integrate without overwriting main's uncommitted files.
+
 ## Knowledge graph PostgreSQL read fix (2026-09-23; pending integration)
 
 - Isolated branch `codex/knowledge-postgres-buckets` was created from `main@9156ac7` in a Codex-managed worktree. The main worktree retains nine unrelated uncommitted paths; no push or source-branch deletion was authorized.

@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import UTC, datetime
 from time import sleep
+from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -37,6 +38,8 @@ from app.agents.schema import (
     AgentAPICredentialCreated,
     AgentAPICredentialCreateRequest,
     AgentAPICredentialRead,
+    AgentDescriptionGenerateRequest,
+    AgentDescriptionGenerateResponse,
     AgentModelsUpdateRequest,
     AgentProfileCreateRequest,
     AgentProfileRead,
@@ -87,6 +90,8 @@ from app.db.models import (
     User,
     utc_now,
 )
+from app.llm.client import LLMClient, LLMError
+from app.llm.model_config_resolver import resolve_model_config_for_runtime
 from app.public_api.auth import generate_api_key
 from app.public_api.credential_profiles import (
     AGENT_KEY_ALLOWED_SCOPES,
@@ -111,6 +116,12 @@ chat_router = APIRouter(prefix="/api/chat/agents", tags=["chat:agents"])
 scope_router = APIRouter(prefix="/api/enterprise/agent-scope", tags=["enterprise:agent-scope"])
 
 STAFFDECK_AGENT_API_CLIENT_NAME = "九骥 Joukir 员工 API 密钥"
+AGENT_DESCRIPTION_PROMPT = (
+    "你为新建数字员工撰写简短的中文岗位描述。仅根据用户填写的职位，"
+    "概括岗位边界、核心职责、服务风格和执行重点。不要承诺未提供的工具、权限或外部系统能力。"
+    "控制在80至160个汉字。只返回 JSON 对象："
+    '{"description":"..."}。'
+)
 
 
 @scope_router.get("", response_model=AgentScopeRead)
@@ -202,6 +213,39 @@ def create_agent(
     db.commit()
     db.refresh(row)
     return agent_read(row, _bindings_by_agent(db, request.tenant_id).get(row.id, []))
+
+
+@enterprise_router.post("/description-draft", response_model=AgentDescriptionGenerateResponse)
+def generate_agent_description(
+    request: AgentDescriptionGenerateRequest,
+    db: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> AgentDescriptionGenerateResponse:
+    _ensure_request_tenant(request.tenant_id, current_user)
+    role_name = request.role_name.strip()
+    if not role_name:
+        raise HTTPException(status_code=400, detail="Position cannot be empty")
+
+    default_model = db.exec(
+        select(ModelConfig).where(
+            ModelConfig.tenant_id == request.tenant_id,
+            ModelConfig.is_default.is_(True),
+            ModelConfig.enabled.is_(True),
+        )
+    ).first()
+    if default_model is None:
+        raise HTTPException(status_code=409, detail="DEFAULT_MODEL_NOT_CONFIGURED")
+    model = resolve_model_config_for_runtime(db, request.tenant_id, default_model.id)
+    try:
+        raw = LLMClient(model).generate_json(
+            AGENT_DESCRIPTION_PROMPT, {"role_name": role_name}
+        )
+    except LLMError as exc:
+        raise HTTPException(status_code=502, detail="DESCRIPTION_GENERATION_FAILED") from exc
+    description = raw.get("description") if isinstance(raw, dict) else None
+    if not isinstance(description, str) or not description.strip() or len(description) > 400:
+        raise HTTPException(status_code=502, detail="DESCRIPTION_GENERATION_FAILED")
+    return AgentDescriptionGenerateResponse(description=description.strip())
 
 
 @enterprise_router.get("/{agent_id}", response_model=AgentProfileRead)
