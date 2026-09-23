@@ -1814,6 +1814,12 @@ class WorkTaskRun(SQLModel, table=True):
     __tablename__ = "work_task_runs"
     __table_args__ = (
         UniqueConstraint("tenant_id", "task_id", "attempt_no", name="uq_work_task_run_attempt"),
+        ForeignKeyConstraint(
+            ["tenant_id", "session_id"],
+            ["sessions.tenant_id", "sessions.id"],
+            name="work_task_runs_session_fk",
+            ondelete="RESTRICT",
+        ),
         CheckConstraint(
             "status IN ('running', 'succeeded', 'retrying', 'failed', 'cancelled', 'stale')",
             name="work_task_runs_status_check",
@@ -2498,6 +2504,9 @@ class MockOrder(SQLModel, table=True):
 
 class ChatSession(SQLModel, table=True):
     __tablename__ = "sessions"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_sessions_tenant_id_id"),
+    )
 
     id: str = Field(primary_key=True)
     tenant_id: str = Field(index=True)

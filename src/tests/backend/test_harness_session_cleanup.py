@@ -9,6 +9,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.api.chat import (
     _ensure_chat_session_available,
+    _get_feedback_target_message,
     _get_readable_chat_session,
     _get_user_chat_session,
     delete_chat_session,
@@ -334,67 +335,17 @@ def test_delete_work_task_chat_session_hides_it_and_preserves_audit_history(
             lambda: _get_user_chat_session(db, "tenant_demo", user.id, session.id),
             lambda: _get_readable_chat_session(db, "tenant_demo", user, session.id),
             lambda: _ensure_chat_session_available(db, "tenant_demo", user.id, session.id),
+            lambda: _get_feedback_target_message(
+                db,
+                "tenant_demo",
+                user.id,
+                message.id,
+            ),
         )
         for access_session in accessors:
             with pytest.raises(HTTPException) as exc_info:
                 access_session()
             assert exc_info.value.status_code == 404
-
-
-def test_delete_chat_session_ignores_work_task_run_from_another_tenant(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("ULTRARAG_DATA_DIR", str(tmp_path / "data"))
-    engine = _test_engine()
-    with Session(engine) as db:
-        db.add_all(
-            [
-                Tenant(id="tenant_target", name="Target"),
-                Tenant(id="tenant_other", name="Other"),
-            ]
-        )
-        user = User(
-            id="user_target",
-            tenant_id="tenant_target",
-            username="target",
-            password_hash="test",
-        )
-        session = ChatSession(
-            id="shared_session_id",
-            tenant_id="tenant_target",
-            user_id=user.id,
-        )
-        other_tenant_run = WorkTaskRun(
-            id="run_other_tenant",
-            tenant_id="tenant_other",
-            task_id="task_other_tenant",
-            attempt_no=1,
-            generation=1,
-            agent_id="agent_other",
-            session_id=session.id,
-            status="succeeded",
-        )
-        db.add_all([user, session, other_tenant_run])
-        db.commit()
-
-        workspace = harness_session_workspace_path(
-            tenant_id="tenant_target",
-            session_id=session.id,
-        )
-        workspace.mkdir(parents=True)
-
-        result = delete_chat_session(
-            session.id,
-            tenant_id="tenant_target",
-            current_user=user,
-            db=db,
-        )
-
-        assert result == {"status": "deleted"}
-        assert db.get(ChatSession, session.id) is None
-        assert db.get(WorkTaskRun, other_tenant_run.id) is not None
-        assert not workspace.exists()
 
 
 def test_delete_team_cleans_team_session_harness_state_and_workspace(

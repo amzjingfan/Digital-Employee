@@ -9,9 +9,9 @@
 
 ## Decision
 
-Ordinary user conversations continue to be physically deleted with their dependent chat and Harness records. When a same-tenant `WorkTaskRun` references a conversation, user deletion instead sets `ChatSession.deleted_at`. Soft-deleted sessions are excluded from user chat lists and treated as not found by centralized chat read, update, delete, and turn guards. Messages, Harness records, workspaces, task runs, and the session row remain available to internal execution and enterprise audit paths.
+Ordinary user conversations continue to be physically deleted with their dependent chat and Harness records. When a same-tenant `WorkTaskRun` references a conversation, user deletion instead sets `ChatSession.deleted_at`. Soft-deleted sessions are excluded from user chat and human-handoff lists, and user chat read, update, delete, turn, handoff-reply, and message-feedback paths reject them. Messages, handoff and feedback records, Harness records, workspaces, task runs, and the session row remain available to internal execution and enterprise audit paths.
 
-The `work_task_runs_session_fk ON DELETE RESTRICT` constraint remains unchanged. Tenant ID and session ID together determine whether task evidence protects a session.
+The `work_task_runs_session_fk ON DELETE RESTRICT` constraint uses `(tenant_id, session_id)` and references a matching unique `(tenant_id, id)` session key. The database and application therefore use the same tenant-scoped relationship when deciding whether task evidence protects a session.
 
 ## Alternatives considered
 
@@ -22,7 +22,7 @@ The `work_task_runs_session_fk ON DELETE RESTRICT` constraint remains unchanged.
 
 ## Consequences
 
-- Existing databases require the reversible `sessions.deleted_at` migration before deploying the updated service.
+- Existing databases require the reversible migration for `sessions.deleted_at`, the tenant-scoped session key, and the task-run foreign key before deploying the updated service. Existing cross-tenant run/session mismatches fail the migration instead of being silently accepted.
 - User chat endpoints must consistently apply the deleted-session guard; enterprise audit and worker code intentionally retain internal access.
 - Rolling back the schema removes deletion markers and can make retained task conversations visible again, so application rollback and migration rollback must be coordinated.
 - Any future physical retention job for task conversations must define an explicit audit-retention period and remove or archive task evidence before attempting to delete the session.

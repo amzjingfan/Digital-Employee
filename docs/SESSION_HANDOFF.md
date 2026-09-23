@@ -1,6 +1,6 @@
 # Current session handoff
 
-Last refreshed: 2026-09-22 (Asia/Shanghai)
+Last refreshed: 2026-09-23 (Asia/Shanghai)
 
 This file is mutable operational context. Re-check every process, port, branch, and test result before relying on it. It contains no credential values or connection strings.
 
@@ -15,11 +15,11 @@ This file is mutable operational context. Re-check every process, port, branch, 
 
 ## Task-linked conversation deletion fix (2026-09-22)
 
-- Implementation is complete in managed worktree `C:\Users\Administrator\.codex\worktrees\fix-task-session-delete\joukir` on branch `codex/fix-task-session-delete`, based on `main@c13dc9d`. It is not yet reviewed, committed, or integrated at this handoff update.
-- Ordinary user conversations retain physical deletion. A conversation referenced by a same-tenant `WorkTaskRun` now receives `deleted_at`, disappears from user chat lists, and is rejected by centralized chat access guards while its session, messages, Harness state/workspace, and task execution evidence remain available internally. The restrictive PostgreSQL foreign key remains unchanged; ADR 0002 records the decision.
-- A reversible PostgreSQL migration adds `public.sessions.deleted_at TIMESTAMPTZ` and `ix_sessions_deleted_at`. The migration was statically verified but was not applied to the restored local PostgreSQL database; no real PostgreSQL acceptance is claimed.
-- Final focused verification passed 89 backend tests, two Ruff gates, the 1,223-path test layout guard, and cached-diff whitespace checks. Two known baseline exclusions remain: Windows cannot create the symlink required by one Harness cleanup test, and `test_purge_orphaned_chat_sessions_cleans_pre_fix_leftovers` hangs in unchanged code.
-- Exact next actions: commit the isolated branch, obtain independent code review, address any Critical/Important findings, then merge linearly into `main` only if its unrelated dirty worktree can be preserved safely. Apply the migration before restarting the updated service and repeat the original browser delete action.
+- Implementation is in managed worktree `C:\Users\Administrator\.codex\worktrees\fix-task-session-delete\joukir` on branch `codex/fix-task-session-delete`, based on `main@c13dc9d`. Initial implementation commit `679fb68` received independent review; its two Important findings are addressed in the current follow-up and require final re-review before integration.
+- Ordinary user conversations retain physical deletion. A conversation referenced by a same-tenant `WorkTaskRun` receives `deleted_at`, disappears from user chat and human-handoff lists, and is rejected by user chat, handoff-reply, and feedback guards while its session, messages, Harness state/workspace, handoff/feedback records, and task execution evidence remain available internally. ADR 0002 records the decision.
+- The reversible PostgreSQL migration adds `public.sessions.deleted_at TIMESTAMP WITHOUT TIME ZONE`, its index, a unique `(tenant_id, id)` session key, and a matching restrictive `(tenant_id, session_id)` task-run foreign key. It was statically verified but was not applied to the restored local PostgreSQL database; no real PostgreSQL acceptance is claimed.
+- The review-fix matrix passed 100 backend tests with the Windows symlink case excluded; the team-workspace matrix passed 10 tests with the known hanging orphan-cleanup case excluded. Focused Ruff gates and the unstaged whitespace check pass. Fresh staged layout/diff validation remains to be run after the follow-up is staged.
+- Exact next actions: run final staged verification, commit the review follow-up, obtain re-review, then merge linearly into `main` only if its unrelated dirty worktree can be preserved safely. Apply the migration before restarting the updated service and repeat the original browser delete action.
 
 ## TikTok P3-B0 approved recorded-data validation implementation (2026-09-22)
 

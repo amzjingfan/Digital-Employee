@@ -2332,6 +2332,16 @@ def list_human_handoffs(
         select(HumanHandoffRequest.session_id).where(*conditions)
     ).all()
     hidden_session_ids = pilotdeck_origin_session_ids(db, tenant_id, candidate_session_ids)
+    if candidate_session_ids:
+        hidden_session_ids.update(
+            db.exec(
+                select(ChatSession.id).where(
+                    ChatSession.tenant_id == tenant_id,
+                    ChatSession.id.in_(candidate_session_ids),  # type: ignore[attr-defined]
+                    ChatSession.deleted_at.is_not(None),
+                )
+            ).all()
+        )
     stmt = select(HumanHandoffRequest).where(*conditions)
     if hidden_session_ids:
         stmt = stmt.where(HumanHandoffRequest.session_id.notin_(hidden_session_ids))
@@ -2358,7 +2368,11 @@ def reply_human_handoff(
     if row.status != "pending":
         raise HTTPException(status_code=409, detail="Handoff request is not pending")
     chat_session = db.get(ChatSession, row.session_id)
-    if not chat_session or chat_session.tenant_id != request.tenant_id:
+    if (
+        not chat_session
+        or chat_session.tenant_id != request.tenant_id
+        or chat_session.deleted_at is not None
+    ):
         raise HTTPException(status_code=409, detail="Original handoff session is not available")
 
     _apply_handoff_reply(
@@ -2727,7 +2741,12 @@ def _get_feedback_target_message(db: Session, tenant_id: str, user_id: str, mess
     if not row or row.tenant_id != tenant_id or row.role != "assistant":
         raise HTTPException(status_code=404, detail="Message not found")
     chat_session = db.get(ChatSession, row.session_id)
-    if not chat_session or chat_session.tenant_id != tenant_id or chat_session.user_id != user_id:
+    if (
+        not chat_session
+        or chat_session.tenant_id != tenant_id
+        or chat_session.user_id != user_id
+        or chat_session.deleted_at is not None
+    ):
         raise HTTPException(status_code=404, detail="Message not found")
     return row
 

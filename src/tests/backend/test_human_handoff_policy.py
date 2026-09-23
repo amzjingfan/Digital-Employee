@@ -570,6 +570,55 @@ def test_handoff_list_hides_pilotdeck_sessions_but_keeps_the_records() -> None:
         assert db.get(HumanHandoffRequest, "handoff_pilotdeck") is not None
 
 
+def test_handoff_endpoints_hide_deleted_session_and_preserve_request() -> None:
+    engine = _test_engine()
+    with Session(engine) as db:
+        admin, user, _other = _seed_handoff_users(db)
+        session = ChatSession(
+            id="session_deleted_handoff",
+            tenant_id="tenant_demo",
+            user_id=user.id,
+            agent_id="agent_demo",
+            status="handoff",
+            deleted_at=utc_now(),
+        )
+        handoff = HumanHandoffRequest(
+            id="handoff_deleted_session",
+            tenant_id="tenant_demo",
+            session_id=session.id,
+            agent_id="agent_demo",
+            requester_user_id=user.id,
+            assignee_user_id=admin.id,
+            pending_question="请人工处理",
+            status="pending",
+        )
+        db.add_all([session, handoff])
+        db.commit()
+
+        rows = chat_api.list_human_handoffs(
+            "tenant_demo",
+            "pending",
+            current_user=admin,
+            db=db,
+        )
+
+        assert rows == []
+        with pytest.raises(HTTPException) as exc:
+            chat_api.reply_human_handoff(
+                handoff.id,
+                chat_api.HumanHandoffReplyRequest(
+                    tenant_id="tenant_demo",
+                    reply="不应写回已删除会话",
+                ),
+                current_user=admin,
+                db=db,
+            )
+        assert exc.value.status_code == 409
+        db.refresh(handoff)
+        assert handoff.status == "pending"
+        assert handoff.human_reply is None
+
+
 def test_handoff_assignee_can_read_original_session_without_owner_permissions():
     engine = _test_engine()
     with Session(engine) as db:
