@@ -5007,3 +5007,102 @@ class TikTokHistorySignoff(SQLModel, table=True):
     source_evidence_ref: str
     confirmed_by_user_id: str
     created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
+class TikTokCreatorPoolEntry(SQLModel, table=True):
+    """Current internal assignment of a canonical TikTok creator."""
+
+    __tablename__ = "tiktok_creator_pool"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_tiktok_creator_pool_tenant_id"),
+        UniqueConstraint("tenant_id", "creator_id", name="uq_tiktok_creator_pool_creator"),
+        ForeignKeyConstraint(
+            ["tenant_id", "creator_id"], ["social_creators.tenant_id", "social_creators.id"],
+            name="fk_tiktok_creator_pool_creator", ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "identity_id", "creator_id"],
+            ["social_platform_identities.tenant_id", "social_platform_identities.id",
+             "social_platform_identities.creator_id"],
+            name="fk_tiktok_creator_pool_identity", ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "owner_user_id"], ["users.tenant_id", "users.id"],
+            name="fk_tiktok_creator_pool_owner", ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "created_by_user_id"], ["users.tenant_id", "users.id"],
+            name="fk_tiktok_creator_pool_creator_user", ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "state IN ('public', 'claimed', 'reflow_candidate')",
+            name="tiktok_creator_pool_state_check",
+        ),
+        CheckConstraint(
+            "(state = 'public' AND owner_user_id IS NULL AND follow_up_due_at IS NULL) "
+            "OR (state <> 'public' AND owner_user_id IS NOT NULL AND follow_up_due_at IS NOT NULL)",
+            name="tiktok_creator_pool_assignment_check",
+        ),
+        CheckConstraint("revision > 0", name="tiktok_creator_pool_revision_check"),
+        CheckConstraint(
+            "follow_up_window_hours BETWEEN 1 AND 720",
+            name="tiktok_creator_pool_window_check",
+        ),
+        Index("ix_tiktok_creator_pool_tenant_state", "tenant_id", "state"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("tiktok_pool"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    creator_id: str = Field(index=True)
+    identity_id: str = Field(index=True)
+    market: str = "US"
+    source_ref: str
+    sla_rule_version: str
+    follow_up_window_hours: int
+    state: str = Field(default="public", index=True)
+    owner_user_id: str | None = Field(default=None, index=True)
+    follow_up_due_at: datetime | None = Field(default=None, index=True)
+    revision: int = 1
+    created_by_user_id: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class TikTokCreatorPoolEvent(SQLModel, table=True):
+    """Append-only transition evidence without contact or message content."""
+
+    __tablename__ = "tiktok_creator_pool_events"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "pool_id"], ["tiktok_creator_pool.tenant_id", "tiktok_creator_pool.id"],
+            name="fk_tiktok_creator_pool_event_pool", ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "actor_user_id"], ["users.tenant_id", "users.id"],
+            name="fk_tiktok_creator_pool_event_actor", ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "previous_owner_user_id"], ["users.tenant_id", "users.id"],
+            name="fk_tiktok_creator_pool_event_previous_owner", ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "new_owner_user_id"], ["users.tenant_id", "users.id"],
+            name="fk_tiktok_creator_pool_event_new_owner", ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "event_type IN ('entered', 'claimed', 'follow_up', 'reflow_proposed', 'reflow_approved')",
+            name="tiktok_creator_pool_event_type_check",
+        ),
+        Index("ix_tiktok_creator_pool_event_tenant_pool", "tenant_id", "pool_id", "created_at"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("tiktok_pool_event"), primary_key=True)
+    tenant_id: str = Field(index=True)
+    pool_id: str = Field(index=True)
+    event_type: str
+    actor_user_id: str
+    previous_owner_user_id: str | None = None
+    new_owner_user_id: str | None = None
+    evidence_ref: str | None = None
+    reason: str | None = None
+    created_at: datetime = Field(default_factory=utc_now, index=True)

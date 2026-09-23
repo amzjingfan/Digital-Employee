@@ -41,9 +41,9 @@ def test_live_write_release_gate_passes_current_frozen_surface() -> None:
     assert result == {
         "ok": True,
         "gate": "tiktok_live_write_disabled",
-        "route_count": 34,
+        "route_count": 40,
         "skill_count": 12,
-        "python_file_count": 15,
+        "python_file_count": 16,
         "issues": [],
     }
 

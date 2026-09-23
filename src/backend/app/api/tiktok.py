@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from typing import Annotated
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -13,6 +14,20 @@ from app.db import get_session
 from app.db.models import TikTokOAuthState, User
 from app.security.auth import get_current_user
 from app.tiktok.connector import TikTokConnectorRead, read_tiktok_resource
+from app.tiktok.creator_pool import (
+    CreatorPoolConflict,
+    PoolEntryRead,
+    PoolFollowUpRequest,
+    PoolIntakeRequest,
+    PoolRevisionRequest,
+    PoolWorkspace,
+    approve_reflow,
+    claim_creator,
+    enter_creator_pool,
+    get_creator_pool,
+    propose_reflow,
+    record_effective_follow_up,
+)
 from app.tiktok.data_validation import (
     TikTokDataValidationConflict,
     TikTokDataValidationNotFound,
@@ -111,6 +126,84 @@ from app.tiktok.shadow import (
 )
 
 router = APIRouter(prefix="/api/enterprise/tiktok", tags=["enterprise-tiktok"])
+
+
+def _creator_pool_action(db: Session, operation: Callable[[], PoolEntryRead]) -> PoolEntryRead:
+    try:
+        return operation()
+    except CreatorPoolConflict as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail={
+            "code": exc.code,
+            "current_owner_user_id": exc.current_owner_user_id,
+            "revision": exc.revision,
+        }) from exc
+
+
+@router.get("/creator-pool", response_model=PoolWorkspace)
+def creator_pool_list(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> PoolWorkspace:
+    return get_creator_pool(db, current_user)
+
+
+@router.post("/creator-pool", response_model=PoolEntryRead)
+def creator_pool_intake(
+    request: PoolIntakeRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> PoolEntryRead:
+    return _creator_pool_action(db, lambda: enter_creator_pool(db, current_user, request))
+
+
+@router.post("/creator-claims/{entry_id}", response_model=PoolEntryRead)
+def creator_pool_claim(
+    entry_id: str,
+    request: PoolRevisionRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> PoolEntryRead:
+    return _creator_pool_action(db, lambda: claim_creator(
+        db, current_user, entry_id, expected_revision=request.expected_revision,
+    ))
+
+
+@router.post("/creator-follow-ups/{entry_id}", response_model=PoolEntryRead)
+def creator_pool_follow_up(
+    entry_id: str,
+    request: PoolFollowUpRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> PoolEntryRead:
+    return _creator_pool_action(db, lambda: record_effective_follow_up(
+        db, current_user, entry_id, expected_revision=request.expected_revision,
+        evidence_ref=request.evidence_ref,
+    ))
+
+
+@router.post("/creator-reflow-proposals/{entry_id}", response_model=PoolEntryRead)
+def creator_pool_reflow_propose(
+    entry_id: str,
+    request: PoolRevisionRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> PoolEntryRead:
+    return _creator_pool_action(db, lambda: propose_reflow(
+        db, current_user, entry_id, expected_revision=request.expected_revision,
+    ))
+
+
+@router.post("/creator-reflow-approvals/{entry_id}", response_model=PoolEntryRead)
+def creator_pool_reflow_approve(
+    entry_id: str,
+    request: PoolRevisionRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> PoolEntryRead:
+    return _creator_pool_action(db, lambda: approve_reflow(
+        db, current_user, entry_id, expected_revision=request.expected_revision,
+    ))
 
 
 @router.get("/history", response_model=HistoryWorkspace)

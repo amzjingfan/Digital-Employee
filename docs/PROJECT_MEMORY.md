@@ -59,6 +59,11 @@ This file contains stable facts and working agreements. Read it with `SESSION_HA
 - Versioned metric definitions, latest business-key observations, BD-assigned append-only reconciliations and a scope-revision-bound Owner signoff form the first dashboard/review slice. Missing source data is unknown, not zero; mixed GMV currencies are not summed.
 - Synthetic and Mock facts never count toward the 30-record business review gate. A passed recorded run or an Owner review snapshot does not establish E3 authorization, a successful live API read, or production readiness.
 
+## TikTok P3-B2 creator ownership boundary
+
+- SocialCreator and SocialPlatformIdentity remain canonical identity records; TikTok BD ownership is a separate tenant-scoped pool state and append-only transition history. Intake requires an active, verified TikTok identity with current latest evidence and a supervisor-set SLA rule version/window. See [ADR 0004](adr/0004-tiktok-creator-pool-ownership.md).
+- Claims, effective follow-ups and supervisor-approved reflow compare the pool revision in the database. A profile view never extends the deadline, and expiry alone does not transfer ownership. The first slice records only internal state and opaque evidence references; external messages, platform writes, commissions and payments remain outside it.
+
 ## Git history and repository workflow
 
 - This repository is an independent clone with no Git object alternates. It preserves the complete 44-commit handover history and original commit IDs.

@@ -24,3 +24,4 @@ Use the next four-digit number and a short lowercase filename. Include:
 - [0001 — Main repository layout and history preservation](0001-main-repository-layout.md) — Accepted, 2026-09-11.
 - [0002 — Preserve task execution evidence when users delete conversations](0002-task-session-deletion-retention.md) — Accepted, 2026-09-22.
 - [0003 — TikTok recorded validation and historical facts](0003-tiktok-recorded-validation-and-history-facts.md) — Accepted, 2026-09-23.
+- [0004 — TikTok creator pool ownership](0004-tiktok-creator-pool-ownership.md) — Accepted, 2026-09-23.

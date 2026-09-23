@@ -6,6 +6,7 @@ import AppHeader from '@/components/AppHeader';
 import { notify } from '@/components/ui/app-toast';
 import { Button } from '@/components/ui/button';
 import TikTokDataValidationPanel from '@/pages/tiktok/TikTokDataValidationPanel';
+import TikTokCreatorPoolPanel from '@/pages/tiktok/TikTokCreatorPoolPanel';
 import TikTokHistoryPanel from '@/pages/tiktok/TikTokHistoryPanel';
 
 type Role = { key: string; label: string; casdoor_group: string; description: string };
@@ -28,7 +29,7 @@ type ExceptionMatrixItem = { sop_id: string; title: string; scenario: string; ex
 type ExceptionMatrixReport = { execution_mode: string; status: string; sop_count: number; scenario_count: number; total_count: number; passed_count: number; failed_count: number; external_writes: boolean; items: ExceptionMatrixItem[] };
 type M2MVerificationItem = { agent_id?: string | null; application?: string | null; status: 'verified' | 'failed'; subject?: string | null; expires_at?: string | null; error_code?: string | null };
 type M2MVerificationReport = { tenant_id: string; verified_count: number; failed_count: number; items: M2MVerificationItem[] };
-type TikTokTab = 'overview' | 'employees' | 'assets' | 'tasks' | 'skills' | 'risk' | 'data-validation' | 'history';
+type TikTokTab = 'overview' | 'employees' | 'assets' | 'tasks' | 'skills' | 'risk' | 'data-validation' | 'history' | 'creator-pool';
 
 type Props = { currentUser: EnterpriseAuthUser; onLogout: () => void };
 
@@ -42,6 +43,9 @@ const DEPARTMENT_ROLE_LABELS: Record<string, string> = {
 };
 
 export default function TikTokBusinessUnitPage({ currentUser, onLogout }: Props) {
+  const canViewCreatorPool = currentUser.role === 'admin'
+    || currentUser.business_role === 'operations_supervisor'
+    || currentUser.business_role === 'tiktok_bd_specialist';
   const [overview, setOverview] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -289,7 +293,8 @@ export default function TikTokBusinessUnitPage({ currentUser, onLogout }: Props)
           ['risk', '风险与 KPI'],
           ['data-validation', '数据验证'],
           ['history', '历史事实与对照'],
-        ] as const).map(([tab, label]) => (
+          ['creator-pool', '内部达人池'],
+        ] as const).filter(([tab]) => tab !== 'creator-pool' || canViewCreatorPool).map(([tab, label]) => (
           <button
             key={tab}
             type="button"
@@ -492,6 +497,7 @@ export default function TikTokBusinessUnitPage({ currentUser, onLogout }: Props)
         <TikTokDataValidationPanel currentUser={currentUser} />
       )}
       {activeTab === 'history' && <TikTokHistoryPanel currentUser={currentUser} />}
+      {activeTab === 'creator-pool' && canViewCreatorPool && <TikTokCreatorPoolPanel currentUser={currentUser} />}
     </div>
   );
 }

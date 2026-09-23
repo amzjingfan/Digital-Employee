@@ -150,6 +150,8 @@ p, procurement_specialist, *, /api/enterprise/business-executions*, GET, allow
 # TikTok business-unit overview is read-only for the six production roles.
 p, tiktok_bd_specialist, *, /api/enterprise/tiktok*, GET, allow
 p, tiktok_bd_specialist, *, /api/enterprise/tiktok/history/facts/*/reconciliations, POST, allow
+p, tiktok_bd_specialist, *, /api/enterprise/tiktok/creator-claims/*, POST, allow
+p, tiktok_bd_specialist, *, /api/enterprise/tiktok/creator-follow-ups/*, POST, allow
 p, tiktok_content_specialist, *, /api/enterprise/tiktok*, GET, allow
 p, tiktok_shop_operator, *, /api/enterprise/tiktok*, GET, allow
 p, tiktok_media_buyer, *, /api/enterprise/tiktok*, GET, allow
