@@ -1120,3 +1120,11 @@
 - 前端完整 Vitest 68 文件/297 项、测试类型检查、i18n 4,352 条、配置检查及 2,167 模块生产构建通过，构建仅保留既有大 chunk 警告；测试布局守卫通过。
 - 固定风险：浏览器桥无法连接，未验证真实路由四种角色的视觉/操作路径；进程环境缺少 PostgreSQL 验收门禁和数据库 URL，新迁移尚未在真实 PostgreSQL 应用。30 条测试事实及 Owner 确认只是门槛测试，不是业务验收或生产批准。
 - 下一步：固定 `main@67f3e42` 做代码/规格审查并修复发现，提交功能分支；待浏览器和安全的 PostgreSQL 验收环境可用后补验，满足仓库合并条件时再线性合入 `main`，保留主工作区七个既有改动。
+
+## 2026-09-23 — TikTok P3-B1 固定基线审查修正（完成）
+
+- 目标与范围：对 `main@67f3e42` 的 P3-B1 分支做规范及规格审查，修正路由授权、逐条对照证据、Owner 来源确认和指标口径。已知阻塞为主干并发推进且有无关未提交改动，浏览器桥及真实 PostgreSQL 验收环境不可用。
+- 改动路径：`src/backend/app/api/tiktok.py`、`src/backend/app/db/models.py`、`src/backend/app/security/casbin_policy.csv`、`src/backend/app/tiktok/p3b1_history.py`、`src/backend/migrations/20260923_tiktok_p3b1_history_v1.sql`、`src/frontend-enterprise/src/i18n/en.json`、`src/frontend-enterprise/src/pages/tiktok/TikTokHistoryPanel.tsx`、`src/tests/backend/test_tiktok_p3b1_history.py`、`src/tests/backend/test_tiktok_p3b1_history_api.py`、`src/tests/frontend/TikTokHistoryPanel.test.tsx`、`docs/adr/0002-tiktok-recorded-validation-and-history-facts.md`、`docs/SESSION_HANDOFF.md`、本开发日志。
+- 结果：Casbin 明确授权分配 BD 的逐条核对和所有潜在试点 Owner 的确认入口，服务仍要求精确活跃 Owner 身份；普通 BD 仅见本人分配事实。BD 每条结论需填写脱敏对照证据编号；Owner 对候选历史来源单独声明并登记证据编号。确认摘要绑定批次、recorded run、事实和对照引用，recorded 审批过期会撤销就绪显示。指标要求显式 UTC 时段，最新定义版本不会套算旧批次。页面把计数标为“候选历史已核对”，避免把管理员申报当作已证实来源。
+- 验证命令与结果：`python -m pytest -q -p no:cacheprovider -c pytest.ini --basetemp=<系统临时目录> <src/tests/backend/test_tiktok* 与 test_postgres_tiktok* 文件>` 为 165 passed；`npm --prefix src/frontend-enterprise test` 为 68 files/297 passed；`npm --prefix src/frontend-enterprise run test:typecheck`、`run i18n:check`（4,359 映射）、`run config:check`、`run build`（2,167 模块）均通过；`python -m ruff check --no-cache` 对本次 Python 文件通过，共享 `models.py` 用仓库既有 `--ignore UP045,FURB157` 通过；`git diff --check` 通过。构建保留既有大 chunk 提示。
+- 未验证与下一步：浏览器 inventory 再次返回 `nodeRepl.fetch request failed`，没有执行真实角色/路由视觉验收；未获得安全的 PostgreSQL 连接与验收门禁，因此迁移/RLS 仅为静态测试。当前通过的是功能测试与合成样本，非 E3、真实授权、30 条业务历史核对或生产批准。提交分支后运行 tracked 测试布局守卫；恢复浏览器和 PostgreSQL 验收后再考虑安全线性合并。主干已前进至 `ed6d4c7` 并有无关改动，不在本步修改。

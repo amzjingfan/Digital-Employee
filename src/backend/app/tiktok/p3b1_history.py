@@ -54,6 +54,8 @@ METRICS = (
     ("video_likes", "点赞量", "sum(video.like_count)", "likes", "like_count", None),
     ("order_count", "订单数", "count(order)", "orders", None, None),
     ("gmv", "GMV", "sum(gmv.amount) by currency", "currency", "amount", None),
+    ("roi", "ROI", "pending business definition", "ratio", None, None),
+    ("gpm", "GPM", "pending business definition", "currency", None, None),
 )
 
 
@@ -109,19 +111,37 @@ class ReconciliationRequest(BaseModel):
 
     verdict: Literal["matched", "difference", "needs_review"]
     reason: str = Field(min_length=3, max_length=500)
+    comparison_ref: str = Field(min_length=3, max_length=160)
 
-    @field_validator("reason")
+    @field_validator("reason", "comparison_ref")
     @classmethod
     def require_meaningful_reason(cls, value: str) -> str:
         if len(value.strip()) < 3:
-            raise ValueError("reconciliation_reason_required")
+            raise ValueError("reconciliation_evidence_required")
         return value.strip()
+
+    @field_validator("comparison_ref")
+    @classmethod
+    def reject_url_or_contact_reference(cls, value: str) -> str:
+        if "://" in value or "?" in value or "@" in value:
+            raise ValueError("opaque_comparison_ref_required")
+        return value
 
 
 class HistoryConfirmRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     approval_ref: str = Field(min_length=3, max_length=200)
+    source_evidence_ref: str = Field(min_length=3, max_length=160)
+    source_attested: Literal[True]
+
+    @field_validator("source_evidence_ref")
+    @classmethod
+    def require_opaque_source_reference(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 3 or "://" in value or "?" in value or "@" in value:
+            raise ValueError("opaque_source_ref_required")
+        return value
 
 
 class HistoryFactRead(BaseModel):
@@ -131,10 +151,13 @@ class HistoryFactRead(BaseModel):
     business_key: str
     observed_at: datetime
     source_label: str
+    recorded_run_id: str
+    recorded_approval_ref: str
     source_kind: str
     assigned_bd_user_id: str
     values: dict[str, object]
     latest_verdict: str | None
+    latest_comparison_ref: str | None
 
 
 class HistoryMetricRead(BaseModel):
@@ -154,6 +177,7 @@ class HistoryWorkspace(BaseModel):
     total_count: int
     reviewed_count: int
     eligible_reviewed_count: int
+    eligible_total_count: int
     exit_ready: bool
     can_confirm: bool
     facts: list[HistoryFactRead]
@@ -166,6 +190,7 @@ class ReconciliationRead(BaseModel):
     fact_id: str
     verdict: str
     reason: str
+    comparison_ref: str
     reviewed_by_user_id: str
     created_at: datetime
 
@@ -174,6 +199,7 @@ class HistorySignoffRead(BaseModel):
     id: str
     reviewed_count: int
     approval_ref: str
+    source_evidence_ref: str
     confirmed_by_user_id: str
     created_at: datetime
 
@@ -207,6 +233,7 @@ def _metric_definitions(db: Session, tenant_id: str) -> None:
                 unit=unit,
                 numerator=numerator,
                 denominator=denominator,
+                status="pending" if code in {"roi", "gpm"} else "defined",
             ))
 
 
@@ -355,6 +382,8 @@ def record_reconciliation(
     *,
     now: datetime | None = None,
 ) -> ReconciliationRead:
+    if user.status != "active" or user.business_role != "tiktok_bd_specialist":
+        raise HTTPException(status_code=403, detail="TikTok BD assignment required")
     fact = db.exec(select(TikTokHistoryFact).where(
         TikTokHistoryFact.tenant_id == user.tenant_id,
         TikTokHistoryFact.id == fact_id,
@@ -365,17 +394,14 @@ def record_reconciliation(
         TikTokHistoryBatch.tenant_id == user.tenant_id,
         TikTokHistoryBatch.id == fact.batch_id,
     )).one()
-    if not (
-        user.status == "active"
-        and user.business_role == "tiktok_bd_specialist"
-        and user.id == batch.assigned_bd_user_id
-    ):
+    if user.id != batch.assigned_bd_user_id:
         raise HTTPException(status_code=403, detail="TikTok BD assignment required")
     row = TikTokHistoryReconciliation(
         tenant_id=user.tenant_id,
         fact_id=fact.id,
         verdict=request.verdict,
         reason=request.reason.strip(),
+        comparison_ref=request.comparison_ref,
         reviewed_by_user_id=user.id,
         created_at=now or utc_now(),
     )
@@ -400,11 +426,36 @@ def _review_snapshot(
         if row.id in latest and latest[row.id].verdict in {"matched", "difference"}
     ]
     snapshot = [
-        (row.id, latest[row.id].verdict, latest[row.id].reason)
+        (
+            row.id,
+            batches[row.batch_id].recorded_run_id,
+            batches[row.batch_id].dataset_digest,
+            latest[row.id].verdict,
+            latest[row.id].reason,
+            latest[row.id].comparison_ref,
+        )
         for row in sorted(eligible, key=lambda item: item.id)
         if row.id in latest
     ]
     return len(eligible), len(accepted), _digest(snapshot)
+
+
+def _recorded_approvals_current(
+    rows: list[TikTokHistoryFact],
+    batches: dict[str, TikTokHistoryBatch],
+    runs: dict[str, TikTokDataValidationRun],
+) -> bool:
+    clock = _aware(utc_now())
+    for row in rows:
+        batch = batches[row.batch_id]
+        if batch.source_kind != "approved_redacted_history":
+            continue
+        run = runs.get(batch.recorded_run_id)
+        if (run is None or run.mode != "recorded" or run.status != "passed"
+                or run.approval_valid_until is None
+                or _aware(run.approval_valid_until) <= clock):
+            return False
+    return True
 
 
 def confirm_history_reconciliation(
@@ -412,15 +463,20 @@ def confirm_history_reconciliation(
     user: User,
     *,
     approval_ref: str,
+    source_evidence_ref: str,
+    source_attested: bool,
 ) -> HistorySignoffRead:
     scope = db.exec(select(TikTokDataValidationScope).where(
         TikTokDataValidationScope.tenant_id == user.tenant_id,
         TikTokDataValidationScope.market == "US",
     ).with_for_update(read=True)).first()
-    if scope is None or scope.status != "active" or scope.business_owner_user_id != user.id:
+    if (user.status != "active" or scope is None or scope.status != "active"
+            or scope.business_owner_user_id != user.id):
         raise HTTPException(status_code=403, detail="Pilot business owner required")
     if len(approval_ref.strip()) < 3:
         raise HistoryConflict("owner_approval_ref_required")
+    if not source_attested or len(source_evidence_ref.strip()) < 3:
+        raise HistoryConflict("source_attestation_required")
     rows = list(db.exec(select(TikTokHistoryFact).where(
         TikTokHistoryFact.tenant_id == user.tenant_id,
         TikTokHistoryFact.scope_id == scope.id,
@@ -428,6 +484,11 @@ def confirm_history_reconciliation(
     batches = {row.id: row for row in db.exec(select(TikTokHistoryBatch).where(
         TikTokHistoryBatch.tenant_id == user.tenant_id,
     )).all()}
+    runs = {row.id: row for row in db.exec(select(TikTokDataValidationRun).where(
+        TikTokDataValidationRun.tenant_id == user.tenant_id,
+    )).all()}
+    if not _recorded_approvals_current(rows, batches, runs):
+        raise HistoryConflict("recorded_approval_expired")
     reviews = list(db.exec(select(TikTokHistoryReconciliation).where(
         TikTokHistoryReconciliation.tenant_id == user.tenant_id,
     ).order_by(TikTokHistoryReconciliation.created_at, TikTokHistoryReconciliation.id)).all())
@@ -444,6 +505,7 @@ def confirm_history_reconciliation(
         review_digest=digest,
         reviewed_count=accepted,
         approval_ref=approval_ref.strip(),
+        source_evidence_ref=source_evidence_ref.strip(),
         confirmed_by_user_id=user.id,
     )
     db.add(signoff)
@@ -487,16 +549,22 @@ def get_history_workspace(
         raise HTTPException(status_code=403, detail="TikTok pilot access required")
     rows = list(db.exec(select(TikTokHistoryFact).where(
         TikTokHistoryFact.tenant_id == user.tenant_id,
-        TikTokHistoryFact.scope_id == scope.id if scope else "",
+        TikTokHistoryFact.scope_id == (scope.id if scope else ""),
     ).order_by(TikTokHistoryFact.observed_at.desc(), TikTokHistoryFact.id)).all())
     batches = {row.id: row for row in db.exec(select(TikTokHistoryBatch).where(
         TikTokHistoryBatch.tenant_id == user.tenant_id,
+    )).all()}
+    if user.role != "admin" and (scope is None or scope.business_owner_user_id != user.id):
+        rows = [row for row in rows if batches[row.batch_id].assigned_bd_user_id == user.id]
+    runs = {row.id: row for row in db.exec(select(TikTokDataValidationRun).where(
+        TikTokDataValidationRun.tenant_id == user.tenant_id,
     )).all()}
     reviews = list(db.exec(select(TikTokHistoryReconciliation).where(
         TikTokHistoryReconciliation.tenant_id == user.tenant_id,
     ).order_by(TikTokHistoryReconciliation.created_at, TikTokHistoryReconciliation.id)).all())
     latest = {row.fact_id: row for row in reviews}
     eligible_total, eligible, review_digest = _review_snapshot(rows, batches, latest)
+    approvals_current = _recorded_approvals_current(rows, batches, runs)
     reviewed = sum(
         1 for row in rows
         if latest.get(row.id) is not None
@@ -519,11 +587,24 @@ def get_history_workspace(
         definitions = [TikTokHistoryMetricDefinition(
             tenant_id=user.tenant_id, code=code, label=label, formula=formula,
             unit=unit, numerator=numerator, denominator=denominator,
+            status="pending" if code in {"roi", "gpm"} else "defined",
         ) for code, label, formula, unit, numerator, denominator in METRICS]
-    metrics = _evaluate_metrics(filtered, definitions)
+    latest_definitions: dict[str, TikTokHistoryMetricDefinition] = {}
+    for definition in definitions:
+        current = latest_definitions.get(definition.code)
+        if current is None or definition.version > current.version:
+            latest_definitions[definition.code] = definition
+    metrics = [
+        _evaluate_metrics(
+            [row for row in filtered if batches[row.batch_id].metric_version == definition.version],
+            [definition],
+            period_selected=observed_from is not None and observed_until is not None,
+        )[0]
+        for definition in latest_definitions.values()
+    ]
     signoff = db.exec(select(TikTokHistorySignoff).where(
         TikTokHistorySignoff.tenant_id == user.tenant_id,
-        TikTokHistorySignoff.scope_id == scope.id if scope else "",
+        TikTokHistorySignoff.scope_id == (scope.id if scope else ""),
     ).order_by(TikTokHistorySignoff.created_at.desc(), TikTokHistorySignoff.id.desc())).first()
     bd_users = db.exec(select(User).where(
         User.tenant_id == user.tenant_id,
@@ -535,11 +616,13 @@ def get_history_workspace(
         total_count=len(filtered),
         reviewed_count=reviewed,
         eligible_reviewed_count=eligible,
+        eligible_total_count=eligible_total,
         exit_ready=(
             scope is not None and scope.status == "active"
             and signoff is not None and eligible >= 30 and eligible == eligible_total
             and signoff.scope_revision == scope.revision
             and signoff.review_digest == review_digest
+            and approvals_current
         ),
         can_confirm=(scope is not None and scope.status == "active"
                      and scope.business_owner_user_id == user.id),
@@ -550,10 +633,13 @@ def get_history_workspace(
             business_key=row.business_key,
             observed_at=row.observed_at,
             source_label=row.source_label,
+            recorded_run_id=batches[row.batch_id].recorded_run_id,
+            recorded_approval_ref=runs[batches[row.batch_id].recorded_run_id].approval_ref or "",
             source_kind=batches[row.batch_id].source_kind,
             assigned_bd_user_id=batches[row.batch_id].assigned_bd_user_id,
             values=row.values_json,
             latest_verdict=latest[row.id].verdict if row.id in latest else None,
+            latest_comparison_ref=latest[row.id].comparison_ref if row.id in latest else None,
         ) for row in visible],
         metrics=metrics,
         bd_options=([{"id": bd.id, "label": bd.username} for bd in bd_users]
@@ -564,6 +650,8 @@ def get_history_workspace(
 def _evaluate_metrics(
     facts: list[TikTokHistoryFact],
     definitions: list[TikTokHistoryMetricDefinition],
+    *,
+    period_selected: bool,
 ) -> list[HistoryMetricRead]:
     latest_facts: dict[tuple[str, str], TikTokHistoryFact] = {}
     for fact in facts:
@@ -606,10 +694,14 @@ def _evaluate_metrics(
         code=row.code,
         version=row.version,
         label=row.label,
-        value=values.get(row.code),
+        value=(values.get(row.code) if period_selected else None),
         unit=next(iter(currencies)) if row.code == "gmv" and gmv_value else row.unit,
-        reason=(gmv_reason if row.code == "gmv" else
-                None if values.get(row.code) is not None else "source_missing"),
+        reason=(
+            "metric_definition_pending" if row.code in {"roi", "gpm"} else
+            "period_required" if not period_selected else
+            gmv_reason if row.code == "gmv" else
+            None if values.get(row.code) is not None else "source_missing"
+        ),
         formula=row.formula,
         timezone=row.timezone,
         window=row.window,

@@ -9,6 +9,9 @@ from starlette.requests import Request
 from test_tiktok_p3b1_history import _recorded_batch, _session
 
 from app.api.tiktok import history_import, history_workspace
+from app.config import Settings
+from app.db.models import User
+from app.security.authorization import authorize
 from app.tiktok.p3b1_history import MAX_HISTORY_REQUEST_BYTES
 
 
@@ -46,3 +49,25 @@ def test_history_import_rejects_member_and_actual_oversize_bytes() -> None:
             ))
         assert oversized.value.status_code == 413
         assert history_workspace(current_user=admin, db=db).total_count == 0
+
+
+def test_casbin_grants_bd_review_and_owner_confirm_but_not_import() -> None:
+    settings = Settings(_env_file=None, casbin_enabled=True)
+    with _session() as db:
+        _recorded_batch(db, "tenant_a")
+        bd = db.get(User, "member_tenant_a")
+        assert bd is not None
+        review_path = "/api/enterprise/tiktok/history/facts/fact-1/reconciliations"
+        assert authorize(settings, user=bd, object_path=review_path, action="POST").allowed
+        assert not authorize(settings, user=bd,
+                             object_path="/api/enterprise/tiktok/history/import",
+                             action="POST").allowed
+
+        bd.business_role = "member"
+        db.add(bd)
+        db.commit()
+        assert authorize(settings, user=bd,
+                         object_path="/api/enterprise/tiktok/history/confirm",
+                         action="POST").allowed
+        assert not authorize(settings, user=bd, object_path=review_path,
+                             action="POST").allowed

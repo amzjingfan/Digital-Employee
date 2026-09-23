@@ -4939,7 +4939,7 @@ class TikTokHistoryMetricDefinition(SQLModel, table=True):
     numerator: str | None = None
     denominator: str | None = None
     timezone: str = "UTC"
-    window: str = "selected_period"
+    window: str = "explicit_utc_interval"
     status: str = "defined"
     created_at: datetime = Field(default_factory=utc_now)
 
@@ -4973,6 +4973,7 @@ class TikTokHistoryReconciliation(SQLModel, table=True):
     fact_id: str = Field(index=True)
     verdict: str
     reason: str
+    comparison_ref: str
     reviewed_by_user_id: str
     created_at: datetime = Field(default_factory=utc_now, index=True)
 
@@ -5003,5 +5004,6 @@ class TikTokHistorySignoff(SQLModel, table=True):
     review_digest: str
     reviewed_count: int
     approval_ref: str
+    source_evidence_ref: str
     confirmed_by_user_id: str
     created_at: datetime = Field(default_factory=utc_now, index=True)

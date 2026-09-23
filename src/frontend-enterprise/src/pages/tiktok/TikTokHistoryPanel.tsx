@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api } from '@/api/client';
 import type { EnterpriseAuthUser } from '@/auth';
@@ -11,10 +11,13 @@ type Fact = {
   business_key: string;
   observed_at: string;
   source_label: string;
+  recorded_run_id: string;
+  recorded_approval_ref: string;
   source_kind: string;
   assigned_bd_user_id: string;
   values: Record<string, unknown>;
   latest_verdict: string | null;
+  latest_comparison_ref: string | null;
 };
 type Metric = {
   code: string; version: number; label: string; value: string | null;
@@ -24,6 +27,7 @@ type HistoryWorkspace = {
   total_count: number;
   reviewed_count: number;
   eligible_reviewed_count: number;
+  eligible_total_count: number;
   exit_ready: boolean;
   can_confirm: boolean;
   facts: Fact[];
@@ -54,10 +58,14 @@ export default function TikTokHistoryPanel({ currentUser }: { currentUser: Enter
   const [assigneeId, setAssigneeId] = useState('');
   const [sourceKind, setSourceKind] = useState<'synthetic' | 'approved_redacted_history'>('synthetic');
   const [file, setFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [reviewFactId, setReviewFactId] = useState('');
   const [verdict, setVerdict] = useState<'matched' | 'difference' | 'needs_review'>('matched');
   const [reason, setReason] = useState('');
+  const [comparisonRef, setComparisonRef] = useState('');
   const [approvalRef, setApprovalRef] = useState('');
+  const [sourceEvidenceRef, setSourceEvidenceRef] = useState('');
+  const [sourceAttested, setSourceAttested] = useState(false);
   const isAdmin = currentUser.role === 'admin';
 
   const load = useCallback(async () => {
@@ -86,6 +94,7 @@ export default function TikTokHistoryPanel({ currentUser }: { currentUser: Enter
     if (file.size > 2 * 1024 * 1024) {
       notify.error('文件超过 2 MiB');
       setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
     setBusy(true);
@@ -105,19 +114,21 @@ export default function TikTokHistoryPanel({ currentUser }: { currentUser: Enter
       notify.error(error instanceof Error ? error.message : '导入失败');
     } finally {
       setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       setBusy(false);
     }
   }
 
   async function submitReview() {
-    if (!reviewFactId || reason.trim().length < 3) return;
+    if (!reviewFactId || reason.trim().length < 3 || comparisonRef.trim().length < 3) return;
     setBusy(true);
     try {
       await api.post(`/api/enterprise/tiktok/history/facts/${reviewFactId}/reconciliations`, {
-        verdict, reason: reason.trim(),
+        verdict, reason: reason.trim(), comparison_ref: comparisonRef.trim(),
       });
       setReviewFactId('');
       setReason('');
+      setComparisonRef('');
       notify.success('核对结论已追加');
       await load();
     } catch (error) {
@@ -128,10 +139,14 @@ export default function TikTokHistoryPanel({ currentUser }: { currentUser: Enter
   }
 
   async function confirm() {
-    if (approvalRef.trim().length < 3) return;
+    if (approvalRef.trim().length < 3 || sourceEvidenceRef.trim().length < 3 || !sourceAttested) return;
     setBusy(true);
     try {
-      await api.post('/api/enterprise/tiktok/history/confirm', { approval_ref: approvalRef.trim() });
+      await api.post('/api/enterprise/tiktok/history/confirm', {
+        approval_ref: approvalRef.trim(),
+        source_evidence_ref: sourceEvidenceRef.trim(),
+        source_attested: true,
+      });
       notify.success('业务 Owner 已确认对照快照');
       await load();
     } catch (error) {
@@ -151,7 +166,7 @@ export default function TikTokHistoryPanel({ currentUser }: { currentUser: Enter
       <h2 className="m-0 text-[16px] font-semibold">P3-B1 历史事实与逐条对照</h2>
       <p className="mt-1 text-[12px] text-[#66708a]">仅展示带来源的脱敏历史事实。Mock/合成记录不计入 30 条退出门槛。</p>
       <div className="mt-4 flex flex-wrap gap-4 text-[13px]">
-        <span>已核对 {history?.eligible_reviewed_count ?? 0} / 30 条</span>
+        <span>候选历史已核对 {history?.eligible_reviewed_count ?? 0} / 30 条</span>
         <span>当前事实 {history?.total_count ?? 0} 条</span>
         <span>{history?.exit_ready ? '业务 Owner 已确认' : '尚未满足业务确认门槛'}</span>
       </div>
@@ -181,16 +196,19 @@ export default function TikTokHistoryPanel({ currentUser }: { currentUser: Enter
           <option value="synthetic">Mock / 合成测试</option>
           <option value="approved_redacted_history">经批准的脱敏历史</option>
         </select>
-        <input aria-label="导入历史 JSON" className={inputClass} type="file" accept=".json,application/json" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+        <input ref={fileInputRef} aria-label="导入历史 JSON" className={inputClass} type="file" accept=".json,application/json" onChange={(event) => setFile(event.target.files?.[0] || null)} />
       </div>
       <Button className="mt-3" disabled={busy || !file || !runId || !assigneeId} onClick={() => void submitImport()}>导入并生成事实</Button>
     </div>}
 
     {history?.can_confirm && <div className="rounded-2xl border border-[#e5e8ef] bg-white p-5">
       <h3 className="m-0 text-[14px] font-semibold">业务 Owner 对照确认</h3>
+      <p className="mt-1 text-[12px] text-[#66708a]">请先核实 recorded 审批记录与历史来源证明，再确认候选历史事实。</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <input aria-label="业务 Owner 确认编号" className={inputClass} value={approvalRef} onChange={(event) => setApprovalRef(event.target.value)} placeholder="业务 Owner 确认编号" />
-        <Button variant="outline" disabled={busy || (history?.eligible_reviewed_count ?? 0) < 30 || approvalRef.trim().length < 3} onClick={() => void confirm()}>确认 30 条核对快照</Button>
+        <input aria-label="历史来源证据编号" className={inputClass} value={sourceEvidenceRef} onChange={(event) => setSourceEvidenceRef(event.target.value)} placeholder="历史来源证据编号" />
+        <label className="flex items-center gap-2 text-[12px]"><input type="checkbox" checked={sourceAttested} onChange={(event) => setSourceAttested(event.target.checked)} />我已核实这些记录来自经批准的脱敏历史</label>
+        <Button variant="outline" disabled={busy || (history?.eligible_reviewed_count ?? 0) < 30 || history?.eligible_reviewed_count !== history?.eligible_total_count || approvalRef.trim().length < 3 || sourceEvidenceRef.trim().length < 3 || !sourceAttested} onClick={() => void confirm()}>确认 30 条核对快照</Button>
       </div>
     </div>}
 
@@ -210,7 +228,9 @@ export default function TikTokHistoryPanel({ currentUser }: { currentUser: Enter
       <div className="mt-3 grid gap-2">
         {history?.facts.map((fact) => <div key={fact.id} className="rounded-xl bg-[#f7f8fa] px-3 py-2 text-[12px]">
           <strong>{fact.business_key}</strong> · {fact.domain} · {fact.source_label} · {new Date(fact.observed_at).toLocaleString()}
+          <span className="ml-2 text-[#66708a]">recorded {fact.recorded_run_id.slice(-8)} · {fact.recorded_approval_ref}</span>
           <span className="ml-2 text-[#66708a]">{fact.source_kind === 'synthetic' ? '合成测试' : '脱敏历史'} · {fact.latest_verdict || '待核对'}</span>
+          {fact.latest_comparison_ref && <span className="ml-2 text-[#66708a]">对照证据：{fact.latest_comparison_ref}</span>}
           <div className="mt-1 text-[#66708a]">{Object.entries(fact.values).map(([key, value]) => `${key}: ${String(value ?? '未知')}`).join(' · ')}</div>
         </div>)}
         {history?.facts.length === 0 && <p className="text-[12px] text-[#66708a]">当前没有历史事实。</p>}
@@ -229,7 +249,8 @@ export default function TikTokHistoryPanel({ currentUser }: { currentUser: Enter
           <option value="matched">一致</option><option value="difference">有差异</option><option value="needs_review">待核对</option>
         </select>
         <input aria-label="脱敏差异原因" className={inputClass} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="脱敏核对原因" />
-        <Button disabled={busy || !reviewFactId || reason.trim().length < 3} onClick={() => void submitReview()}>追加核对结论</Button>
+        <input aria-label="对照证据编号" className={inputClass} value={comparisonRef} onChange={(event) => setComparisonRef(event.target.value)} placeholder="对照证据编号" />
+        <Button disabled={busy || !reviewFactId || reason.trim().length < 3 || comparisonRef.trim().length < 3} onClick={() => void submitReview()}>追加核对结论</Button>
       </div>}
     </div>
   </section>;

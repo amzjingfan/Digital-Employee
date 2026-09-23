@@ -12,6 +12,8 @@ P3-B1 promotes the same approved, sanitized six-domain dataset through a separat
 
 Mock and synthetic facts remain visible for workbench testing but never count toward the 30-record business review gate. Owner confirmation records a digest of the reviewed facts and the pilot scope revision; later review or scope changes make that confirmation stale. An approved sanitized source is an attested candidate for business review, not proof of live E3 authorization or production readiness.
 
+The assigned BD records an opaque comparison evidence reference with each verdict. Before signing, the business Owner independently attests to the approved sanitized source and records a source evidence reference. A recorded approval that expires also makes the signed exit status stale. Metric values require an explicit UTC interval and only facts tagged with the selected definition version participate; a new definition cannot silently recalculate an old batch.
+
 ## Alternatives considered
 
 Storing raw datasets inside validation runs was rejected because it would expand the P3-B0 audit surface and retain more sensitive material. Computing a dashboard directly from each upload was rejected because the values and human conclusions would have no durable, reviewable identity.

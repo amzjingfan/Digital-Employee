@@ -178,7 +178,9 @@ def history_confirm(
 ) -> HistorySignoffRead:
     try:
         return confirm_history_reconciliation(
-            db, current_user, approval_ref=request.approval_ref
+            db, current_user, approval_ref=request.approval_ref,
+            source_evidence_ref=request.source_evidence_ref,
+            source_attested=request.source_attested,
         )
     except HistoryConflict as exc:
         db.rollback()

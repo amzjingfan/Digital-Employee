@@ -149,6 +149,7 @@ p, procurement_specialist, *, /api/enterprise/business-executions*, GET, allow
 
 # TikTok business-unit overview is read-only for the six production roles.
 p, tiktok_bd_specialist, *, /api/enterprise/tiktok*, GET, allow
+p, tiktok_bd_specialist, *, /api/enterprise/tiktok/history/facts/*/reconciliations, POST, allow
 p, tiktok_content_specialist, *, /api/enterprise/tiktok*, GET, allow
 p, tiktok_shop_operator, *, /api/enterprise/tiktok*, GET, allow
 p, tiktok_media_buyer, *, /api/enterprise/tiktok*, GET, allow
@@ -161,6 +162,22 @@ p, tiktok_media_buyer, *, /api/enterprise/brands*, GET, allow
 p, tiktok_tap_manager, *, /api/enterprise/brands*, GET, allow
 p, tiktok_live_operator, *, /api/enterprise/brands*, GET, allow
 p, operations_supervisor, *, /api/enterprise/tiktok*, (GET|POST), allow
+
+# Confirm is scoped by the service to the active pilot's designated Business Owner.
+# That Owner may hold any enterprise business role; the route grant alone cannot sign off.
+p, tenant_member, *, /api/enterprise/tiktok/history/confirm, POST, allow
+p, after_sales_specialist, *, /api/enterprise/tiktok/history/confirm, POST, allow
+p, listing_compliance_specialist, *, /api/enterprise/tiktok/history/confirm, POST, allow
+p, logistics_exception_specialist, *, /api/enterprise/tiktok/history/confirm, POST, allow
+p, advertising_inspection_specialist, *, /api/enterprise/tiktok/history/confirm, POST, allow
+p, designer, *, /api/enterprise/tiktok/history/confirm, POST, allow
+p, procurement_specialist, *, /api/enterprise/tiktok/history/confirm, POST, allow
+p, tiktok_bd_specialist, *, /api/enterprise/tiktok/history/confirm, POST, allow
+p, tiktok_content_specialist, *, /api/enterprise/tiktok/history/confirm, POST, allow
+p, tiktok_shop_operator, *, /api/enterprise/tiktok/history/confirm, POST, allow
+p, tiktok_media_buyer, *, /api/enterprise/tiktok/history/confirm, POST, allow
+p, tiktok_tap_manager, *, /api/enterprise/tiktok/history/confirm, POST, allow
+p, tiktok_live_operator, *, /api/enterprise/tiktok/history/confirm, POST, allow
 
 # Creator evidence is curated by BD; TAP can read creators and freeze brand-scoped audiences.
 p, tiktok_bd_specialist, *, /api/v1/social*, (GET|POST), allow

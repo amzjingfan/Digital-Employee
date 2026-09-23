@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS public.tiktok_history_reconciliations (
   fact_id varchar NOT NULL,
   verdict varchar NOT NULL,
   reason varchar NOT NULL,
+  comparison_ref varchar NOT NULL,
   reviewed_by_user_id varchar NOT NULL,
   created_at timestamptz NOT NULL,
   CONSTRAINT fk_tiktok_history_reconciliation_fact FOREIGN KEY (tenant_id, fact_id)
@@ -97,6 +98,7 @@ CREATE TABLE IF NOT EXISTS public.tiktok_history_signoffs (
   review_digest varchar NOT NULL,
   reviewed_count integer NOT NULL,
   approval_ref varchar NOT NULL,
+  source_evidence_ref varchar NOT NULL,
   confirmed_by_user_id varchar NOT NULL,
   created_at timestamptz NOT NULL,
   CONSTRAINT fk_tiktok_history_signoff_scope FOREIGN KEY (tenant_id, scope_id)

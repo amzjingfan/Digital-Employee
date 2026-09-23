@@ -15,6 +15,7 @@ const history = {
   total_count: 1,
   reviewed_count: 0,
   eligible_reviewed_count: 0,
+  eligible_total_count: 0,
   exit_ready: false,
   can_confirm: false,
   bd_options: [{ id: 'member', label: 'bd' }],
@@ -22,7 +23,9 @@ const history = {
   facts: [{
     id: 'fact-1', tenant_id: 'tenant_a', domain: 'sample', business_key: 'sample-1',
     observed_at: '2026-09-21T00:00:00Z', source_label: 'sanitized-export',
-    source_kind: 'synthetic', values: { status: 'approved' }, latest_verdict: null,
+    recorded_run_id: 'recorded-run-1', recorded_approval_ref: 'approval-1',
+    source_kind: 'synthetic', assigned_bd_user_id: 'member',
+    values: { status: 'approved' }, latest_verdict: null, latest_comparison_ref: null,
   }],
 };
 
@@ -42,7 +45,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 it('shows evidence and noncomputable metric without counting synthetic records', async () => {
   render(<TikTokHistoryPanel currentUser={member} />);
   await waitFor(() => expect(screen.getByText('sample-1')).toBeTruthy());
-  expect(screen.getByText(/0 \/ 30/)).toBeTruthy();
+  expect(screen.getByText(/候选历史已核对 0 \/ 30/)).toBeTruthy();
   expect(screen.getByText('不可计算：gmv_missing')).toBeTruthy();
   expect(screen.queryByLabelText('导入历史 JSON')).toBeNull();
 });
