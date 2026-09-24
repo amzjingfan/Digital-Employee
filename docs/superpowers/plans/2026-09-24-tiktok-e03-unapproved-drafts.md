@@ -54,4 +54,4 @@
 
 - [x] Record the durable boundary and exact tests, limitations and next stage in indexed docs.
 - [x] Run TikTok backend tests, frontend tests/typecheck/build/i18n/config, Ruff, test-layout, migration acceptance where available, and diff checks.
-- [ ] Review the branch and linearly integrate into the starting target `main`, preserving unrelated dirty changes; leave push and branch deletion untouched.
+- [x] Review the branch and linearly integrate into the starting target `main`, preserving unrelated dirty changes; leave push and branch deletion untouched.
