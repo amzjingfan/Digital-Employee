@@ -154,8 +154,35 @@ def test_unapproved_draft_rls_fks_append_only_and_empty_rollback() -> None:
             ))
             runtime.execute("COMMIT")
 
+    with _connection(port, dbname, "staffdeck_runtime") as blocker:
+        blocker.execute("BEGIN")
+        blocker.execute("SELECT set_config('app.tenant_id', 'tenant_a', true)")
+        blocker.execute(insert, (
+            "draft_held", "tenant_a", "pool_a", "user_a", "user_a", "user_a",
+            ORDER_JSON, "7" * 32, "user_a",
+        ))
+        try:
+            with _connection(port, dbname, "staffdeck_migrator") as migrator:
+                migrator.execute("SET statement_timeout = '10s'")
+                prior_lock_timeout = migrator.execute("SHOW lock_timeout").fetchone()[0]
+                with pytest.raises(psycopg.errors.LockNotAvailable):
+                    migrator.execute(INDEX_UP.read_text(encoding="utf-8"))
+                migrator.execute("ROLLBACK")
+                assert migrator.execute("SHOW lock_timeout").fetchone()[0] == prior_lock_timeout
+                assert migrator.execute("""
+                    SELECT to_regclass('public.tiktok_commission_draft_order_refs')
+                """).fetchone()[0] is None
+                assert migrator.execute("""
+                    SELECT count(*) FROM public.staffdeck_schema_migrations
+                    WHERE migration_id='20260924_tiktok_e03_unapproved_drafts_v2_order_index'
+                """).fetchone()[0] == 0
+        finally:
+            blocker.execute("ROLLBACK")
+
     with _connection(port, dbname, "staffdeck_migrator") as migrator:
+        prior_lock_timeout = migrator.execute("SHOW lock_timeout").fetchone()[0]
         migrator.execute(INDEX_UP.read_text(encoding="utf-8"))
+        assert migrator.execute("SHOW lock_timeout").fetchone()[0] == prior_lock_timeout
         definition = migrator.execute("""
             SELECT indexdef FROM pg_indexes
             WHERE schemaname='public'

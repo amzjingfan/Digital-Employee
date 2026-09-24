@@ -1,6 +1,7 @@
 BEGIN;
 
 -- Block concurrent parent inserts while historical references are copied and the trigger is installed.
+SET LOCAL lock_timeout = '5s';
 LOCK TABLE public.tiktok_commission_drafts IN SHARE ROW EXCLUSIVE MODE;
 
 CREATE TABLE public.tiktok_commission_draft_order_refs (
