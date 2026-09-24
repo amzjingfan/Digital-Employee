@@ -5140,3 +5140,65 @@ class TikTokCreatorPoolEvent(SQLModel, table=True):
     evidence_ref: str | None = None
     reason: str | None = None
     created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
+class TikTokCommissionDraft(SQLModel, table=True):
+    """Immutable internal proposal; it is never a financial approval or order fact."""
+
+    __tablename__ = "tiktok_commission_drafts"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_tiktok_commission_draft_tenant_id"),
+        UniqueConstraint(
+            "tenant_id", "idempotency_key", name="uq_tiktok_commission_draft_idempotency",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "pool_id"], ["tiktok_creator_pool.tenant_id", "tiktok_creator_pool.id"],
+            name="fk_tiktok_commission_draft_pool", ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "created_by_user_id"], ["users.tenant_id", "users.id"],
+            name="fk_tiktok_commission_draft_actor", ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "owner_user_id"], ["users.tenant_id", "users.id"],
+            name="fk_tiktok_commission_draft_owner", ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "fulfillment_user_id"], ["users.tenant_id", "users.id"],
+            name="fk_tiktok_commission_draft_fulfillment", ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "maintenance_user_id"], ["users.tenant_id", "users.id"],
+            name="fk_tiktok_commission_draft_maintenance", ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "approval_state = 'unapproved'", name="tiktok_commission_draft_unapproved_check",
+        ),
+        CheckConstraint(
+            "development_bps BETWEEN 0 AND 10000 AND fulfillment_bps BETWEEN 0 AND 10000 "
+            "AND maintenance_bps BETWEEN 0 AND 10000 "
+            "AND development_bps + fulfillment_bps + maintenance_bps = 10000",
+            name="tiktok_commission_draft_split_check",
+        ),
+        Index("ix_tiktok_commission_draft_tenant_pool", "tenant_id", "pool_id", "created_at"),
+    )
+
+    id: str = Field(default_factory=lambda: new_id("tiktok_commission_draft"), primary_key=True)
+    tenant_id: str
+    pool_id: str
+    pool_revision: int
+    owner_user_id: str
+    fulfillment_user_id: str
+    maintenance_user_id: str
+    rule_version: str
+    rule_expires_at: datetime
+    order_refs_json: str
+    development_bps: int
+    fulfillment_bps: int
+    maintenance_bps: int
+    calculation_evidence_ref: str
+    approval_state: str = "unapproved"
+    idempotency_key: str
+    request_digest: str
+    created_by_user_id: str
+    created_at: datetime = Field(default_factory=utc_now)

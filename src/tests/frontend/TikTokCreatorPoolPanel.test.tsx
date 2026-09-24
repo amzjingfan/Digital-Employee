@@ -167,6 +167,44 @@ it('shows commission preflight blocks without claiming financial approval', asyn
   expect(screen.queryByRole('button', { name: '提交财务审核' })).toBeNull();
 });
 
+it('saves an unapproved proposal and shows saved order overlap to the supervisor', async () => {
+  const claimed = { ...publicEntry, state: 'claimed', owner_user_id: bd.id, revision: 3,
+    fulfillment_user_id: 'ops-1', maintenance_user_id: bd.id };
+  const saved = {
+    id: 'draft-1', rule_version: 'proposal-v1', order_refs: [`order:${'a'.repeat(32)}`],
+    development_bps: 6000, fulfillment_bps: 2000, maintenance_bps: 2000,
+    check_codes: ['rule_unapproved', 'saved_order_overlap'], can_submit_financial_review: false,
+    created_at: '2026-09-24T09:00:00Z',
+  };
+  vi.mocked(api.get).mockImplementation(async (path) => {
+    if (path.startsWith('/api/v1/social/creators')) return [];
+    if (path === '/api/enterprise/tiktok/commission-drafts/entry-1') return [saved];
+    return { entries: [claimed], can_manage: true, can_claim: false,
+      assignable_bds: [], assignable_users: [] };
+  });
+  vi.mocked(api.post).mockImplementation(async (path) => path.endsWith('/preflight')
+    ? { check_codes: ['rule_unapproved'], can_submit_financial_review: false } : saved);
+  render(<TikTokCreatorPoolPanel currentUser={{ ...bd, business_role: 'operations_supervisor' }} />);
+  await waitFor(() => expect(screen.getByLabelText('分佣规则版本 Creator A')).toBeTruthy());
+  fireEvent.change(screen.getByLabelText('分佣规则版本 Creator A'), { target: { value: 'proposal-v1' } });
+  fireEvent.change(screen.getByLabelText('规则失效时间 Creator A'), { target: { value: '2027-09-24T09:00' } });
+  fireEvent.change(screen.getByLabelText('订单引用 Creator A'), { target: { value: `order:${'a'.repeat(32)}` } });
+  fireEvent.change(screen.getByLabelText('计算证据 Creator A'), { target: { value: `evidence:${'b'.repeat(32)}` } });
+  fireEvent.change(screen.getByLabelText('开发比例 Creator A'), { target: { value: '6000' } });
+  fireEvent.change(screen.getByLabelText('履约比例 Creator A'), { target: { value: '2000' } });
+  fireEvent.change(screen.getByLabelText('维护比例 Creator A'), { target: { value: '2000' } });
+  fireEvent.click(screen.getByRole('button', { name: '预检分佣草案' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '保存未批准草案' })).toBeTruthy());
+  fireEvent.click(screen.getByRole('button', { name: '保存未批准草案' }));
+  await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+    '/api/enterprise/tiktok/commission-drafts/entry-1',
+    expect.objectContaining({ expected_pool_revision: 3,
+      idempotency_key: expect.stringMatching(/^[0-9a-f]{32}$/) }),
+  ));
+  await waitFor(() => expect(screen.getByText(/已保存草案之间存在订单范围重叠/)).toBeTruthy());
+  expect(screen.queryByRole('button', { name: '提交财务审核' })).toBeNull();
+});
+
 it('does not show a stale preflight response after inputs change', async () => {
   const claimed = { ...publicEntry, state: 'claimed', owner_user_id: bd.id, revision: 2,
     fulfillment_user_id: 'ops-1', maintenance_user_id: bd.id };

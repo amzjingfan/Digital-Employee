@@ -2,8 +2,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi import HTTPException
+from test_tiktok_commission_drafts import _assigned, _request
 from test_tiktok_creator_pool import _intake, _seed, _session
 
+from app.api import tiktok as tiktok_api
 from app.api.tiktok import (
     commission_draft_preflight,
     creator_pool_assign,
@@ -56,6 +58,29 @@ def test_commission_preflight_route_allows_supervisor_or_admin_but_never_approve
             ), current_user=admin, db=db,
         )
         assert "rule_unapproved" in admin_result.check_codes
+
+
+def test_unapproved_draft_routes_are_supervisor_only_and_never_submit_finance() -> None:
+    with _session() as db:
+        admin, supervisor, bd, _, entry = _assigned(db)
+        settings = Settings(_env_file=None, casbin_enabled=True)
+        path = f"/api/enterprise/tiktok/commission-drafts/{entry.id}"
+        assert authorize(settings, user=supervisor, object_path=path, action="POST").allowed
+        assert authorize(settings, user=admin, object_path=path, action="GET").allowed
+        saved = tiktok_api.commission_drafts_save(
+            entry.id, _request("3" * 32), current_user=supervisor, db=db,
+        )
+        assert saved.check_codes == ["rule_unapproved"]
+        assert tiktok_api.commission_drafts_list(
+            entry.id, current_user=admin, db=db,
+        )[0].id == saved.id
+        with pytest.raises(HTTPException) as denied:
+            tiktok_api.commission_drafts_list(entry.id, current_user=bd, db=db)
+        assert denied.value.status_code == 403
+        assert not any(
+            route.path.endswith("/commission-drafts/{entry_id}/submit")
+            for route in tiktok_api.router.routes
+        )
 
 
 def test_supervisor_and_admin_set_distinct_responsibilities_but_bd_cannot() -> None:

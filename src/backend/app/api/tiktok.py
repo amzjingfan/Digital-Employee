@@ -13,6 +13,13 @@ from app.agents.releases import AgentReleaseError
 from app.db import get_session
 from app.db.models import TikTokOAuthState, User
 from app.security.auth import get_current_user
+from app.tiktok.commission_drafts import (
+    CommissionDraftConflict,
+    CommissionDraftRead,
+    CommissionDraftSaveRequest,
+    list_commission_drafts,
+    save_commission_draft,
+)
 from app.tiktok.commission_preflight import (
     CommissionPreflightRequest,
     CommissionPreflightResult,
@@ -252,6 +259,29 @@ def commission_draft_preflight(
     db: Annotated[Session, Depends(get_session)],
 ) -> CommissionPreflightResult:
     return preflight_commission_draft(db, current_user, entry_id, request)
+
+
+@router.get("/commission-drafts/{entry_id}", response_model=list[CommissionDraftRead])
+def commission_drafts_list(
+    entry_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> list[CommissionDraftRead]:
+    return list_commission_drafts(db, current_user, entry_id)
+
+
+@router.post("/commission-drafts/{entry_id}", response_model=CommissionDraftRead)
+def commission_drafts_save(
+    entry_id: str,
+    request: CommissionDraftSaveRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> CommissionDraftRead:
+    try:
+        return save_commission_draft(db, current_user, entry_id, request)
+    except CommissionDraftConflict as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
 
 
 @router.get("/history", response_model=HistoryWorkspace)

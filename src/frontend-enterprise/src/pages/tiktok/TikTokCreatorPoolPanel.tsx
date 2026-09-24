@@ -177,7 +177,7 @@ export default function TikTokCreatorPoolPanel({ currentUser }: { currentUser: E
               maintenance_user_id: maintenanceTargets[entry.id] !== undefined ? maintenanceTargets[entry.id] || null : entry.maintenance_user_id,
             }, '履约与维护责任已更新')}>保存分责</Button>
           </div>}
-          {workspace.can_manage && entry.state !== 'public' && <TikTokCommissionPreflight key={entry.revision} entryId={entry.id} creatorName={entry.creator_name} />}
+          {workspace.can_manage && entry.state !== 'public' && <TikTokCommissionPreflight key={entry.revision} entryId={entry.id} creatorName={entry.creator_name} entryRevision={entry.revision} />}
         </div>)}
         {workspace?.entries.length === 0 && <p className="text-[12px] text-[#66708a]">当前没有可见的达人池记录。</p>}
       </div>

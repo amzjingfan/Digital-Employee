@@ -181,3 +181,9 @@ This file is mutable operational context. Re-check every process, port, branch, 
 - MinIO object data was absent from the backup; Redis and Superset were not restored. Original asset availability is therefore unproven.
 - macOS and Linux package smoke tests require their target platforms. Full release signing/notarization also requires maintainer-controlled external credentials.
 - Remote binding, initial push, required GitHub checks, and `main` branch protection wait for a real GitHub URL and maintainer choices.
+
+## 2026-09-24 TikTok E03 unapproved proposal follow-up
+
+- Isolated branch `codex/tiktok-e03-commission-drafts` started from local `main@826632c`; it adds immutable internal proposal storage, idempotent save, tenant-wide overlap warnings and supervisor-only history. It does not reserve orders or enable finance approval. The starting main worktree had nine unrelated dirty paths and preserved stashes; keep them intact during integration.
+- Verified on the branch: TikTok backend 197 passed/4 skipped; frontend 71 files/326 passed; typecheck, i18n, config, build, Ruff, test-layout and diff checks; opt-in disposable PostgreSQL migration/RLS/trigger/rollback test 1 passed. The isolated cluster on 55487 is stopped. This is not the production database gate or real logged-in browser acceptance.
+- Next actions: independent review, then linear local integration into `main` while preserving dirty docs. Obtain D6 signed rule/priority/approver decisions and authorized order facts before implementing exclusive allocation, finance review or frozen snapshots. Keep the source branch and do not push without explicit authorization.
