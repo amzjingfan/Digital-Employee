@@ -172,8 +172,11 @@ it('saves an unapproved proposal and shows saved order overlap to the supervisor
     fulfillment_user_id: 'ops-1', maintenance_user_id: bd.id };
   const saved = {
     id: 'draft-1', rule_version: 'proposal-v1', order_refs: [`order:${'a'.repeat(32)}`],
+    owner_user_id: bd.id, fulfillment_user_id: 'ops-1', maintenance_user_id: bd.id,
+    calculation_evidence_ref: `evidence:${'b'.repeat(32)}`,
     development_bps: 6000, fulfillment_bps: 2000, maintenance_bps: 2000,
     check_codes: ['rule_unapproved', 'saved_order_overlap'], can_submit_financial_review: false,
+    overlapping_order_refs: [`order:${'a'.repeat(32)}`], overlapping_draft_ids: ['draft-2'],
     created_at: '2026-09-24T09:00:00Z',
   };
   vi.mocked(api.get).mockImplementation(async (path) => {
@@ -202,7 +205,35 @@ it('saves an unapproved proposal and shows saved order overlap to the supervisor
       idempotency_key: expect.stringMatching(/^[0-9a-f]{32}$/) }),
   ));
   await waitFor(() => expect(screen.getByText(/已保存草案之间存在订单范围重叠/)).toBeTruthy());
+  expect(screen.getAllByText(/order:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/).length).toBeGreaterThan(0);
+  expect(screen.getByText(/draft-2/)).toBeTruthy();
+  expect(screen.getByText(/evidence:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/)).toBeTruthy();
+  expect(screen.getByText(/保存时责任人：开发 bd-1 · 履约 ops-1/)).toBeTruthy();
   expect(screen.queryByRole('button', { name: '提交财务审核' })).toBeNull();
+});
+
+it('keeps immutable proposal history visible to managers after pool release', async () => {
+  const saved = {
+    id: 'draft-1', rule_version: 'proposal-v1', order_refs: [`order:${'a'.repeat(32)}`],
+    owner_user_id: bd.id, fulfillment_user_id: 'ops-1', maintenance_user_id: bd.id,
+    calculation_evidence_ref: `evidence:${'b'.repeat(32)}`,
+    development_bps: 6000, fulfillment_bps: 2000, maintenance_bps: 2000,
+    check_codes: ['rule_unapproved', 'responsibilities_changed'],
+    overlapping_order_refs: [], overlapping_draft_ids: [], can_submit_financial_review: false,
+    created_at: '2026-09-24T09:00:00Z',
+  };
+  vi.mocked(api.get).mockImplementation(async (path) => {
+    if (path.startsWith('/api/v1/social/creators')) return [];
+    if (path === '/api/enterprise/tiktok/commission-drafts/entry-1') return [saved];
+    return { entries: [publicEntry], can_manage: true, can_claim: false,
+      assignable_bds: [], assignable_users: [] };
+  });
+  render(<TikTokCreatorPoolPanel currentUser={{ ...bd, business_role: 'operations_supervisor' }} />);
+  await waitFor(() => expect(screen.getByRole('button', { name: '查看已存草案' })).toBeTruthy());
+  expect(screen.queryByRole('button', { name: '保存未批准草案' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '查看已存草案' }));
+  await waitFor(() => expect(screen.getByText(/proposal-v1/)).toBeTruthy());
+  expect(screen.getByText(/责任人已变化/)).toBeTruthy();
 });
 
 it('does not show a stale preflight response after inputs change', async () => {

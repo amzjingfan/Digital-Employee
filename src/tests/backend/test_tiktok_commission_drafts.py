@@ -64,6 +64,8 @@ def test_overlapping_saved_proposals_remain_visible_but_not_approved() -> None:
             db, supervisor, entry.id, _request("2" * 32), now=NOW,
         )
         assert "saved_order_overlap" in second.check_codes
+        assert second.overlapping_order_refs == [ORDER_A]
+        assert len(second.overlapping_draft_ids) == 1
         listed = _drafts().list_commission_drafts(db, supervisor, entry.id, now=NOW)
         assert len(listed) == 2
         assert all("saved_order_overlap" in draft.check_codes for draft in listed)

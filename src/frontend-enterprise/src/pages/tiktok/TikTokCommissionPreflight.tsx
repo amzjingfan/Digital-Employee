@@ -8,6 +8,9 @@ type Result = { check_codes: string[]; can_submit_financial_review: boolean };
 type SavedDraft = Result & {
   id: string; rule_version: string; order_refs: string[]; created_at: string;
   development_bps: number; fulfillment_bps: number; maintenance_bps: number;
+  owner_user_id: string; fulfillment_user_id: string; maintenance_user_id: string;
+  calculation_evidence_ref: string;
+  overlapping_order_refs: string[]; overlapping_draft_ids: string[];
 };
 
 const labels: Record<string, string> = {
@@ -28,8 +31,8 @@ function newKey(): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export default function TikTokCommissionPreflight({ entryId, creatorName, entryRevision }: {
-  entryId: string; creatorName: string; entryRevision: number;
+export default function TikTokCommissionPreflight({ entryId, creatorName, entryRevision, canPropose }: {
+  entryId: string; creatorName: string; entryRevision: number; canPropose: boolean;
 }) {
   const [version, setVersion] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
@@ -108,7 +111,8 @@ export default function TikTokCommissionPreflight({ entryId, creatorName, entryR
   }
 
   return <div className="mt-3 rounded-lg border border-[#d9deea] bg-white p-3">
-    <h4 className="m-0 text-[12px] font-semibold">分佣草案预检</h4>
+    <h4 className="m-0 text-[12px] font-semibold">{canPropose ? '分佣草案预检' : '已存分佣草案'}</h4>
+    {canPropose && <>
     <p className="mt-1 text-[12px] text-[#66708a]">仅检查当前一个订单范围。可保存未批准的内部草案；订单引用未经事实核验，保存不会占用订单、提交财务审核或执行付款。比例以基点输入，10,000 代表 100%。订单和计算证据只填不含个人信息的不透明引用。</p>
     <div className="mt-2 grid gap-2 sm:grid-cols-2">
       <input className={inputClass} aria-label={`分佣规则版本 ${creatorName}`} placeholder="拟议规则版本" value={version} onChange={(event) => change(setVersion, event.target.value)} />
@@ -123,8 +127,9 @@ export default function TikTokCommissionPreflight({ entryId, creatorName, entryR
     <Button className="ml-2 mt-2" variant="outline" disabled={busy || !result
       || result.check_codes.some((code) => code !== 'rule_unapproved')
       || savedRevision === inputRevision.current} onClick={() => void save()}>保存未批准草案</Button>
+    </>}
     <Button className="ml-2 mt-2" variant="outline" disabled={busy} onClick={() => void loadDrafts()}>查看已存草案</Button>
-    {result && <div className="mt-2 text-[12px]" role="status">
+    {canPropose && result && <div className="mt-2 text-[12px]" role="status">
       {result.check_codes.map((code) => <p key={code}>{labels[code] ?? code}</p>)}
     </div>}
     {drafts && <div className="mt-3 space-y-2 text-[12px]" aria-label={`已存分佣草案 ${creatorName}`}>
@@ -132,6 +137,10 @@ export default function TikTokCommissionPreflight({ entryId, creatorName, entryR
       {drafts.map((draft) => <div key={draft.id} className="rounded-lg border border-[#d9deea] p-2">
         <div>未批准草案 · {draft.rule_version} · {draft.order_refs.length} 个订单引用 · {new Date(draft.created_at).toLocaleString()}</div>
         <div>拟议比例：开发 {draft.development_bps} / 履约 {draft.fulfillment_bps} / 维护 {draft.maintenance_bps} 基点</div>
+        <div>订单引用：{draft.order_refs.join('、')}</div>
+        <div>保存时责任人：开发 {draft.owner_user_id} · 履约 {draft.fulfillment_user_id} · 维护 {draft.maintenance_user_id}</div>
+        <div>计算证据：{draft.calculation_evidence_ref}</div>
+        {draft.overlapping_order_refs.length > 0 && <div>冲突订单引用：{draft.overlapping_order_refs.join('、')} · 冲突草案 {draft.overlapping_draft_ids.join('、')}</div>}
         {draft.check_codes.map((code) => <p key={code}>{labels[code] ?? code}</p>)}
       </div>)}
     </div>}

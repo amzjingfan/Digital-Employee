@@ -53,6 +53,8 @@ class CommissionDraftRead(BaseModel):
     created_by_user_id: str
     created_at: datetime
     check_codes: list[str]
+    overlapping_order_refs: list[str]
+    overlapping_draft_ids: list[str]
     can_submit_financial_review: bool = False
 
 
@@ -75,6 +77,10 @@ def _read(
     tenant_drafts: list[TikTokCommissionDraft], clock: datetime,
 ) -> CommissionDraftRead:
     order_refs = json.loads(draft.order_refs_json)
+    overlaps = [
+        (other.id, set(order_refs).intersection(json.loads(other.order_refs_json)))
+        for other in tenant_drafts if other.id != draft.id
+    ]
     checks = ["rule_unapproved"]
     if _clock(draft.rule_expires_at) <= clock:
         checks.append("rule_version_expired")
@@ -86,10 +92,7 @@ def _read(
         or draft.maintenance_user_id != entry.maintenance_user_id
     ):
         checks.append("responsibilities_changed")
-    if any(
-        other.id != draft.id and set(order_refs).intersection(json.loads(other.order_refs_json))
-        for other in tenant_drafts
-    ):
+    if any(refs for _, refs in overlaps):
         checks.append("saved_order_overlap")
     return CommissionDraftRead(
         id=draft.id, pool_revision=draft.pool_revision,
@@ -102,6 +105,8 @@ def _read(
         calculation_evidence_ref=draft.calculation_evidence_ref,
         created_by_user_id=draft.created_by_user_id, created_at=draft.created_at,
         check_codes=checks,
+        overlapping_order_refs=sorted(set().union(*(refs for _, refs in overlaps))),
+        overlapping_draft_ids=sorted(other_id for other_id, refs in overlaps if refs),
     )
 
 
