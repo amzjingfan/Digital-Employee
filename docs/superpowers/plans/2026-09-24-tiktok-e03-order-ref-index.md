@@ -46,4 +46,4 @@
 
 - [x] Record design decision, changed files, evidence and remaining gates in indexed docs.
 - [x] Run TikTok backend matrix, frontend suite/typecheck/build/i18n/config, Ruff, test layout and diff checks.
-- [ ] Obtain whole-branch review, resolve important findings, and fast-forward into starting `main` while preserving its dirty paths; leave push and branch deletion untouched.
+- [x] Obtain whole-branch review, resolve important findings, and fast-forward into starting `main` while preserving its dirty paths; leave push and branch deletion untouched.
