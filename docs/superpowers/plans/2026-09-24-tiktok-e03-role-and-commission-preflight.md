@@ -39,4 +39,4 @@
 ### Task 3: Integration
 
 - [x] Record validation and residual gates in canonical docs.
-- [ ] Review the branch, rebase as needed, and linearly merge into the starting target `main` while preserving unrelated changes.
+- [x] Review the branch, rebase as needed, and linearly merge into the starting target `main` while preserving unrelated changes.
