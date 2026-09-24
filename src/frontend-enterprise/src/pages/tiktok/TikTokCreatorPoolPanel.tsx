@@ -4,6 +4,7 @@ import { api } from '@/api/client';
 import type { EnterpriseAuthUser } from '@/auth';
 import { notify } from '@/components/ui/app-toast';
 import { Button } from '@/components/ui/button';
+import TikTokCommissionPreflight from '@/pages/tiktok/TikTokCommissionPreflight';
 
 type Entry = {
   id: string; creator_id: string; identity_id: string;
@@ -11,10 +12,12 @@ type Entry = {
   source_ref: string; sla_rule_version: string; follow_up_window_hours: number;
   state: 'public' | 'claimed' | 'reflow_candidate';
   owner_user_id: string | null; follow_up_due_at: string | null; revision: number;
+  fulfillment_user_id: string | null; maintenance_user_id: string | null;
 };
 type Workspace = {
   entries: Entry[]; can_manage: boolean; can_claim: boolean;
   assignable_bds: { id: string; username: string }[];
+  assignable_users: { id: string; username: string }[];
 };
 type SocialCreator = {
   id: string; canonical_name: string; status: string;
@@ -36,6 +39,8 @@ export default function TikTokCreatorPoolPanel({ currentUser }: { currentUser: E
   const [evidenceRefs, setEvidenceRefs] = useState<Record<string, string>>({});
   const [assignmentTargets, setAssignmentTargets] = useState<Record<string, string>>({});
   const [assignmentReasons, setAssignmentReasons] = useState<Record<string, 'staff_change' | 'assignment_correction'>>({});
+  const [fulfillmentTargets, setFulfillmentTargets] = useState<Record<string, string>>({});
+  const [maintenanceTargets, setMaintenanceTargets] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     try {
@@ -64,6 +69,8 @@ export default function TikTokCreatorPoolPanel({ currentUser }: { currentUser: E
     try {
       await api.post(path, payload);
       notify.success(success);
+      setFulfillmentTargets({});
+      setMaintenanceTargets({});
       succeeded = true;
     } catch (error) {
       notify.error(error instanceof Error ? error.message : '达人池操作失败');
@@ -126,6 +133,8 @@ export default function TikTokCreatorPoolPanel({ currentUser }: { currentUser: E
           <div><strong>{entry.creator_name}</strong> · @{entry.public_handle} · {entry.market} · {entry.state}</div>
           <div className="mt-1 text-[#66708a]">来源 {entry.source_ref} · {entry.sla_rule_version} · {entry.follow_up_window_hours} 小时 · 版本 {entry.revision}</div>
           {entry.owner_user_id && <div className="mt-1 text-[#66708a]">Owner {entry.owner_user_id}</div>}
+          {entry.fulfillment_user_id && <div className="mt-1 text-[#66708a]">履约负责人 {entry.fulfillment_user_id}</div>}
+          {entry.maintenance_user_id && <div className="mt-1 text-[#66708a]">维护负责人 {entry.maintenance_user_id}</div>}
           {entry.follow_up_due_at && <div className="mt-1 text-[#66708a]">下次有效跟进截止 {new Date(entry.follow_up_due_at).toLocaleString()}</div>}
           <div className="mt-2 flex flex-wrap gap-2">
             {workspace.can_claim && entry.state === 'public' && <Button variant="outline" disabled={busy} onClick={() => void mutate(`/api/enterprise/tiktok/creator-claims/${entry.id}`, { expected_revision: entry.revision }, '达人已认领')}>认领</Button>}
@@ -153,6 +162,22 @@ export default function TikTokCreatorPoolPanel({ currentUser }: { currentUser: E
               }, '达人已释放到公海')}>释放到公海</Button>
             </>}
           </div>
+          {workspace.can_manage && entry.state !== 'public' && <div className="mt-3 flex flex-wrap gap-2">
+            <select className={inputClass} aria-label={`履约负责人 ${entry.creator_name}`} value={fulfillmentTargets[entry.id] ?? entry.fulfillment_user_id ?? ''} onChange={(event) => setFulfillmentTargets((current) => ({ ...current, [entry.id]: event.target.value }))}>
+              <option value="">未指定履约负责人</option>
+              {(workspace.assignable_users ?? []).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.username}</option>)}
+            </select>
+            <select className={inputClass} aria-label={`维护负责人 ${entry.creator_name}`} value={maintenanceTargets[entry.id] ?? entry.maintenance_user_id ?? ''} onChange={(event) => setMaintenanceTargets((current) => ({ ...current, [entry.id]: event.target.value }))}>
+              <option value="">未指定维护负责人</option>
+              {(workspace.assignable_users ?? []).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.username}</option>)}
+            </select>
+            <Button variant="outline" disabled={busy} onClick={() => void mutate(`/api/enterprise/tiktok/creator-responsibilities/${entry.id}`, {
+              expected_revision: entry.revision,
+              fulfillment_user_id: fulfillmentTargets[entry.id] !== undefined ? fulfillmentTargets[entry.id] || null : entry.fulfillment_user_id,
+              maintenance_user_id: maintenanceTargets[entry.id] !== undefined ? maintenanceTargets[entry.id] || null : entry.maintenance_user_id,
+            }, '履约与维护责任已更新')}>保存分责</Button>
+          </div>}
+          {workspace.can_manage && entry.state !== 'public' && <TikTokCommissionPreflight key={entry.revision} entryId={entry.id} creatorName={entry.creator_name} />}
         </div>)}
         {workspace?.entries.length === 0 && <p className="text-[12px] text-[#66708a]">当前没有可见的达人池记录。</p>}
       </div>

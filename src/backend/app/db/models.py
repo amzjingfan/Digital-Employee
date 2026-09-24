@@ -5031,6 +5031,14 @@ class TikTokCreatorPoolEntry(SQLModel, table=True):
             name="fk_tiktok_creator_pool_owner", ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
+            ["tenant_id", "fulfillment_user_id"], ["users.tenant_id", "users.id"],
+            name="fk_tiktok_creator_pool_fulfillment", ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "maintenance_user_id"], ["users.tenant_id", "users.id"],
+            name="fk_tiktok_creator_pool_maintenance", ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
             ["tenant_id", "created_by_user_id"], ["users.tenant_id", "users.id"],
             name="fk_tiktok_creator_pool_creator_user", ondelete="RESTRICT",
         ),
@@ -5044,6 +5052,10 @@ class TikTokCreatorPoolEntry(SQLModel, table=True):
             name="tiktok_creator_pool_assignment_check",
         ),
         CheckConstraint("revision > 0", name="tiktok_creator_pool_revision_check"),
+        CheckConstraint(
+            "state <> 'public' OR (fulfillment_user_id IS NULL AND maintenance_user_id IS NULL)",
+            name="tiktok_creator_pool_public_responsibilities_check",
+        ),
         CheckConstraint(
             "follow_up_window_hours BETWEEN 1 AND 720",
             name="tiktok_creator_pool_window_check",
@@ -5061,6 +5073,8 @@ class TikTokCreatorPoolEntry(SQLModel, table=True):
     follow_up_window_hours: int
     state: str = Field(default="public", index=True)
     owner_user_id: str | None = Field(default=None, index=True)
+    fulfillment_user_id: str | None = Field(default=None, index=True)
+    maintenance_user_id: str | None = Field(default=None, index=True)
     follow_up_due_at: datetime | None = Field(default=None, index=True)
     revision: int = 1
     created_by_user_id: str
@@ -5089,8 +5103,24 @@ class TikTokCreatorPoolEvent(SQLModel, table=True):
             ["tenant_id", "new_owner_user_id"], ["users.tenant_id", "users.id"],
             name="fk_tiktok_creator_pool_event_new_owner", ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["tenant_id", "previous_fulfillment_user_id"], ["users.tenant_id", "users.id"],
+            name="fk_tiktok_creator_pool_event_previous_fulfillment", ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "new_fulfillment_user_id"], ["users.tenant_id", "users.id"],
+            name="fk_tiktok_creator_pool_event_new_fulfillment", ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "previous_maintenance_user_id"], ["users.tenant_id", "users.id"],
+            name="fk_tiktok_creator_pool_event_previous_maintenance", ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "new_maintenance_user_id"], ["users.tenant_id", "users.id"],
+            name="fk_tiktok_creator_pool_event_new_maintenance", ondelete="RESTRICT",
+        ),
         CheckConstraint(
-            "event_type IN ('entered', 'claimed', 'follow_up', 'reflow_proposed', 'reflow_approved', 'transferred', 'released')",
+            "event_type IN ('entered', 'claimed', 'follow_up', 'reflow_proposed', 'reflow_approved', 'transferred', 'released', 'responsibilities_changed')",
             name="tiktok_creator_pool_events_event_type_check",
         ),
         Index("ix_tiktok_creator_pool_event_tenant_pool", "tenant_id", "pool_id", "created_at"),
@@ -5103,6 +5133,10 @@ class TikTokCreatorPoolEvent(SQLModel, table=True):
     actor_user_id: str
     previous_owner_user_id: str | None = None
     new_owner_user_id: str | None = None
+    previous_fulfillment_user_id: str | None = None
+    new_fulfillment_user_id: str | None = None
+    previous_maintenance_user_id: str | None = None
+    new_maintenance_user_id: str | None = None
     evidence_ref: str | None = None
     reason: str | None = None
     created_at: datetime = Field(default_factory=utc_now, index=True)

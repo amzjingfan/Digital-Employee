@@ -15,6 +15,8 @@ UP = MIGRATIONS / "20260923_tiktok_p3b2_creator_pool_v1.sql"
 DOWN = MIGRATIONS / "20260923_tiktok_p3b2_creator_pool_v1.down.sql"
 TRANSFER_UP = MIGRATIONS / "20260923_tiktok_p3b2_owner_transfer_v1.sql"
 TRANSFER_DOWN = MIGRATIONS / "20260923_tiktok_p3b2_owner_transfer_v1.down.sql"
+RESPONSIBILITIES_UP = MIGRATIONS / "20260924_tiktok_p3b2_responsibilities_v1.sql"
+RESPONSIBILITIES_DOWN = MIGRATIONS / "20260924_tiktok_p3b2_responsibilities_v1.down.sql"
 
 pytestmark = pytest.mark.skipif(
     os.getenv("JOUKIR_RUN_P3B2_ISOLATED_PG") != "1",
@@ -86,6 +88,7 @@ def test_creator_pool_forward_rls_constraints_and_rollback() -> None:
         """)
         migrator.execute(UP.read_text(encoding="utf-8"))
         migrator.execute(TRANSFER_UP.read_text(encoding="utf-8"))
+        migrator.execute(RESPONSIBILITIES_UP.read_text(encoding="utf-8"))
         assert migrator.execute("""
             SELECT count(*) FROM pg_class
             WHERE relname IN ('tiktok_creator_pool', 'tiktok_creator_pool_events')
@@ -148,6 +151,39 @@ def test_creator_pool_forward_rls_constraints_and_rollback() -> None:
 
         runtime.execute("BEGIN")
         runtime.execute("SELECT set_config('app.tenant_id', 'tenant_a', true)")
+        runtime.execute("""
+            UPDATE public.tiktok_creator_pool
+            SET state='claimed', owner_user_id='user_a', follow_up_due_at=now(),
+                fulfillment_user_id='user_a', maintenance_user_id='user_a'
+            WHERE id='pool_a'
+        """)
+        runtime.execute("""
+            INSERT INTO public.tiktok_creator_pool_events (
+              id, tenant_id, pool_id, event_type, actor_user_id,
+              new_fulfillment_user_id, new_maintenance_user_id, created_at
+            ) VALUES (
+              'responsibility_probe', 'tenant_a', 'pool_a', 'responsibilities_changed',
+              'user_a', 'user_a', 'user_a', now()
+            )
+        """)
+        assert runtime.execute("""
+            SELECT fulfillment_user_id, maintenance_user_id
+            FROM public.tiktok_creator_pool WHERE id='pool_a'
+        """).fetchone() == ("user_a", "user_a")
+        runtime.execute("ROLLBACK")
+
+        runtime.execute("BEGIN")
+        runtime.execute("SELECT set_config('app.tenant_id', 'tenant_a', true)")
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+            runtime.execute("""
+                UPDATE public.tiktok_creator_pool
+                SET state='claimed', owner_user_id='user_a', follow_up_due_at=now(),
+                    fulfillment_user_id='user_b' WHERE id='pool_a'
+            """)
+        runtime.execute("ROLLBACK")
+
+        runtime.execute("BEGIN")
+        runtime.execute("SELECT set_config('app.tenant_id', 'tenant_a', true)")
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             runtime.execute("""
                 INSERT INTO public.tiktok_creator_pool (
@@ -194,6 +230,7 @@ def test_creator_pool_forward_rls_constraints_and_rollback() -> None:
         runtime.execute("ROLLBACK")
 
     with _connection(port, dbname, "staffdeck_migrator") as migrator:
+        migrator.execute(RESPONSIBILITIES_DOWN.read_text(encoding="utf-8"))
         migrator.execute(TRANSFER_DOWN.read_text(encoding="utf-8"))
         migrator.execute(DOWN.read_text(encoding="utf-8"))
         assert migrator.execute("SELECT to_regclass('public.tiktok_creator_pool')").fetchone()[0] is None

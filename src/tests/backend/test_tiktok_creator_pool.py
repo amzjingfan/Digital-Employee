@@ -23,11 +23,65 @@ from app.tiktok.creator_pool import (
     get_creator_pool,
     propose_reflow,
     record_effective_follow_up,
+    set_creator_responsibilities,
 )
 
 NOW = datetime(2026, 9, 23, 9, tzinfo=UTC)
 ACTION_REF = "evidence:" + "a" * 32
 LATE_ACTION_REF = "evidence:" + "b" * 32
+
+
+def test_separate_responsibilities_are_revisioned_and_release_clears_them() -> None:
+    with _session() as db:
+        _, supervisor, bd, other_bd, creator, identity = _seed(db, "tenant_a")
+        entry = _intake(db, supervisor, creator, identity)
+        claimed = claim_creator(db, bd, entry.id, expected_revision=1, now=NOW)
+        assigned = set_creator_responsibilities(
+            db, supervisor, entry.id, expected_revision=claimed.revision,
+            fulfillment_user_id=other_bd.id, maintenance_user_id=bd.id, now=NOW,
+        )
+        assert assigned.owner_user_id == bd.id
+        assert assigned.fulfillment_user_id == other_bd.id
+        assert assigned.maintenance_user_id == bd.id
+        assert assigned.revision == 3
+        with pytest.raises(CreatorPoolConflict, match="creator_pool_stale"):
+            set_creator_responsibilities(
+                db, supervisor, entry.id, expected_revision=2,
+                fulfillment_user_id=bd.id, maintenance_user_id=bd.id, now=NOW,
+            )
+        released = assign_creator(
+            db, supervisor, entry.id, expected_revision=3,
+            target_user_id=None, reason="manual_release", now=NOW,
+        )
+        assert released.fulfillment_user_id is None
+        assert released.maintenance_user_id is None
+        event = db.exec(select(TikTokCreatorPoolEvent).where(
+            TikTokCreatorPoolEvent.event_type == "responsibilities_changed",
+        )).one()
+        assert event.new_fulfillment_user_id == other_bd.id
+        assert event.new_maintenance_user_id == bd.id
+
+
+def test_responsibility_targets_must_be_active_same_tenant_and_manager_only() -> None:
+    with _session() as db:
+        _, supervisor, bd, other_bd, creator, identity = _seed(db, "tenant_a")
+        _, _, foreign_bd, _, _, _ = _seed(db, "tenant_b")
+        entry = _intake(db, supervisor, creator, identity)
+        claimed = claim_creator(db, bd, entry.id, expected_revision=1, now=NOW)
+        with pytest.raises(HTTPException) as denied:
+            set_creator_responsibilities(
+                db, bd, entry.id, expected_revision=claimed.revision,
+                fulfillment_user_id=other_bd.id, maintenance_user_id=bd.id,
+            )
+        assert denied.value.status_code == 403
+        with pytest.raises(CreatorPoolConflict, match="active_tenant_assignee_required"):
+            set_creator_responsibilities(
+                db, supervisor, entry.id, expected_revision=claimed.revision,
+                fulfillment_user_id=foreign_bd.id, maintenance_user_id=bd.id,
+            )
+        assert db.exec(select(TikTokCreatorPoolEvent).where(
+            TikTokCreatorPoolEvent.event_type == "responsibilities_changed",
+        )).first() is None
 
 
 def _seed(db, tenant_id: str):

@@ -57,6 +57,11 @@ class PoolAssignmentRequest(PoolRevisionRequest):
     reason: Literal["staff_change", "assignment_correction", "manual_release"]
 
 
+class PoolResponsibilitiesRequest(PoolRevisionRequest):
+    fulfillment_user_id: str | None = Field(default=None, max_length=160)
+    maintenance_user_id: str | None = Field(default=None, max_length=160)
+
+
 class PoolAssignableBD(BaseModel):
     id: str
     username: str
@@ -74,6 +79,8 @@ class PoolEntryRead(BaseModel):
     follow_up_window_hours: int
     state: Literal["public", "claimed", "reflow_candidate"]
     owner_user_id: str | None
+    fulfillment_user_id: str | None
+    maintenance_user_id: str | None
     follow_up_due_at: datetime | None
     revision: int
 
@@ -83,6 +90,7 @@ class PoolWorkspace(BaseModel):
     can_manage: bool
     can_claim: bool
     assignable_bds: list[PoolAssignableBD]
+    assignable_users: list[PoolAssignableBD]
 
 
 def _clock(now: datetime | None) -> datetime:
@@ -139,6 +147,8 @@ def _read(db: Session, entry: TikTokCreatorPoolEntry) -> PoolEntryRead:
         sla_rule_version=entry.sla_rule_version,
         follow_up_window_hours=entry.follow_up_window_hours,
         state=entry.state, owner_user_id=entry.owner_user_id,
+        fulfillment_user_id=entry.fulfillment_user_id,
+        maintenance_user_id=entry.maintenance_user_id,
         follow_up_due_at=(
             _clock(entry.follow_up_due_at) if entry.follow_up_due_at is not None else None
         ),
@@ -162,10 +172,16 @@ def get_creator_pool(db: Session, user: User) -> PoolWorkspace:
         User.status == "active",
         User.business_role == "tiktok_bd_specialist",
     ).order_by(User.username, User.id)).all() if manager else []
+    all_candidates = db.exec(select(User).where(
+        User.tenant_id == user.tenant_id,
+        User.status == "active",
+    ).order_by(User.username, User.id)).all() if manager else []
     return PoolWorkspace(
         entries=[_read(db, entry) for entry in entries], can_manage=manager, can_claim=bd,
         assignable_bds=[PoolAssignableBD(id=candidate.id, username=candidate.username)
                         for candidate in candidates],
+        assignable_users=[PoolAssignableBD(id=candidate.id, username=candidate.username)
+                          for candidate in all_candidates],
     )
 
 
@@ -263,6 +279,8 @@ def _transition(
         TikTokCreatorPoolEntry.state == expected_state,
     ).values(
         state=new_state, owner_user_id=new_owner, follow_up_due_at=due_at,
+        fulfillment_user_id=(None if new_state == "public" else entry.fulfillment_user_id),
+        maintenance_user_id=(None if new_state == "public" else entry.maintenance_user_id),
         revision=expected_revision + 1, updated_at=clock,
     ).execution_options(synchronize_session=False))
     if result.rowcount != 1:
@@ -276,6 +294,10 @@ def _transition(
         tenant_id=user.tenant_id, pool_id=entry.id, event_type=event_type,
         actor_user_id=user.id, previous_owner_user_id=entry.owner_user_id,
         new_owner_user_id=new_owner, evidence_ref=evidence_ref,
+        previous_fulfillment_user_id=entry.fulfillment_user_id,
+        new_fulfillment_user_id=(None if new_state == "public" else entry.fulfillment_user_id),
+        previous_maintenance_user_id=entry.maintenance_user_id,
+        new_maintenance_user_id=(None if new_state == "public" else entry.maintenance_user_id),
         reason=reason, created_at=clock,
     ))
     db.commit()
@@ -392,3 +414,64 @@ def assign_creator(
         new_state=new_state, new_owner=target_user_id, due_at=due_at,
         event_type=event_type, reason=reason, now=now,
     )
+
+
+def set_creator_responsibilities(
+    db: Session, user: User, entry_id: str, *, expected_revision: int,
+    fulfillment_user_id: str | None, maintenance_user_id: str | None,
+    now: datetime | None = None,
+) -> PoolEntryRead:
+    _manager(user)
+    entry = _entry(db, user, entry_id)
+    if entry.revision != expected_revision:
+        raise CreatorPoolConflict(
+            "creator_pool_stale", current_owner_user_id=entry.owner_user_id,
+            revision=entry.revision,
+        )
+    if entry.state == "public":
+        raise CreatorPoolConflict("creator_not_claimed")
+    for target_id in (fulfillment_user_id, maintenance_user_id):
+        if target_id is None:
+            continue
+        target = db.exec(select(User.id).where(
+            User.tenant_id == user.tenant_id, User.id == target_id,
+            User.status == "active",
+        )).first()
+        if target is None:
+            raise CreatorPoolConflict("active_tenant_assignee_required")
+    if (
+        entry.fulfillment_user_id == fulfillment_user_id
+        and entry.maintenance_user_id == maintenance_user_id
+    ):
+        raise CreatorPoolConflict("responsibilities_unchanged")
+    clock = _clock(now)
+    result = db.execute(update(TikTokCreatorPoolEntry).where(
+        TikTokCreatorPoolEntry.tenant_id == user.tenant_id,
+        TikTokCreatorPoolEntry.id == entry.id,
+        TikTokCreatorPoolEntry.revision == expected_revision,
+        TikTokCreatorPoolEntry.state == entry.state,
+    ).values(
+        fulfillment_user_id=fulfillment_user_id,
+        maintenance_user_id=maintenance_user_id,
+        revision=expected_revision + 1, updated_at=clock,
+    ).execution_options(synchronize_session=False))
+    if result.rowcount != 1:
+        db.rollback()
+        current = _entry(db, user, entry_id)
+        raise CreatorPoolConflict(
+            "creator_pool_stale", current_owner_user_id=current.owner_user_id,
+            revision=current.revision,
+        )
+    db.add(TikTokCreatorPoolEvent(
+        tenant_id=user.tenant_id, pool_id=entry.id,
+        event_type="responsibilities_changed", actor_user_id=user.id,
+        previous_owner_user_id=entry.owner_user_id, new_owner_user_id=entry.owner_user_id,
+        previous_fulfillment_user_id=entry.fulfillment_user_id,
+        new_fulfillment_user_id=fulfillment_user_id,
+        previous_maintenance_user_id=entry.maintenance_user_id,
+        new_maintenance_user_id=maintenance_user_id,
+        created_at=clock,
+    ))
+    db.commit()
+    db.refresh(entry)
+    return _read(db, entry)

@@ -13,6 +13,11 @@ from app.agents.releases import AgentReleaseError
 from app.db import get_session
 from app.db.models import TikTokOAuthState, User
 from app.security.auth import get_current_user
+from app.tiktok.commission_preflight import (
+    CommissionPreflightRequest,
+    CommissionPreflightResult,
+    preflight_commission_draft,
+)
 from app.tiktok.connector import TikTokConnectorRead, read_tiktok_resource
 from app.tiktok.creator_pool import (
     CreatorPoolConflict,
@@ -20,6 +25,7 @@ from app.tiktok.creator_pool import (
     PoolEntryRead,
     PoolFollowUpRequest,
     PoolIntakeRequest,
+    PoolResponsibilitiesRequest,
     PoolRevisionRequest,
     PoolWorkspace,
     approve_reflow,
@@ -29,6 +35,7 @@ from app.tiktok.creator_pool import (
     get_creator_pool,
     propose_reflow,
     record_effective_follow_up,
+    set_creator_responsibilities,
 )
 from app.tiktok.data_validation import (
     TikTokDataValidationConflict,
@@ -219,6 +226,32 @@ def creator_pool_assign(
         db, current_user, entry_id, expected_revision=request.expected_revision,
         target_user_id=request.target_user_id, reason=request.reason,
     ))
+
+
+@router.post("/creator-responsibilities/{entry_id}", response_model=PoolEntryRead)
+def creator_pool_responsibilities(
+    entry_id: str,
+    request: PoolResponsibilitiesRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> PoolEntryRead:
+    return _creator_pool_action(db, lambda: set_creator_responsibilities(
+        db, current_user, entry_id, expected_revision=request.expected_revision,
+        fulfillment_user_id=request.fulfillment_user_id,
+        maintenance_user_id=request.maintenance_user_id,
+    ))
+
+
+@router.post(
+    "/commission-drafts/{entry_id}/preflight", response_model=CommissionPreflightResult,
+)
+def commission_draft_preflight(
+    entry_id: str,
+    request: CommissionPreflightRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_session)],
+) -> CommissionPreflightResult:
+    return preflight_commission_draft(db, current_user, entry_id, request)
 
 
 @router.get("/history", response_model=HistoryWorkspace)

@@ -63,6 +63,7 @@ This file contains stable facts and working agreements. Read it with `SESSION_HA
 
 - SocialCreator and SocialPlatformIdentity remain canonical identity records; TikTok BD ownership is a separate tenant-scoped pool state and append-only transition history. Intake requires an active, verified TikTok identity with current latest evidence and a supervisor-set SLA rule version/window. See [ADR 0004](adr/0004-tiktok-creator-pool-ownership.md).
 - Claims, effective follow-ups and supervisor-approved reflow compare the pool revision in the database. A profile view never extends the deadline, and expiry alone does not transfer ownership. The first slice records only internal state and opaque evidence references; external messages, platform writes, commissions and payments remain outside it.
+- Claim Owner, fulfillment owner and maintenance owner are separate tenant-scoped references. Supervisor changes use the same revision check and immutable event history; releasing a creator clears the execution roles. Commission preflight checks proposed inputs only and always blocks finance submission until an approved rule and approver exist; see [ADR 0005](adr/0005-tiktok-responsibilities-and-commission-preflight.md).
 
 ## Git history and repository workflow
 
