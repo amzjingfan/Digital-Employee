@@ -16,6 +16,8 @@ The forward migration locks parent inserts, temporarily permits the migration ro
 
 The service first loads proposals for the requested creator, then uses a batched equality lookup on the child index to build overlap details. SQLite tests use the existing JSON scan because SQLModel test tables have no PostgreSQL trigger. No proposal reserves an order or gains priority. The table is an index of unverified references, not an authorized order ledger or financial allocation.
 
+The SQLModel child class omits the PostgreSQL-specific regular-expression CHECK because SQLite `create_all` is used by unit tests and cannot express that operator; the reviewed SQL migration is the authoritative production schema. The application also validates opaque reference syntax before saving a proposal.
+
 ## Consequences and evidence
 
 The migration holds a write-blocking parent lock during backfill; deployment requires a production database gate and an appropriate maintenance window. Isolated PostgreSQL 16 acceptance checks the legacy backfill, final grants and RLS policies, trigger-only writes, two concurrent same-reference commits, cross-tenant isolation, an index-backed runtime plan, and derived-data rollback. The PostgreSQL service query is exercised through SQLModel as well as raw SQL. D6 rules, an authorized order source, exclusivity, finance review and frozen allocation remain separate work.

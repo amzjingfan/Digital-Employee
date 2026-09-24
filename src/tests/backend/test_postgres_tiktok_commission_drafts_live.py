@@ -21,6 +21,7 @@ DOWN = MIGRATIONS / "20260924_tiktok_e03_unapproved_drafts_v1.down.sql"
 INDEX_UP = MIGRATIONS / "20260924_tiktok_e03_unapproved_drafts_v2_order_index.sql"
 INDEX_DOWN = MIGRATIONS / "20260924_tiktok_e03_unapproved_drafts_v2_order_index.down.sql"
 ORDER_REF = "order:" + "a" * 32
+ORDER_JSON = f'["{ORDER_REF}"]'
 
 pytestmark = pytest.mark.skipif(
     os.getenv("JOUKIR_RUN_E03_DRAFT_PG") != "1",
@@ -97,7 +98,7 @@ def test_unapproved_draft_rls_fks_append_only_and_empty_rollback() -> None:
           request_digest, created_by_user_id, created_at
         ) VALUES (
           %s, %s, %s, 3, %s, %s, %s, 'proposal-v1', now() + interval '1 day',
-          '["order:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]', 6000, 2000, 2000,
+          %s, 6000, 2000, 2000,
           'evidence:cccccccccccccccccccccccccccccccc', %s, 'sha256:test', %s, now()
         )
     """
@@ -107,10 +108,51 @@ def test_unapproved_draft_rls_fks_append_only_and_empty_rollback() -> None:
         runtime.execute("SELECT set_config('app.tenant_id', 'tenant_a', true)")
         runtime.execute(insert, (
             "draft_a", "tenant_a", "pool_a", "user_a", "user_a", "user_a",
-            "1" * 32, "user_a",
+            ORDER_JSON, "1" * 32, "user_a",
         ))
         assert runtime.execute("SELECT count(*) FROM public.tiktok_commission_drafts").fetchone()[0] == 1
         runtime.execute("COMMIT")
+
+    for bad_json, expected_error in (
+        ("not-json", psycopg.errors.InvalidTextRepresentation),
+        (f'["{ORDER_REF}","{ORDER_REF}"]', psycopg.errors.UniqueViolation),
+    ):
+        with _connection(port, dbname, "staffdeck_runtime") as runtime:
+            runtime.execute("BEGIN")
+            runtime.execute("SELECT set_config('app.tenant_id', 'tenant_a', true)")
+            runtime.execute(insert, (
+                "draft_bad", "tenant_a", "pool_a", "user_a", "user_a", "user_a",
+                bad_json, "6" * 32, "user_a",
+            ))
+            runtime.execute("COMMIT")
+        with _connection(port, dbname, "staffdeck_migrator") as migrator:
+            with pytest.raises(expected_error):
+                migrator.execute(INDEX_UP.read_text(encoding="utf-8"))
+            migrator.execute("ROLLBACK")
+            assert migrator.execute("""
+                SELECT to_regclass('public.tiktok_commission_draft_order_refs')
+            """).fetchone()[0] is None
+            assert migrator.execute("""
+                SELECT count(*) FROM pg_policies
+                WHERE policyname IN (
+                  'migration_draft_order_ref_read', 'migration_draft_order_ref_insert'
+                )
+            """).fetchone()[0] == 0
+        with _connection(port, dbname, "staffdeck_runtime") as runtime:
+            runtime.execute("BEGIN")
+            runtime.execute("SELECT set_config('app.tenant_id', 'tenant_a', true)")
+            assert runtime.execute("SELECT count(*) FROM public.tiktok_commission_drafts").fetchone()[0] == 2
+            runtime.execute("COMMIT")
+        with _connection(port, dbname, "postgres") as administrator:
+            administrator.execute("TRUNCATE public.tiktok_commission_drafts")
+        with _connection(port, dbname, "staffdeck_runtime") as runtime:
+            runtime.execute("BEGIN")
+            runtime.execute("SELECT set_config('app.tenant_id', 'tenant_a', true)")
+            runtime.execute(insert, (
+                "draft_a", "tenant_a", "pool_a", "user_a", "user_a", "user_a",
+                ORDER_JSON, "1" * 32, "user_a",
+            ))
+            runtime.execute("COMMIT")
 
     with _connection(port, dbname, "staffdeck_migrator") as migrator:
         migrator.execute(INDEX_UP.read_text(encoding="utf-8"))
@@ -154,7 +196,7 @@ def test_unapproved_draft_rls_fks_append_only_and_empty_rollback() -> None:
             barrier.wait(timeout=10)
             connection.execute(insert, (
                 draft_id, "tenant_a", pool_id, "user_a", "user_a", "user_a",
-                key, "user_a",
+                ORDER_JSON, key, "user_a",
             ))
             connection.execute("COMMIT")
 
@@ -169,7 +211,7 @@ def test_unapproved_draft_rls_fks_append_only_and_empty_rollback() -> None:
         runtime.execute("SELECT set_config('app.tenant_id', 'tenant_b', true)")
         runtime.execute(insert, (
             "draft_b", "tenant_b", "pool_b", "user_b", "user_b", "user_b",
-            "5" * 32, "user_b",
+            ORDER_JSON, "5" * 32, "user_b",
         ))
         runtime.execute("COMMIT")
 
@@ -217,6 +259,17 @@ def test_unapproved_draft_rls_fks_append_only_and_empty_rollback() -> None:
         assert migrator.execute("""
             SELECT to_regclass('public.tiktok_commission_draft_order_refs')
         """).fetchone()[0] is None
+        migrator.execute(INDEX_UP.read_text(encoding="utf-8"))
+    with _connection(port, dbname, "staffdeck_runtime") as runtime:
+        runtime.execute("BEGIN")
+        runtime.execute("SELECT set_config('app.tenant_id', 'tenant_a', true)")
+        assert runtime.execute("""
+            SELECT count(*) FROM public.tiktok_commission_draft_order_refs
+            WHERE order_ref=%s
+        """, (ORDER_REF,)).fetchone()[0] == 3
+        runtime.execute("COMMIT")
+    with _connection(port, dbname, "staffdeck_migrator") as migrator:
+        migrator.execute(INDEX_DOWN.read_text(encoding="utf-8"))
     with _connection(port, dbname, "staffdeck_runtime") as runtime:
         runtime.execute("BEGIN")
         runtime.execute("SELECT set_config('app.tenant_id', 'tenant_a', true)")
@@ -233,7 +286,7 @@ def test_unapproved_draft_rls_fks_append_only_and_empty_rollback() -> None:
         with pytest.raises(psycopg.errors.ForeignKeyViolation):
             administrator.execute(insert, (
                 "wrong_pool", "tenant_a", "pool_b", "user_a", "user_a", "user_a",
-                "4" * 32, "user_a",
+                ORDER_JSON, "4" * 32, "user_a",
             ))
         with pytest.raises(psycopg.errors.RaiseException, match="append-only"):
             administrator.execute("DELETE FROM public.tiktok_commission_drafts WHERE id='draft_a'")

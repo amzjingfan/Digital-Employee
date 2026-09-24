@@ -5205,7 +5205,7 @@ class TikTokCommissionDraft(SQLModel, table=True):
 
 
 class TikTokCommissionDraftOrderRef(SQLModel, table=True):
-    """Tenant-scoped lookup rows derived from an immutable proposal snapshot."""
+    """Lookup rows derived from immutable snapshots; PostgreSQL migration enforces the regex."""
 
     __tablename__ = "tiktok_commission_draft_order_refs"
     __table_args__ = (
