@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import defaultdict
 from datetime import datetime
 from re import fullmatch
 
@@ -11,7 +12,12 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from app.db.models import TikTokCommissionDraft, TikTokCreatorPoolEntry, User
+from app.db.models import (
+    TikTokCommissionDraft,
+    TikTokCommissionDraftOrderRef,
+    TikTokCreatorPoolEntry,
+    User,
+)
 from app.tiktok.commission_preflight import (
     CommissionPreflightRequest,
     CommissionScopeInput,
@@ -66,21 +72,50 @@ def _digest(entry_id: str, request: CommissionDraftSaveRequest) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _tenant_drafts(db: Session, tenant_id: str) -> list[TikTokCommissionDraft]:
-    return list(db.exec(select(TikTokCommissionDraft).where(
-        TikTokCommissionDraft.tenant_id == tenant_id,
-    )).all())
+def _indexed_order_refs_query(tenant_id: str, order_refs: list[str]):
+    return select(
+        TikTokCommissionDraftOrderRef.order_ref, TikTokCommissionDraftOrderRef.draft_id,
+    ).where(
+        TikTokCommissionDraftOrderRef.tenant_id == tenant_id,
+        TikTokCommissionDraftOrderRef.order_ref.in_(order_refs),
+    )
+
+
+def _overlap_index(
+    db: Session, tenant_id: str, drafts: list[TikTokCommissionDraft],
+) -> dict[str, set[str]]:
+    order_refs = sorted({
+        ref for draft in drafts for ref in json.loads(draft.order_refs_json)
+    })
+    if not order_refs:
+        return {}
+    index: dict[str, set[str]] = defaultdict(set)
+    if db.get_bind().dialect.name == "postgresql":
+        for ref, draft_id in db.exec(_indexed_order_refs_query(tenant_id, order_refs)).all():
+            index[ref].add(draft_id)
+    else:
+        statement = select(TikTokCommissionDraft.id, TikTokCommissionDraft.order_refs_json).where(
+            TikTokCommissionDraft.tenant_id == tenant_id,
+        )
+        targets = set(order_refs)
+        for draft_id, order_refs_json in db.exec(statement).all():
+            for ref in targets.intersection(json.loads(order_refs_json)):
+                index[ref].add(draft_id)
+    return index
 
 
 def _read(
     draft: TikTokCommissionDraft, entry: TikTokCreatorPoolEntry,
-    tenant_drafts: list[TikTokCommissionDraft], clock: datetime,
+    overlap_index: dict[str, set[str]], clock: datetime,
 ) -> CommissionDraftRead:
     order_refs = json.loads(draft.order_refs_json)
-    overlaps = [
-        (other.id, set(order_refs).intersection(json.loads(other.order_refs_json)))
-        for other in tenant_drafts if other.id != draft.id
-    ]
+    overlapping_refs = sorted(
+        ref for ref in order_refs if overlap_index.get(ref, set()) - {draft.id}
+    )
+    overlapping_ids = sorted({
+        other_id for ref in overlapping_refs
+        for other_id in overlap_index[ref] if other_id != draft.id
+    })
     checks = ["rule_unapproved"]
     if _clock(draft.rule_expires_at) <= clock:
         checks.append("rule_version_expired")
@@ -92,7 +127,7 @@ def _read(
         or draft.maintenance_user_id != entry.maintenance_user_id
     ):
         checks.append("responsibilities_changed")
-    if any(refs for _, refs in overlaps):
+    if overlapping_refs:
         checks.append("saved_order_overlap")
     return CommissionDraftRead(
         id=draft.id, pool_revision=draft.pool_revision,
@@ -105,8 +140,8 @@ def _read(
         calculation_evidence_ref=draft.calculation_evidence_ref,
         created_by_user_id=draft.created_by_user_id, created_at=draft.created_at,
         check_codes=checks,
-        overlapping_order_refs=sorted(set().union(*(refs for _, refs in overlaps))),
-        overlapping_draft_ids=sorted(other_id for other_id, refs in overlaps if refs),
+        overlapping_order_refs=overlapping_refs,
+        overlapping_draft_ids=overlapping_ids,
     )
 
 
@@ -115,11 +150,15 @@ def list_commission_drafts(
 ) -> list[CommissionDraftRead]:
     _manager(user)
     entry = _entry(db, user, entry_id)
-    drafts = _tenant_drafts(db, user.tenant_id)
+    drafts = list(db.exec(select(TikTokCommissionDraft).where(
+        TikTokCommissionDraft.tenant_id == user.tenant_id,
+        TikTokCommissionDraft.pool_id == entry_id,
+    )).all())
+    overlap_index = _overlap_index(db, user.tenant_id, drafts)
     return [
-        _read(draft, entry, drafts, _clock(now))
+        _read(draft, entry, overlap_index, _clock(now))
         for draft in sorted(
-            (item for item in drafts if item.pool_id == entry_id),
+            drafts,
             key=lambda item: (item.created_at, item.id), reverse=True,
         )
     ]
@@ -139,7 +178,7 @@ def save_commission_draft(
     if existing is not None:
         if existing.request_digest != digest:
             raise CommissionDraftConflict("idempotency_key_reused")
-        return _read(existing, entry, _tenant_drafts(db, user.tenant_id), _clock(now))
+        return _read(existing, entry, _overlap_index(db, user.tenant_id, [existing]), _clock(now))
 
     locked = db.exec(select(TikTokCreatorPoolEntry).where(
         TikTokCreatorPoolEntry.tenant_id == user.tenant_id,
@@ -180,4 +219,4 @@ def save_commission_draft(
         if replay.request_digest != digest:
             raise CommissionDraftConflict("idempotency_key_reused") from None
         draft = replay
-    return _read(draft, entry, _tenant_drafts(db, user.tenant_id), _clock(now))
+    return _read(draft, entry, _overlap_index(db, user.tenant_id, [draft]), _clock(now))

@@ -20,6 +20,8 @@ An order-wide unique index on proposals was rejected: the first unapproved draft
 
 The PostgreSQL migration applies forced RLS, same-tenant foreign keys, an append-only trigger and only SELECT/INSERT runtime grants. Its down migration drops the table, so operators may run it only after confirming no proposal data must be retained. The migration role cannot certify table emptiness with a normal SELECT under forced RLS; a prior implementation of that check falsely saw an occupied table as empty and was removed.
 
+ADR 0007 replaces the pilot-scale tenant-wide JSON overlap scan with a derived, tenant-scoped order-reference index. The proposal snapshot and unapproved boundary remain unchanged.
+
 ## Evidence
 
 - [Design](../superpowers/specs/2026-09-24-tiktok-e03-unapproved-drafts.md)

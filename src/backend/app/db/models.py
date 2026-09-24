@@ -5202,3 +5202,23 @@ class TikTokCommissionDraft(SQLModel, table=True):
     request_digest: str
     created_by_user_id: str
     created_at: datetime = Field(default_factory=utc_now)
+
+
+class TikTokCommissionDraftOrderRef(SQLModel, table=True):
+    """Tenant-scoped lookup rows derived from an immutable proposal snapshot."""
+
+    __tablename__ = "tiktok_commission_draft_order_refs"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "draft_id"],
+            ["tiktok_commission_drafts.tenant_id", "tiktok_commission_drafts.id"],
+            name="fk_tiktok_commission_draft_order_ref_draft", ondelete="RESTRICT",
+        ),
+        Index(
+            "ix_tiktok_commission_draft_order_ref_lookup", "tenant_id", "order_ref", "draft_id",
+        ),
+    )
+
+    tenant_id: str = Field(primary_key=True)
+    draft_id: str = Field(primary_key=True)
+    order_ref: str = Field(primary_key=True)

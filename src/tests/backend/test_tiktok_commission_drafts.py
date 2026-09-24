@@ -117,6 +117,36 @@ def test_overlap_is_tenant_wide_across_creators_but_not_across_tenants() -> None
         )[0].check_codes
 
 
+def test_postgres_overlap_candidate_query_uses_exact_indexable_refs() -> None:
+    statement = _drafts()._indexed_order_refs_query("tenant_a", [ORDER_A, ORDER_B])
+    compiled = statement.compile(dialect=postgresql.dialect())
+    sql = str(compiled)
+    assert "tiktok_commission_draft_order_refs" in sql
+    assert "order_ref IN" in sql
+    assert "tenant_id" in sql
+    assert "?|" not in sql
+    assert compiled.params["tenant_id_1"] == "tenant_a"
+    assert compiled.params["order_ref_1"] == [ORDER_A, ORDER_B]
+
+
+def test_empty_pool_history_does_not_scan_tenant_proposals(monkeypatch) -> None:
+    with _session() as db:
+        _, supervisor, _, _, entry = _assigned(db)
+        queries: list[str] = []
+        original_exec = db.exec
+
+        def capture(statement, *args, **kwargs):
+            sql = str(statement.compile(dialect=postgresql.dialect()))
+            if "tiktok_commission_drafts" in sql:
+                queries.append(sql)
+            return original_exec(statement, *args, **kwargs)
+
+        monkeypatch.setattr(db, "exec", capture)
+        assert _drafts().list_commission_drafts(db, supervisor, entry.id, now=NOW) == []
+        assert len(queries) == 1
+        assert "tiktok_commission_drafts.pool_id" in queries[0].split("WHERE", 1)[1]
+
+
 def test_stale_responsibilities_are_reported_without_rewriting_snapshot() -> None:
     with _session() as db:
         _, supervisor, bd, other_bd, entry = _assigned(db)

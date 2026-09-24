@@ -1,16 +1,26 @@
 """Opt-in RLS and rollback acceptance against a disposable local PostgreSQL cluster."""
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
 from uuid import uuid4
 
 import psycopg
 import pytest
 from psycopg import sql
+from sqlalchemy import create_engine, text
+from sqlmodel import Session, select
+
+from app.db.models import TikTokCommissionDraft
+from app.tiktok.commission_drafts import _overlap_index
 
 MIGRATIONS = Path(__file__).resolve().parents[2] / "backend" / "migrations"
 UP = MIGRATIONS / "20260924_tiktok_e03_unapproved_drafts_v1.sql"
 DOWN = MIGRATIONS / "20260924_tiktok_e03_unapproved_drafts_v1.down.sql"
+INDEX_UP = MIGRATIONS / "20260924_tiktok_e03_unapproved_drafts_v2_order_index.sql"
+INDEX_DOWN = MIGRATIONS / "20260924_tiktok_e03_unapproved_drafts_v2_order_index.down.sql"
+ORDER_REF = "order:" + "a" * 32
 
 pytestmark = pytest.mark.skipif(
     os.getenv("JOUKIR_RUN_E03_DRAFT_PG") != "1",
@@ -69,7 +79,8 @@ def test_unapproved_draft_rls_fks_append_only_and_empty_rollback() -> None:
             INSERT INTO public.tenants VALUES ('tenant_a'), ('tenant_b');
             INSERT INTO public.users VALUES ('user_a', 'tenant_a'), ('user_b', 'tenant_b');
             INSERT INTO public.tiktok_creator_pool VALUES
-              ('pool_a', 'tenant_a'), ('pool_b', 'tenant_b');
+              ('pool_a', 'tenant_a'), ('pool_a2', 'tenant_a'),
+              ('pool_a3', 'tenant_a'), ('pool_b', 'tenant_b');
         """)
         migrator.execute(UP.read_text(encoding="utf-8"))
         assert migrator.execute("""
@@ -100,9 +111,120 @@ def test_unapproved_draft_rls_fks_append_only_and_empty_rollback() -> None:
         ))
         assert runtime.execute("SELECT count(*) FROM public.tiktok_commission_drafts").fetchone()[0] == 1
         runtime.execute("COMMIT")
+
+    with _connection(port, dbname, "staffdeck_migrator") as migrator:
+        migrator.execute(INDEX_UP.read_text(encoding="utf-8"))
+        definition = migrator.execute("""
+            SELECT indexdef FROM pg_indexes
+            WHERE schemaname='public'
+              AND indexname='ix_tiktok_commission_draft_order_ref_lookup'
+        """).fetchone()[0]
+        assert "btree" in definition.lower()
+        assert "order_ref" in definition
+        assert migrator.execute("""
+            SELECT relrowsecurity, relforcerowsecurity FROM pg_class
+            WHERE relname='tiktok_commission_draft_order_refs'
+        """).fetchone() == (True, True)
+        assert migrator.execute("""
+            SELECT count(*) FROM pg_policies
+            WHERE policyname IN (
+              'migration_draft_order_ref_read', 'migration_draft_order_ref_insert'
+            )
+        """).fetchone()[0] == 0
+    with _connection(port, dbname, "staffdeck_runtime") as runtime:
+        runtime.execute("BEGIN")
+        runtime.execute("SELECT set_config('app.tenant_id', 'tenant_a', true)")
+        assert runtime.execute("""
+            SELECT draft_id FROM public.tiktok_commission_draft_order_refs
+            WHERE order_ref=%s
+        """, (ORDER_REF,)).fetchone()[0] == "draft_a"
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            runtime.execute("""
+                INSERT INTO public.tiktok_commission_draft_order_refs
+                (tenant_id, draft_id, order_ref) VALUES ('tenant_a', 'draft_a', %s)
+            """, (ORDER_REF,))
+        runtime.execute("ROLLBACK")
+
+    barrier = Barrier(2)
+
+    def concurrent_save(draft_id: str, pool_id: str, key: str) -> None:
+        with _connection(port, dbname, "staffdeck_runtime") as connection:
+            connection.execute("BEGIN")
+            connection.execute("SELECT set_config('app.tenant_id', 'tenant_a', true)")
+            barrier.wait(timeout=10)
+            connection.execute(insert, (
+                draft_id, "tenant_a", pool_id, "user_a", "user_a", "user_a",
+                key, "user_a",
+            ))
+            connection.execute("COMMIT")
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(concurrent_save, "draft_a2", "pool_a2", "2" * 32)
+        second = executor.submit(concurrent_save, "draft_a3", "pool_a3", "3" * 32)
+        first.result(timeout=15)
+        second.result(timeout=15)
+
+    with _connection(port, dbname, "staffdeck_runtime") as runtime:
         runtime.execute("BEGIN")
         runtime.execute("SELECT set_config('app.tenant_id', 'tenant_b', true)")
-        assert runtime.execute("SELECT count(*) FROM public.tiktok_commission_drafts").fetchone()[0] == 0
+        runtime.execute(insert, (
+            "draft_b", "tenant_b", "pool_b", "user_b", "user_b", "user_b",
+            "5" * 32, "user_b",
+        ))
+        runtime.execute("COMMIT")
+
+    with _connection(port, dbname, "staffdeck_runtime") as runtime:
+        runtime.execute("BEGIN")
+        runtime.execute("SELECT set_config('app.tenant_id', 'tenant_a', true)")
+        matches = runtime.execute("""
+            SELECT draft_id FROM public.tiktok_commission_draft_order_refs
+            WHERE tenant_id='tenant_a' AND order_ref=%s
+            ORDER BY draft_id
+        """, (ORDER_REF,)).fetchall()
+        assert [row[0] for row in matches] == ["draft_a", "draft_a2", "draft_a3"]
+        runtime.execute("SET LOCAL enable_seqscan=off")
+        plan = runtime.execute("""
+            EXPLAIN SELECT draft_id FROM public.tiktok_commission_draft_order_refs
+            WHERE tenant_id='tenant_a' AND order_ref=%s
+        """, (ORDER_REF,)).fetchall()
+        assert "ix_tiktok_commission_draft_order_ref_lookup" in "\n".join(
+            row[0] for row in plan
+        )
+        runtime.execute("COMMIT")
+        runtime.execute("BEGIN")
+        runtime.execute("SELECT set_config('app.tenant_id', 'tenant_b', true)")
+        assert runtime.execute("""
+            SELECT draft_id FROM public.tiktok_commission_draft_order_refs
+            WHERE order_ref=%s
+        """, (ORDER_REF,)).fetchall() == [("draft_b",)]
+        runtime.execute("COMMIT")
+
+    engine = create_engine(f"postgresql+psycopg://staffdeck_runtime@127.0.0.1:{port}/{dbname}")
+    try:
+        with Session(engine) as db:
+            db.exec(text("SELECT set_config('app.tenant_id', 'tenant_a', true)"))
+            target = db.exec(select(TikTokCommissionDraft).where(
+                TikTokCommissionDraft.id == "draft_a",
+            )).one()
+            assert _overlap_index(db, "tenant_a", [target])[ORDER_REF] == {
+                "draft_a", "draft_a2", "draft_a3",
+            }
+    finally:
+        engine.dispose()
+
+    with _connection(port, dbname, "staffdeck_migrator") as migrator:
+        migrator.execute(INDEX_DOWN.read_text(encoding="utf-8"))
+        assert migrator.execute("""
+            SELECT to_regclass('public.tiktok_commission_draft_order_refs')
+        """).fetchone()[0] is None
+    with _connection(port, dbname, "staffdeck_runtime") as runtime:
+        runtime.execute("BEGIN")
+        runtime.execute("SELECT set_config('app.tenant_id', 'tenant_a', true)")
+        assert runtime.execute("SELECT count(*) FROM public.tiktok_commission_drafts").fetchone()[0] == 3
+        runtime.execute("COMMIT")
+        runtime.execute("BEGIN")
+        runtime.execute("SELECT set_config('app.tenant_id', 'tenant_b', true)")
+        assert runtime.execute("SELECT count(*) FROM public.tiktok_commission_drafts").fetchone()[0] == 1
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             runtime.execute("UPDATE public.tiktok_commission_drafts SET rule_version='other'")
         runtime.execute("ROLLBACK")
@@ -111,7 +233,7 @@ def test_unapproved_draft_rls_fks_append_only_and_empty_rollback() -> None:
         with pytest.raises(psycopg.errors.ForeignKeyViolation):
             administrator.execute(insert, (
                 "wrong_pool", "tenant_a", "pool_b", "user_a", "user_a", "user_a",
-                "2" * 32, "user_a",
+                "4" * 32, "user_a",
             ))
         with pytest.raises(psycopg.errors.RaiseException, match="append-only"):
             administrator.execute("DELETE FROM public.tiktok_commission_drafts WHERE id='draft_a'")
