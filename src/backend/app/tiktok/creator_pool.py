@@ -62,7 +62,7 @@ class PoolResponsibilitiesRequest(PoolRevisionRequest):
     maintenance_user_id: str | None = Field(default=None, max_length=160)
 
 
-class PoolAssignableBD(BaseModel):
+class PoolAssignableUser(BaseModel):
     id: str
     username: str
 
@@ -89,8 +89,8 @@ class PoolWorkspace(BaseModel):
     entries: list[PoolEntryRead]
     can_manage: bool
     can_claim: bool
-    assignable_bds: list[PoolAssignableBD]
-    assignable_users: list[PoolAssignableBD]
+    assignable_bds: list[PoolAssignableUser]
+    assignable_users: list[PoolAssignableUser]
 
 
 def _clock(now: datetime | None) -> datetime:
@@ -178,9 +178,9 @@ def get_creator_pool(db: Session, user: User) -> PoolWorkspace:
     ).order_by(User.username, User.id)).all() if manager else []
     return PoolWorkspace(
         entries=[_read(db, entry) for entry in entries], can_manage=manager, can_claim=bd,
-        assignable_bds=[PoolAssignableBD(id=candidate.id, username=candidate.username)
+        assignable_bds=[PoolAssignableUser(id=candidate.id, username=candidate.username)
                         for candidate in candidates],
-        assignable_users=[PoolAssignableBD(id=candidate.id, username=candidate.username)
+        assignable_users=[PoolAssignableUser(id=candidate.id, username=candidate.username)
                           for candidate in all_candidates],
     )
 
@@ -430,13 +430,15 @@ def set_creator_responsibilities(
         )
     if entry.state == "public":
         raise CreatorPoolConflict("creator_not_claimed")
-    for target_id in (fulfillment_user_id, maintenance_user_id):
-        if target_id is None:
-            continue
+    # Lock targets in stable order so a concurrent deactivation cannot pass the active check.
+    target_ids = sorted({target_id for target_id in (
+        fulfillment_user_id, maintenance_user_id,
+    ) if target_id is not None})
+    for target_id in target_ids:
         target = db.exec(select(User.id).where(
             User.tenant_id == user.tenant_id, User.id == target_id,
             User.status == "active",
-        )).first()
+        ).with_for_update()).first()
         if target is None:
             raise CreatorPoolConflict("active_tenant_assignee_required")
     if (

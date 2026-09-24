@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.dialects import postgresql
 from sqlmodel import Session, select
 from test_tiktok_data_validation import _seed_tenant, _session
 
@@ -82,6 +83,29 @@ def test_responsibility_targets_must_be_active_same_tenant_and_manager_only() ->
         assert db.exec(select(TikTokCreatorPoolEvent).where(
             TikTokCreatorPoolEvent.event_type == "responsibilities_changed",
         )).first() is None
+
+
+def test_responsibility_targets_are_locked_through_assignment(monkeypatch) -> None:
+    with _session() as db:
+        _, supervisor, bd, other_bd, creator, identity = _seed(db, "tenant_a")
+        entry = _intake(db, supervisor, creator, identity)
+        claimed = claim_creator(db, bd, entry.id, expected_revision=1, now=NOW)
+        target_queries = []
+        original_exec = db.exec
+
+        def capture(statement, *args, **kwargs):
+            sql = str(statement.compile(dialect=postgresql.dialect()))
+            if "users.status" in sql and "users.id" in sql:
+                target_queries.append(sql)
+            return original_exec(statement, *args, **kwargs)
+
+        monkeypatch.setattr(db, "exec", capture)
+        set_creator_responsibilities(
+            db, supervisor, entry.id, expected_revision=claimed.revision,
+            fulfillment_user_id=other_bd.id, maintenance_user_id=bd.id, now=NOW,
+        )
+        assert len(target_queries) == 2
+        assert all(query.rstrip().endswith("FOR UPDATE") for query in target_queries)
 
 
 def _seed(db, tenant_id: str):

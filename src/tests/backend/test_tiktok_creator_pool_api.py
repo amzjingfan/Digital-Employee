@@ -22,13 +22,14 @@ from app.tiktok.creator_pool import (
 )
 
 
-def test_commission_preflight_route_is_supervisor_only_and_never_approves() -> None:
+def test_commission_preflight_route_allows_supervisor_or_admin_but_never_approves() -> None:
     with _session() as db:
-        _, supervisor, bd, _, creator, identity = _seed(db, "tenant_a")
+        admin, supervisor, bd, _, creator, identity = _seed(db, "tenant_a")
         entry = _intake(db, supervisor, creator, identity)
         settings = Settings(_env_file=None, casbin_enabled=True)
         path = f"/api/enterprise/tiktok/commission-drafts/{entry.id}/preflight"
         assert authorize(settings, user=supervisor, object_path=path, action="POST").allowed
+        assert authorize(settings, user=admin, object_path=path, action="POST").allowed
         assert not authorize(settings, user=bd, object_path=path, action="POST").allowed
         result = commission_draft_preflight(
             entry.id, CommissionPreflightRequest(
@@ -43,11 +44,23 @@ def test_commission_preflight_route_is_supervisor_only_and_never_approves() -> N
         )
         assert not result.can_submit_financial_review
         assert "rule_unapproved" in result.check_codes
+        admin_result = commission_draft_preflight(
+            entry.id, CommissionPreflightRequest(
+                rule_version="proposal-v1",
+                rule_expires_at=datetime(2027, 9, 24, tzinfo=UTC),
+                scopes=[CommissionScopeInput(
+                    order_refs=["order:" + "a" * 32],
+                    development_bps=6000, fulfillment_bps=2000, maintenance_bps=2000,
+                    calculation_evidence_ref="evidence:" + "b" * 32,
+                )],
+            ), current_user=admin, db=db,
+        )
+        assert "rule_unapproved" in admin_result.check_codes
 
 
-def test_supervisor_sets_distinct_responsibilities_but_bd_cannot() -> None:
+def test_supervisor_and_admin_set_distinct_responsibilities_but_bd_cannot() -> None:
     with _session() as db:
-        _, supervisor, bd, other_bd, creator, identity = _seed(db, "tenant_a")
+        admin, supervisor, bd, other_bd, creator, identity = _seed(db, "tenant_a")
         entry = _intake(db, supervisor, creator, identity)
         creator_pool_claim(
             entry.id, PoolRevisionRequest(expected_revision=1), current_user=bd, db=db,
@@ -55,6 +68,7 @@ def test_supervisor_sets_distinct_responsibilities_but_bd_cannot() -> None:
         settings = Settings(_env_file=None, casbin_enabled=True)
         path = f"/api/enterprise/tiktok/creator-responsibilities/{entry.id}"
         assert authorize(settings, user=supervisor, object_path=path, action="POST").allowed
+        assert authorize(settings, user=admin, object_path=path, action="POST").allowed
         assert not authorize(settings, user=bd, object_path=path, action="POST").allowed
         result = creator_pool_responsibilities(
             entry.id,
@@ -66,6 +80,15 @@ def test_supervisor_sets_distinct_responsibilities_but_bd_cannot() -> None:
         )
         assert result.fulfillment_user_id == other_bd.id
         assert result.maintenance_user_id == bd.id
+        admin_change = creator_pool_responsibilities(
+            entry.id,
+            PoolResponsibilitiesRequest(
+                expected_revision=3, fulfillment_user_id=bd.id,
+                maintenance_user_id=other_bd.id,
+            ),
+            current_user=admin, db=db,
+        )
+        assert admin_change.fulfillment_user_id == bd.id
 
 
 def test_bd_claim_route_and_casbin_are_narrowly_scoped() -> None:

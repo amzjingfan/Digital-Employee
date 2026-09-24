@@ -10,7 +10,7 @@ The PRD distinguishes claim ownership, fulfillment and maintenance. PRD D6 still
 
 ## Decision
 
-The TikTok creator pool's claim Owner, fulfillment owner and maintenance owner are independent tenant-scoped user references. A supervisor changes the two execution roles through the pool revision and an append-only event. Releasing the claim clears execution roles; transferring the claim does not silently replace them.
+The TikTok creator pool's claim Owner, fulfillment owner and maintenance owner are independent tenant-scoped user references. An operations supervisor or tenant administrator changes the two execution roles through the pool revision and an append-only event, consistent with existing pool management permissions. Releasing the claim clears execution roles; transferring the claim does not silently replace them.
 
 PRD D6 has no approved role percentages, overlap priority or finance approver. The commission endpoint therefore checks only the structure of a proposed internal input: three role shares add to 10,000 basis points, opaque order references do not overlap within the request, and the supplied expiry is future-dated. It always reports `rule_unapproved` and cannot submit or freeze a financial allocation. The supplied version and expiry are never treated as an approved rule. This prevents mock or manually entered metadata from becoming payment evidence.
 

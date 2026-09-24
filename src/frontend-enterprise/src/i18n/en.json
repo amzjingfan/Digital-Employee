@@ -4428,7 +4428,7 @@
   "规则尚未批准，不能提交财务审核": "The rule is not approved; financial review is unavailable",
   "分佣预检失败": "Commission preflight failed",
   "分佣草案预检": "Commission draft preflight",
-  "仅检查输入，不保存草案或执行付款。比例以基点输入，10,000 代表 100%。订单和计算证据只填不含个人信息的不透明引用。": "Checks input only; no draft is saved and no payment is made. Enter shares in basis points; 10,000 means 100%. Use opaque order and evidence references without personal data.",
+  "仅检查当前一个订单范围，不保存草案或执行付款；跨草案冲突尚未校验。比例以基点输入，10,000 代表 100%。订单和计算证据只填不含个人信息的不透明引用。": "Checks one order scope at a time; no draft is saved or payment made, and conflicts across drafts are not checked yet. Enter shares in basis points; 10,000 means 100%. Use opaque order and evidence references without personal data.",
   "分佣规则版本 {1}": "Commission rule version {1}",
   "拟议规则版本": "Proposed rule version",
   "规则失效时间 {1}": "Rule expiry {1}",

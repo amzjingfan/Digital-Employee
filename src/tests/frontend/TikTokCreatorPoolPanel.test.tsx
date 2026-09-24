@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { api } from '@/api/client';
@@ -165,4 +165,28 @@ it('shows commission preflight blocks without claiming financial approval', asyn
   ));
   expect(screen.getByText(/规则尚未批准/)).toBeTruthy();
   expect(screen.queryByRole('button', { name: '提交财务审核' })).toBeNull();
+});
+
+it('does not show a stale preflight response after inputs change', async () => {
+  const claimed = { ...publicEntry, state: 'claimed', owner_user_id: bd.id, revision: 2,
+    fulfillment_user_id: 'ops-1', maintenance_user_id: bd.id };
+  vi.mocked(api.get).mockImplementation(async (path) => path.startsWith('/api/v1/social/creators') ? [] : {
+    entries: [claimed], can_manage: true, can_claim: false, assignable_bds: [], assignable_users: [],
+  });
+  let finish!: (value: unknown) => void;
+  vi.mocked(api.post).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  render(<TikTokCreatorPoolPanel currentUser={{ ...bd, business_role: 'operations_supervisor' }} />);
+  await waitFor(() => expect(screen.getByLabelText('分佣规则版本 Creator A')).toBeTruthy());
+  fireEvent.change(screen.getByLabelText('分佣规则版本 Creator A'), { target: { value: 'proposal-v1' } });
+  fireEvent.change(screen.getByLabelText('规则失效时间 Creator A'), { target: { value: '2027-09-24T09:00' } });
+  fireEvent.change(screen.getByLabelText('订单引用 Creator A'), { target: { value: `order:${'a'.repeat(32)}` } });
+  fireEvent.change(screen.getByLabelText('计算证据 Creator A'), { target: { value: `evidence:${'b'.repeat(32)}` } });
+  fireEvent.change(screen.getByLabelText('开发比例 Creator A'), { target: { value: '6000' } });
+  fireEvent.change(screen.getByLabelText('履约比例 Creator A'), { target: { value: '2000' } });
+  fireEvent.change(screen.getByLabelText('维护比例 Creator A'), { target: { value: '2000' } });
+  fireEvent.click(screen.getByRole('button', { name: '预检分佣草案' }));
+  await waitFor(() => expect(api.post).toHaveBeenCalled());
+  fireEvent.change(screen.getByLabelText('开发比例 Creator A'), { target: { value: '5000' } });
+  await act(async () => { finish({ check_codes: ['rule_unapproved'], can_submit_financial_review: false }); });
+  expect(screen.queryByText(/规则尚未批准/)).toBeNull();
 });

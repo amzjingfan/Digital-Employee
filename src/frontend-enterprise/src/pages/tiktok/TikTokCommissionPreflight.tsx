@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { api } from '@/api/client';
 import { notify } from '@/components/ui/app-toast';
@@ -25,7 +25,12 @@ export default function TikTokCommissionPreflight({ entryId, creatorName }: { en
   const [maintenance, setMaintenance] = useState('');
   const [result, setResult] = useState<Result | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { setResult(null); }, [version, expiresAt, orders, evidence, development, fulfillment, maintenance]);
+  const inputRevision = useRef(0);
+  function change(setter: (value: string) => void, value: string) {
+    inputRevision.current += 1;
+    setResult(null);
+    setter(value);
+  }
   const orderRefs = orders.split(/[\s,，]+/).filter(Boolean);
   const ready = /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(version)
     && Boolean(expiresAt) && orderRefs.length > 0 && orderRefs.every((value) => /^order:[0-9a-f]{32}$/.test(value))
@@ -33,6 +38,7 @@ export default function TikTokCommissionPreflight({ entryId, creatorName }: { en
     && [development, fulfillment, maintenance].every((value) => /^\d+$/.test(value));
 
   async function preflight() {
+    const submittedRevision = ++inputRevision.current;
     setBusy(true);
     setResult(null);
     try {
@@ -43,7 +49,7 @@ export default function TikTokCommissionPreflight({ entryId, creatorName }: { en
           fulfillment_bps: Number(fulfillment), maintenance_bps: Number(maintenance),
           calculation_evidence_ref: evidence }],
       });
-      setResult(current);
+      if (submittedRevision === inputRevision.current) setResult(current);
     } catch (error) {
       notify.error(error instanceof Error ? error.message : '分佣预检失败');
     } finally {
@@ -53,15 +59,15 @@ export default function TikTokCommissionPreflight({ entryId, creatorName }: { en
 
   return <div className="mt-3 rounded-lg border border-[#d9deea] bg-white p-3">
     <h4 className="m-0 text-[12px] font-semibold">分佣草案预检</h4>
-    <p className="mt-1 text-[12px] text-[#66708a]">仅检查输入，不保存草案或执行付款。比例以基点输入，10,000 代表 100%。订单和计算证据只填不含个人信息的不透明引用。</p>
+    <p className="mt-1 text-[12px] text-[#66708a]">仅检查当前一个订单范围，不保存草案或执行付款；跨草案冲突尚未校验。比例以基点输入，10,000 代表 100%。订单和计算证据只填不含个人信息的不透明引用。</p>
     <div className="mt-2 grid gap-2 sm:grid-cols-2">
-      <input className={inputClass} aria-label={`分佣规则版本 ${creatorName}`} placeholder="拟议规则版本" value={version} onChange={(event) => setVersion(event.target.value)} />
-      <input className={inputClass} aria-label={`规则失效时间 ${creatorName}`} type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} />
-      <input className={inputClass} aria-label={`订单引用 ${creatorName}`} placeholder="order: 加 32 位十六进制编号；多个用逗号分隔" value={orders} onChange={(event) => setOrders(event.target.value)} />
-      <input className={inputClass} aria-label={`计算证据 ${creatorName}`} placeholder="evidence: 加 32 位十六进制编号" value={evidence} onChange={(event) => setEvidence(event.target.value)} />
-      <input className={inputClass} aria-label={`开发比例 ${creatorName}`} type="number" placeholder="开发基点" value={development} onChange={(event) => setDevelopment(event.target.value)} />
-      <input className={inputClass} aria-label={`履约比例 ${creatorName}`} type="number" placeholder="履约基点" value={fulfillment} onChange={(event) => setFulfillment(event.target.value)} />
-      <input className={inputClass} aria-label={`维护比例 ${creatorName}`} type="number" placeholder="维护基点" value={maintenance} onChange={(event) => setMaintenance(event.target.value)} />
+      <input className={inputClass} aria-label={`分佣规则版本 ${creatorName}`} placeholder="拟议规则版本" value={version} onChange={(event) => change(setVersion, event.target.value)} />
+      <input className={inputClass} aria-label={`规则失效时间 ${creatorName}`} type="datetime-local" value={expiresAt} onChange={(event) => change(setExpiresAt, event.target.value)} />
+      <input className={inputClass} aria-label={`订单引用 ${creatorName}`} placeholder="order: 加 32 位十六进制编号；多个用逗号分隔" value={orders} onChange={(event) => change(setOrders, event.target.value)} />
+      <input className={inputClass} aria-label={`计算证据 ${creatorName}`} placeholder="evidence: 加 32 位十六进制编号" value={evidence} onChange={(event) => change(setEvidence, event.target.value)} />
+      <input className={inputClass} aria-label={`开发比例 ${creatorName}`} type="number" placeholder="开发基点" value={development} onChange={(event) => change(setDevelopment, event.target.value)} />
+      <input className={inputClass} aria-label={`履约比例 ${creatorName}`} type="number" placeholder="履约基点" value={fulfillment} onChange={(event) => change(setFulfillment, event.target.value)} />
+      <input className={inputClass} aria-label={`维护比例 ${creatorName}`} type="number" placeholder="维护基点" value={maintenance} onChange={(event) => change(setMaintenance, event.target.value)} />
     </div>
     <Button className="mt-2" variant="outline" disabled={busy || !ready} onClick={() => void preflight()}>预检分佣草案</Button>
     {result && <div className="mt-2 text-[12px]" role="status">
