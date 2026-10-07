@@ -33,12 +33,23 @@ def read_env(path: Path) -> dict[str, str]:
         if not line or line.lstrip().startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip('"')
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        values[key.strip()] = value
     return values
 
 
 def fingerprint(value: str) -> str:
     return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def merge_secret_credentials(
+    existing: dict[str, object], managed: dict[str, dict[str, str]]
+) -> dict[str, object]:
+    merged = {key: value for key, value in existing.items() if isinstance(value, dict)}
+    merged.update(managed)
+    return merged
 
 
 def deterministic_id(tenant_id: str, role: str) -> str:
@@ -211,7 +222,7 @@ def main() -> None:
         "version": 1,
         "provider": "casdoor",
         "updated_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "credentials": new_credentials,
+        "credentials": merge_secret_credentials(existing_credentials, new_credentials),
     }
     secure_atomic_json(args.secret_file.resolve(), secret_payload)
 

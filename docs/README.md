@@ -6,6 +6,10 @@ Start a development session with the durable memory and current handoff below. P
 
 - [Current project functional audit and handover report, 2026-09-12](reports/报告.md)
 
+## Current architecture
+
+- [Joukir project architecture and runtime overview, 2026-09-23](architecture/项目架构与运行全景.md) — source map, execution flows, sidebar, authorization, storage, startup, and verification.
+
 ## Development context and governance
 
 - [Stable project memory](PROJECT_MEMORY.md)
@@ -66,6 +70,8 @@ The cross-border PRD and integrated plan refer to `prd/lan-multiuser-codex-memor
 
 ## Current designs and implementation plans
 
+- [WeKnora independent knowledge platform design, 2026-09-28](superpowers/specs/2026-09-28-weknora-knowledge-platform-design.md)
+- [WeKnora independent knowledge platform implementation plan, 2026-09-28](superpowers/plans/2026-09-28-weknora-knowledge-platform.md)
 - [Open Plaza knowledge, SOP, and tool creation entries design, 2026-09-23](superpowers/specs/2026-09-23-open-plaza-create-entries-design.md)
 - [Open Plaza knowledge, SOP, and tool creation entries implementation plan, 2026-09-23](superpowers/plans/2026-09-23-open-plaza-create-entries.md)
 - [TikTok P3-B1 historical facts, dashboard and reconciliation design, 2026-09-23](superpowers/specs/2026-09-23-tiktok-p3b1-dashboard-fulfillment-design.md)

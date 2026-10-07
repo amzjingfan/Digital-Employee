@@ -26,6 +26,15 @@ def env_value(name: str, default: str) -> str:
     return os.environ.get(name) or default
 
 
+def loopback_no_proxy() -> str:
+    entries = [
+        value.strip()
+        for value in env_value("NO_PROXY", env_value("no_proxy", "")).split(",")
+        if value.strip()
+    ]
+    return ",".join(dict.fromkeys([*entries, "localhost", "127.0.0.1", "::1"]))
+
+
 SINGLE_PORT = env_value("SINGLE_PORT", "1") != "0"
 APP_HOST = env_value("APP_HOST", "127.0.0.1")
 APP_PORT = env_value("APP_PORT", "5173")
@@ -55,6 +64,7 @@ else:
         ]
     )
 CORS_ORIGINS = env_value("CORS_ORIGINS", default_cors_origins)
+NO_PROXY = loopback_no_proxy()
 
 
 def url_host(host: str) -> str:
@@ -125,7 +135,9 @@ class Service:
         stderr = self.err_file.open("ab", buffering=0)
         process_options: dict[str, object] = {"start_new_session": True}
         if sys.platform == "win32":
-            process_options = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+            process_options = {
+                "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+            }
         self.process = subprocess.Popen(
             self.command,
             cwd=self.cwd,
@@ -249,7 +261,12 @@ def build_services() -> list[Service]:
                     "--port",
                     APP_PORT,
                 ],
-                env={"CORS_ORIGINS": CORS_ORIGINS, "TOOL_BASE_URL": TOOL_BASE_URL},
+                env={
+                    "CORS_ORIGINS": CORS_ORIGINS,
+                    "TOOL_BASE_URL": TOOL_BASE_URL,
+                    "NO_PROXY": NO_PROXY,
+                    "no_proxy": NO_PROXY,
+                },
                 health_url=f"http://{url_host(APP_HOST)}:{APP_PORT}/api/health",
             )
         ]
@@ -268,7 +285,12 @@ def build_services() -> list[Service]:
                 "--port",
                 BACKEND_PORT,
             ],
-            env={"CORS_ORIGINS": CORS_ORIGINS, "TOOL_BASE_URL": TOOL_BASE_URL},
+            env={
+                "CORS_ORIGINS": CORS_ORIGINS,
+                "TOOL_BASE_URL": TOOL_BASE_URL,
+                "NO_PROXY": NO_PROXY,
+                "no_proxy": NO_PROXY,
+            },
             health_url=f"http://{url_host(BACKEND_HOST)}:{BACKEND_PORT}/api/health",
         ),
         Service(

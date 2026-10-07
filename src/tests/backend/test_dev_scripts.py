@@ -5,6 +5,9 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = ROOT_DIR / "scripts"
@@ -27,6 +30,40 @@ def test_supervisor_uses_platform_specific_executables() -> None:
     assert supervisor._backend_python("linux") == ROOT_DIR / "backend/.venv/bin/python"
     assert supervisor._vite_executable("win32") == ROOT_DIR / "frontend-enterprise/node_modules/.bin/vite.cmd"
     assert supervisor._vite_executable("darwin") == ROOT_DIR / "frontend-enterprise/node_modules/.bin/vite"
+
+
+def test_supervisor_bypasses_system_proxy_for_loopback_dependencies(monkeypatch) -> None:
+    monkeypatch.setenv("NO_PROXY", "internal.example")
+    supervisor = _load_script("dev_supervisor")
+
+    app_service = supervisor.build_services()[0]
+
+    expected = "internal.example,localhost,127.0.0.1,::1"
+    assert app_service.env["NO_PROXY"] == expected
+    assert app_service.env["no_proxy"] == expected
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process creation flags")
+def test_supervisor_starts_windows_service_without_console_window(monkeypatch, tmp_path) -> None:
+    supervisor = _load_script("dev_supervisor")
+    monkeypatch.setattr(supervisor, "RUN_DIR", tmp_path / "run")
+    monkeypatch.setattr(supervisor, "LOG_DIR", tmp_path / "logs")
+    creationflags = None
+
+    def fake_popen(_command, **kwargs):
+        nonlocal creationflags
+        creationflags = kwargs["creationflags"]
+        kwargs["stdout"].close()
+        kwargs["stderr"].close()
+        return SimpleNamespace(pid=12345)
+
+    monkeypatch.setattr(supervisor.subprocess, "Popen", fake_popen)
+    service = supervisor.Service(name="app", cwd=tmp_path, command=[sys.executable])
+
+    service.start()
+
+    assert creationflags is not None
+    assert creationflags & subprocess.CREATE_NO_WINDOW
 
 
 def test_pid_alive_recognizes_current_process() -> None:
