@@ -107,6 +107,14 @@ beforeEach(() => {
 });
 
 describe('AppSidebar agent switcher team group', () => {
+  it('omits the TikTok business unit from the disabled deployment menu', () => {
+    renderSidebar({ selectedAgentId: agent.id, isAdmin: true });
+
+    const nav = screen.getByRole('navigation', { name: '管理菜单' });
+    expect(within(nav).queryByText('TikTok 事业部')).toBeNull();
+    expect(within(nav).getByText('业务闭环')).toBeTruthy();
+  });
+
   it('keeps the current employee reachable with the full admin menu, expanded and collapsed', async () => {
     const user = userEvent.setup();
     renderSidebar({ selectedAgentId: agent.id, sidebarAgent: agent, isAdmin: true });

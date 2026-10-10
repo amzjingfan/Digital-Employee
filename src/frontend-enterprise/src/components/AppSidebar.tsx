@@ -61,6 +61,8 @@ type NavItem = {
   Icon: IconComponent;
 };
 
+const TIKTOK_BUSINESS_UNIT_ENABLED = import.meta.env.VITE_TIKTOK_BUSINESS_UNIT_ENABLED === 'true';
+
 const PRIMARY_NAV: NavItem[] = [
   { route: EnterpriseRoute.Platform, label: '开放广场平台', Icon: IconPlatform },
   { route: EnterpriseRoute.Agents, label: '我的数字员工', Icon: IconAgents },
@@ -72,7 +74,9 @@ const PRIMARY_NAV: NavItem[] = [
   { route: EnterpriseRoute.AdvertisingGovernance, label: '广告治理', Icon: IconHistory },
   { route: EnterpriseRoute.OperationsReports, label: '运营报告', Icon: IconCalendar },
   { route: EnterpriseRoute.Channels, label: '渠道接入', Icon: IconGlobe },
-  { route: EnterpriseRoute.TikTokBusinessUnit, label: 'TikTok 事业部', Icon: IconGlobe },
+  ...(TIKTOK_BUSINESS_UNIT_ENABLED
+    ? [{ route: EnterpriseRoute.TikTokBusinessUnit, label: 'TikTok 事业部', Icon: IconGlobe }]
+    : []),
 ];
 
 const PROFILE_NAV: NavItem[] = [

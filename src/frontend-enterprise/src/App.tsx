@@ -118,6 +118,8 @@ import {
 import type { AgentProfileRead, ModelConfigRead, TeamRead } from "./types";
 import { useI18n } from "./i18n";
 
+const TIKTOK_BUSINESS_UNIT_ENABLED = import.meta.env.VITE_TIKTOK_BUSINESS_UNIT_ENABLED === "true";
+
 const ENTERPRISE_SIDEBAR_STORAGE_KEY = "ultrarag_enterprise_sidebar_expanded";
 const MODEL_CONFIGS_UPDATED_EVENT = "ultrarag-enterprise-model-configs-updated";
 type AgentCreateMode = "copy" | "blank";
@@ -180,7 +182,9 @@ function Shell({
   const allowedEnterpriseRoutes = useMemo(
     () => new Set(
       Object.values(EnterpriseRoute).filter((route) => (
-        route.startsWith("/enterprise") && canAccessEnterpriseRoute(auth.user, route)
+        route.startsWith("/enterprise")
+        && (TIKTOK_BUSINESS_UNIT_ENABLED || route !== EnterpriseRoute.TikTokBusinessUnit)
+        && canAccessEnterpriseRoute(auth.user, route)
       )),
     ),
     [auth.user],
@@ -734,10 +738,12 @@ function Shell({
                   <BusinessResourcesPage currentUser={auth.user} onLogout={onLogout} />
                 }
               />
-              <Route
-                path="/enterprise/tiktok"
-                element={<TikTokBusinessUnitPage currentUser={auth.user} onLogout={onLogout} />}
-              />
+              {TIKTOK_BUSINESS_UNIT_ENABLED && (
+                <Route
+                  path="/enterprise/tiktok"
+                  element={<TikTokBusinessUnitPage currentUser={auth.user} onLogout={onLogout} />}
+                />
+              )}
               <Route
                 path="/enterprise/operations-reports"
                 element={
@@ -1184,6 +1190,12 @@ function AuthedApp({
   guidesCompleted: boolean;
 }) {
   const location = useLocation();
+  if (
+    !TIKTOK_BUSINESS_UNIT_ENABLED
+    && location.pathname.startsWith(EnterpriseRoute.TikTokBusinessUnit)
+  ) {
+    return <Navigate to={EnterpriseRoute.Gallery} replace />;
+  }
   if (location.pathname.startsWith("/enterprise") && !canAccessEnterpriseRoute(auth.user, location.pathname)) {
     return <Navigate to={EnterpriseRoute.Gallery} replace />;
   }

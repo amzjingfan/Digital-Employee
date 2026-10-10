@@ -7,12 +7,19 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
+  const omitTikTok = mode === 'production' && env.VITE_TIKTOK_BUSINESS_UNIT_ENABLED !== 'true';
   return {
     plugins: [react(), tailwindcss(), svgr()],
     resolve: {
-      alias: {
-        '@': path.resolve(__dirname, './src'),
-      },
+      alias: [
+        ...(omitTikTok
+          ? [{
+              find: /^\.\/pages\/TikTokBusinessUnitPage$/,
+              replacement: path.resolve(__dirname, './src/pages/DisabledModulePage.tsx'),
+            }]
+          : []),
+        { find: '@', replacement: path.resolve(__dirname, './src') },
+      ],
       dedupe: [
         '@testing-library/react',
         '@testing-library/user-event',
