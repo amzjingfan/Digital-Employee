@@ -9,6 +9,7 @@ from zipfile import ZipFile
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -27,6 +28,7 @@ from app.api.general_skills import (
     run_general_skill,
     run_general_skill_stream,
 )
+from app.db.database import set_tenant_context
 from app.db.models import (
     AgentEvent,
     AgentProfile,
@@ -1130,7 +1132,10 @@ def test_general_skill_archive_publish_and_delete_api(monkeypatch) -> None:
 
 
 @pytest.mark.anyio
-async def test_general_skill_stream_executes_through_forced_harness_v2(monkeypatch) -> None:
+@pytest.mark.parametrize("database_failure", [False, True])
+async def test_general_skill_stream_executes_through_forced_harness_v2(
+    monkeypatch, database_failure: bool
+) -> None:
     test_engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -1143,7 +1148,10 @@ async def test_general_skill_stream_executes_through_forced_harness_v2(monkeypat
         raise AssertionError("legacy GeneralSkillRunner must not handle skill tests")
 
     def fake_handle_turn(self, request):  # noqa: ANN001
+        assert self.db.info.get("staffdeck_tenant_id") == request.tenant_id
         captured_requests.append(request)
+        if database_failure:
+            raise SQLAlchemyError("INSERT secret SQL")
         self.db.add(
             AgentEvent(
                 tenant_id=request.tenant_id,
@@ -1176,11 +1184,19 @@ async def test_general_skill_stream_executes_through_forced_harness_v2(monkeypat
         )
 
     general_skills_module = sys.modules[run_general_skill.__module__]
+    original_debug_events_after = general_skills_module._skill_debug_events_after
+
+    def scoped_debug_events_after(db, tenant_id, session_id, cursor):  # noqa: ANN001
+        assert db.info.get("staffdeck_tenant_id") == tenant_id
+        return original_debug_events_after(db, tenant_id, session_id, cursor)
+
     monkeypatch.setattr(general_skills_module, "engine", test_engine)
     monkeypatch.setattr(general_skills_module.AgentLoop, "handle_turn", fake_handle_turn)
+    monkeypatch.setattr(general_skills_module, "_skill_debug_events_after", scoped_debug_events_after)
     monkeypatch.setattr(GeneralSkillRunner, "run", fail_legacy_runner)
 
     with Session(test_engine) as db:
+        set_tenant_context(db, "tenant_demo")
         _seed_minimal_tenant(db)
         db.add(
             AgentProfile(
@@ -1226,6 +1242,10 @@ async def test_general_skill_stream_executes_through_forced_harness_v2(monkeypat
     assert captured_requests[0].message_visibility == "internal"
     assert debug_session.id == captured_requests[0].session_id
     assert '"execution_engine": "harness_v2"' in body
+    if database_failure:
+        assert "技能测试数据库操作失败" in body
+        assert "INSERT secret SQL" not in body
+        return
     assert "已加载技能说明" in body
     assert "北京天气晴朗" in body
     assert '"path": "weather.txt"' in body

@@ -18,6 +18,7 @@ from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, select
 
 from app.agents.branching import (
@@ -39,7 +40,7 @@ from app.capabilities.local_general_skill import (
 )
 from app.capability_scope import normalize_capability_scope
 from app.core import AgentLoop
-from app.db import engine, get_session
+from app.db import engine, get_session, set_tenant_context
 from app.db.models import (
     AgentEvent,
     AgentResourceBinding,
@@ -822,6 +823,7 @@ def run_general_skill_stream(
         def worker() -> None:
             try:
                 with Session(engine) as worker_db:
+                    set_tenant_context(worker_db, request.tenant_id)
                     response = AgentLoop(worker_db).handle_turn(harness_request)
                     assistant = worker_db.exec(
                         select(Message)
@@ -843,7 +845,12 @@ def run_general_skill_stream(
                         )
                     )
             except Exception as exc:  # pragma: no cover - defensive stream boundary
-                terminal.put(("error", {"message": str(exc)}))
+                message = (
+                    "技能测试数据库操作失败，请联系管理员"
+                    if isinstance(exc, SQLAlchemyError)
+                    else str(exc)
+                )
+                terminal.put(("error", {"message": message}))
 
         threading.Thread(target=worker, daemon=True).start()
         yield _sse(
@@ -862,6 +869,7 @@ def run_general_skill_stream(
         cursor: tuple[object, str] | None = None
         pending_terminal: tuple[str, object] | None = None
         with Session(engine) as poll_db:
+            set_tenant_context(poll_db, request.tenant_id)
             while True:
                 rows = _skill_debug_events_after(
                     poll_db,
