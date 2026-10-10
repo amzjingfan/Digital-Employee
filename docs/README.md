@@ -48,6 +48,7 @@ The cross-border PRD and integrated plan refer to `prd/lan-multiuser-codex-memor
 
 ## Operations and restoration
 
+- [Joukir 内网部署记录，2026-10-08](operations/INTERNAL_DEPLOYMENT_20261008.md) — 当前 Linux 主机、HTTPS、数据库、身份、备份与待办。
 - [TikTok live-write release gate runbook](runbooks/tiktok-live-write-release-gate.md)
 - [StaffDeck platform deployment guide](../src/deploy/staffdeck-platform/README.md)
 - [StaffDeck platform source manifest](../src/deploy/staffdeck-platform/SOURCE_MANIFEST.md)
