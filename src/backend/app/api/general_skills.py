@@ -89,7 +89,9 @@ CLAWHUB_HOSTS = {"clawhub.ai", "www.clawhub.ai"}
 SKILLHUB_HOSTS = {"skillhub.ai", "www.skillhub.ai"}
 REMOTE_SKILLHUB_HOSTS = CLAWHUB_HOSTS | SKILLHUB_HOSTS
 CLAWHUB_DOWNLOAD_ENDPOINT = "https://wry-manatee-359.convex.site/api/v1/download"
-LOCAL_REFERENCE_PATTERN = re.compile(r"(?<![\w./-])(?:\./)?references/[^\s`'\"<>|]+")
+LOCAL_REFERENCE_PATTERN = re.compile(
+    r"(?<![\w./-])(?:\./)?references/[^\s`'\"<>|()\[\]{},;:!?，。；：！？、]+"
+)
 
 
 def _agent_id_or_none(agent_id: object | None) -> str | None:
