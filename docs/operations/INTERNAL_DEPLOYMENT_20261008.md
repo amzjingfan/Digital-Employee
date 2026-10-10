@@ -1,5 +1,12 @@
 # Joukir 内网部署记录（2026-10-08）
 
+## 2026-10-10 技能文件夹多选批量导入
+
+- 当前应用发布目录为 `/home/joukir/releases/e5f8740-batch-skill-import`，源码对应本地分支提交 `e5f8740`。多技能文件夹弹窗支持勾选一项、多项或全选；点击“导入选中”后立即启用。新增批量接口将整批保存放在同一数据库事务中，任一项失败则整批回滚。
+- 切换前 `joukir-backup.service` 成功；旧应用发布 `/home/joukir/releases/6e524a1-folder-import` 和旧 unit `/home/joukir/runtime/joukir.service.pre-e5f8740` 保留。前端以 `VITE_TENANT_ID=tenant_internal`、`VITE_TIKTOK_BUSINESS_UNIT_ENABLED=false` 构建，线上主 JS 与本地构建的 SHA-256 相同。
+- 切换后健康、OIDC 配置、技能页面均为 200，TikTok API 为 404，PostgreSQL healthy。只读数据库计数发布前后均为 1 租户、2 用户、11 通用技能、19 知识库、17 工具。本轮没有上传或真实导入用户给出的四个技能文件夹。两套多技能合集的文件总大小分别约 0.03 MB 与 9.75 MB，低于 50 MB 站点请求上限。
+- 自动化浏览器的 Chrome 桥接仍报 `nodeRepl.fetch request failed`；已登录管理员在可信任内网 CA 的浏览器中的最终视觉验收待完成。此项完成前分支保留，暂不合并 `main`。
+
 ## 2026-10-10 技能文件夹导入修复
 
 - 当前应用发布目录为 `/home/joukir/releases/6e524a1-folder-import`，源码对应本地提交 `6e524a1`。更新了技能文件夹子技能选择、原子 UTF-8 读取及服务端多 `SKILL.md` 校验；四个下载目录没有上传到服务器，也没有创建技能记录。
