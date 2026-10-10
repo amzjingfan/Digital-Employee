@@ -232,13 +232,24 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           )}
         </div>
 
-        <div className="mt-[32px] flex w-full justify-center">
+        <div className="relative mt-[32px] w-full max-w-[1200px]">
           <img
             src={loginPreview}
             alt="九骥 Joukir 产品预览"
             className="h-auto w-full max-w-[1200px] select-none object-contain"
             draggable={false}
           />
+          <svg
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 size-full"
+            viewBox="0 0 2400 1492"
+            preserveAspectRatio="xMinYMin meet"
+          >
+            <rect x="132" y="63" width="238" height="65" fill="white" />
+            <text x="139" y="110" fill="#18181a" fontSize="35" fontWeight="700">
+              九骥 Joukir
+            </text>
+          </svg>
         </div>
       </main>
     </div>

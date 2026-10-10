@@ -3064,7 +3064,7 @@
   "安全沙盒不可用，当前已自动降级为无沙盒执行。": "The secure sandbox is unavailable. Execution has automatically fallen back to running without a sandbox.",
   "高风险部署：执行可以访问九骥 Joukir 进程权限范围内的主机资源。生产环境请配置已签名的 Windows SRT，或将九骥 Joukir 放入隔离容器或专用虚拟机。": "High-risk deployment: executions can access host resources available to the Joukir process. In production, configure a signed Windows SRT or run Joukir in an isolated container or dedicated virtual machine.",
   "当前九骥 Joukir 由 root 用户运行，Linux SRT 无法安全创建 UID 映射。": "Joukir is currently running as root, so Linux SRT cannot safely create a UID mapping.",
-  "请使用独立的普通服务账号（例如 staffdeck）重启九骥 Joukir。": "Restart Joukir with a dedicated non-root service account, such as staffdeck.",
+  "请使用独立的普通服务账号（例如 joukir）重启九骥 Joukir。": "Restart Joukir with a dedicated non-root service account, such as joukir.",
   "当前主机禁止 Linux user namespace，SRT 无法启动。": "Linux user namespaces are disabled on this host, so SRT cannot start.",
   "请启用 kernel.unprivileged_userns_clone=1，并将 user.max_user_namespaces 设置为大于 0。": "Enable kernel.unprivileged_userns_clone=1 and set user.max_user_namespaces to a value greater than 0.",
   "Windows 沙盒初始化失败：账户/WFP 尚未就绪，或捆绑的 Node/SRT 运行时未通过 Windows 应用控制校验。": "Windows sandbox initialization failed: the account or WFP is not ready, or the bundled Node/SRT runtime did not pass Windows application-control validation.",

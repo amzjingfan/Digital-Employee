@@ -66,7 +66,7 @@ def _environment_diagnostics(backend: str) -> SandboxDiagnostics:
             return SandboxDiagnostics(
                 "unavailable", "SANDBOX_ROOT_USER",
             "当前九骥 Joukir 由 root 用户运行，Linux SRT 无法安全创建 UID 映射。",
-            "请使用独立的普通服务账号（例如 staffdeck）重启九骥 Joukir。",
+            "请使用独立的普通服务账号（例如 joukir）重启九骥 Joukir。",
             )
         userns_clone = _read_int("/proc/sys/kernel/unprivileged_userns_clone")
         max_namespaces = _read_int("/proc/sys/user/max_user_namespaces")

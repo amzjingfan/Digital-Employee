@@ -143,13 +143,26 @@ export default function OnboardingGuide() {
           {current.titleLines.join("")}
         </DialogTitle>
 
-        <div className="hidden h-[560px] bg-[#e9eef6] md:block">
+        <div className="relative hidden h-[560px] overflow-hidden bg-[#e9eef6] md:block">
           <img
             key={current.image}
             src={current.image}
             alt=""
             className="size-full object-cover object-top-left"
           />
+          {step === 0 && (
+            <svg
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 size-full"
+              viewBox="0 0 1816 1171"
+              preserveAspectRatio="xMinYMin slice"
+            >
+              <rect x="112" y="68" width="190" height="48" fill="white" />
+              <text x="120" y="101" fill="#18181a" fontSize="28" fontWeight="700">
+                九骥 Joukir
+              </text>
+            </svg>
+          )}
         </div>
 
         <div className="relative flex h-[560px] flex-col justify-between bg-linear-to-b from-[#f9fcff] to-[#e3f1ff] px-[36px] pt-[10px] pb-[32px]">

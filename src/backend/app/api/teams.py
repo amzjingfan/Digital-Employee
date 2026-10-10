@@ -869,7 +869,7 @@ def export_team_conversation_log(
         "sessions": _session_details_payload(db, tenant_id, ordered_sessions),
     }
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    filename = f"staffdeck-team-log-{_safe_filename_part(team.id)}-{timestamp}.json"
+    filename = f"joukir-team-log-{_safe_filename_part(team.id)}-{timestamp}.json"
     return _json_download_response(payload, filename)
 
 

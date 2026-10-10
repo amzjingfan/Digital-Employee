@@ -245,7 +245,7 @@ export default function ConversationLogsTab() {
       const blob = await api.blob(
         `/api/enterprise/sessions/${encodeURIComponent(row.id)}/export?tenant_id=${TENANT_ID}`,
       );
-      downloadBlob(blob, `staffdeck-conversation-log-${safeFilenamePart(row.id)}.json`);
+      downloadBlob(blob, `joukir-conversation-log-${safeFilenamePart(row.id)}.json`);
       notify.success('对话日志 JSON 已导出');
     } catch (error) {
       notify.error(error instanceof Error ? error.message : '导出对话日志失败');
@@ -267,7 +267,7 @@ export default function ConversationLogsTab() {
         `/api/enterprise/sessions/export?tenant_id=${TENANT_ID}`,
         { session_ids: sessionIds },
       );
-      downloadBlob(blob, `staffdeck-conversation-logs-${filenameTimestamp()}.json`);
+      downloadBlob(blob, `joukir-conversation-logs-${filenameTimestamp()}.json`);
       notify.success(`已导出 ${sessionIds.length} 条对话日志`);
     } catch (error) {
       notify.error(error instanceof Error ? error.message : '批量导出对话日志失败');

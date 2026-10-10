@@ -474,7 +474,7 @@ export default function TeamDetailPage({
     const anchor = document.createElement('a');
     const safeName = (team?.name || teamId).replace(/[^\w\-\u4e00-\u9fff]+/g, '-');
     anchor.href = url;
-    anchor.download = `staffdeck-team-log-${safeName || teamId}.json`;
+    anchor.download = `joukir-team-log-${safeName || teamId}.json`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();

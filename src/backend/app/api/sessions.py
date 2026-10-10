@@ -84,7 +84,7 @@ def export_session_logs(
             "count": len(details),
             "items": details,
         },
-        f"staffdeck-conversation-logs-{exported_at.strftime('%Y%m%d-%H%M%S')}.json",
+        f"joukir-conversation-logs-{exported_at.strftime('%Y%m%d-%H%M%S')}.json",
     )
 
 
@@ -103,7 +103,7 @@ def export_session_log(
             "exported_at": datetime.now(UTC),
             "item": _session_detail_payload(db, tenant_id, row),
         },
-        f"staffdeck-conversation-log-{_safe_filename_part(session_id)}.json",
+        f"joukir-conversation-log-{_safe_filename_part(session_id)}.json",
     )
 
 
