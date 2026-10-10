@@ -4496,5 +4496,22 @@
   "正在导入…": "Importing…",
   "导入选中（": "Import selected (",
   "导入选中（{1}）": "Import selected ({1})",
-  "）": ")"
+  "）": ")",
+  "收到测试问题": "Received test question",
+  "制定执行计划": "Created execution plan",
+  "确定处理方式": "Selected handling approach",
+  "执行操作": "Running action",
+  "加载技能说明": "Loaded skill instructions",
+  "工具执行完成": "Tool finished",
+  "任务执行结束": "Task finished",
+  "生成最终回复": "Generated final reply",
+  "更新会话状态": "Updated session status",
+  "检查技能适用范围": "Checked skill applicability",
+  "开始执行技能": "Started skill",
+  "继续执行技能": "Resumed skill",
+  "进入下一步骤": "Moved to next step",
+  "阅读技能内容": "Reading skill content",
+  "完成技能阅读": "Finished reading skill",
+  "读取技能失败": "Failed to read skill",
+  "执行步骤": "Execution step"
 }

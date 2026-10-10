@@ -67,6 +67,7 @@ import { ResourceImportDialog } from '@/components/ResourceImportDialog';
 import SkillFolderSelectionDialog from '@/components/SkillFolderSelectionDialog';
 import CodeBlock, { renderCodeTokens } from '../components/CodeBlock';
 import { renderMarkdownBlocks } from './chat/chatHelpers';
+import { SkillRunReply, SKILL_MARKDOWN_PREVIEW_BODY_CLASS, presentSkillTrace } from './skillRunPresentation';
 import IconAdd from '../assets/icons/add.svg?react';
 import IconArrowRight from '../assets/icons/arrow-right.svg?react';
 import IconFolder from '../assets/icons/cap-folder.svg?react';
@@ -150,8 +151,6 @@ const SKILL_CODE_EDITOR_CLASS =
   'relative min-h-0 overflow-hidden bg-[#fafafa] font-mono text-[13px] leading-[1.7] tab-[2] shadow-[inset_0_1px_0_#e3e7f1]';
 const SKILL_MARKDOWN_PREVIEW_CLASS =
   'min-h-0 overflow-auto bg-white p-[18px_20px] text-[14px] leading-[1.8] text-[#18181a]';
-const SKILL_MARKDOWN_PREVIEW_BODY_CLASS =
-  '[&>h1]:mb-4 [&>h1]:text-[22px] [&>h1]:font-semibold [&>h1]:leading-[1.35] [&>h2]:mb-3 [&>h2]:mt-6 [&>h2]:text-[18px] [&>h2]:font-semibold [&>h2]:leading-[1.4] [&>h3]:mb-2 [&>h3]:mt-5 [&>h3]:text-[16px] [&>h3]:font-semibold [&>p]:mb-3 [&>p]:whitespace-pre-wrap [&>ul]:mb-3 [&>ol]:mb-3 [&>ul]:pl-6 [&>ol]:pl-6 [&>li]:mb-1 [&>blockquote]:mb-3 [&>blockquote]:border-l-2 [&>blockquote]:border-[#e3e7f1] [&>blockquote]:pl-4 [&>blockquote]:text-[#757f9c] [&>code]:rounded-[4px] [&>code]:bg-[#f6f7fb] [&>code]:px-1 [&>code]:py-[1px] [&>code]:font-mono [&>pre]:mb-3 [&>pre]:overflow-auto [&>pre]:rounded-[10px] [&>pre]:bg-[#f6f7fb] [&>pre]:p-4 [&_table]:mb-3 [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-[#e3e7f1] [&_th]:bg-[#f6f7fb] [&_th]:px-3 [&_th]:py-2 [&_td]:border [&_td]:border-[#e3e7f1] [&_td]:px-3 [&_td]:py-2';
 const SKILL_CODE_HIGHLIGHT_CLASS =
   'pointer-events-none absolute inset-0 z-[1] m-0 overflow-hidden whitespace-pre p-[18px_20px] text-[#18181a] tab-[2]';
 const SKILL_CODE_HIGHLIGHT_CODE_CLASS =
@@ -164,7 +163,7 @@ const SKILL_SECTION_LABEL_CLASS =
 const SKILL_REPLY_PANEL_CLASS =
   'rounded-xl border border-[#eceef1] bg-white p-[16px_18px]';
 const SKILL_REPLY_TEXT_CLASS =
-  'mb-0! text-[15px] leading-[1.8] text-[#18181a]';
+  'text-[15px] leading-[1.8] text-[#18181a]';
 const SKILL_TRACE_LIST_CLASS =
   'grid gap-[10px] rounded-xl border border-[#eceef1] bg-[#fbfcfd] p-[12px_14px]';
 const SKILL_TRACE_ITEM_CLASS =
@@ -244,27 +243,6 @@ type SkillDirectoryEntry = SkillFileSystemEntry & {
       failure?: (error: DOMException) => void,
     ) => void;
   };
-};
-
-const PHASE_LABELS: Record<string, string> = {
-  skill_loaded: '加载技能',
-  planning: '生成执行方案',
-  plan_created: '生成代码',
-  attempt_started: '开始运行',
-  running_code: '运行代码',
-  stdout_chunk: '运行输出',
-  stderr_chunk: '错误输出',
-  code_finished: '读取运行结果',
-  code_timeout: '运行超时',
-  reflection_passed: '校验通过',
-  reflection_retrying: '反思修复',
-  reflection_stopped: '停止重试',
-  repair_planning: '重新生成代码',
-  repair_failed: '修复失败',
-  plan_failed: '生成失败',
-  replying: '生成回复',
-  reply_created: '完成回复',
-  reply_failed: '回复失败',
 };
 
 function formatJson(value: unknown): string {
@@ -1040,6 +1018,7 @@ function ClawHubDialog({
 
 function traceDetail(item: Record<string, unknown>): string {
   return [
+    typeof item.message === 'string' && item.message.length > 180 ? item.message : undefined,
     item.rationale,
     item.expected_output,
     item.phase === 'code_finished' ? item.stdout_preview : undefined,
@@ -2877,9 +2856,10 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
                     <>
                 <section className={SKILL_REPLY_PANEL_CLASS}>
                   <div className={SKILL_SECTION_LABEL_CLASS}>最终回复</div>
-                  <p className={SKILL_REPLY_TEXT_CLASS}>
-                    {activeResult.reply || (loading ? '正在运行技能...' : '暂无回复')}
-                  </p>
+                  <SkillRunReply
+                    className={SKILL_REPLY_TEXT_CLASS}
+                    content={activeResult.reply || (loading ? '正在运行技能...' : '暂无回复')}
+                  />
                 </section>
 
                 <section>
@@ -2887,6 +2867,7 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
                   <div className={SKILL_TRACE_LIST_CLASS}>
                     {traceItems.map((item, index) => {
                       const phase = typeof item.phase === 'string' ? item.phase : '';
+                      const presentation = presentSkillTrace(item);
                       const detail = traceDetail(item);
                       const code = traceItemCode(item);
                       const codeTitle = typeof item.attempt === 'number'
@@ -2896,8 +2877,8 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
                         <div className={SKILL_TRACE_ITEM_CLASS} key={`${phase || 'phase'}-${index}`}>
                           <div className={SKILL_TRACE_DOT_CLASS} />
                           <div className={SKILL_TRACE_ITEM_BODY_CLASS}>
-                            <div className={SKILL_TRACE_TITLE_CLASS}>{PHASE_LABELS[phase] || String(item.message || phase || '执行')}</div>
-                            <div className={SKILL_TRACE_MESSAGE_CLASS}>{String(item.message || '')}</div>
+                            <div className={SKILL_TRACE_TITLE_CLASS} title={phase}>{presentation.title}</div>
+                            {presentation.message && <div className={SKILL_TRACE_MESSAGE_CLASS}>{presentation.message}</div>}
                             {detail && (
                               <RunCodePanel
                                 className="mt-2"
