@@ -57,6 +57,21 @@ afterEach(() => {
 });
 
 describe('LoginPage', () => {
+  it('shows enterprise SSO when the server enables OIDC', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({
+      enabled: true,
+      login_url: '/api/auth/oidc/login',
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderLogin();
+
+    expect(await screen.findByRole('button', { name: '企业 SSO 登录' })).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/oidc/config', expect.objectContaining({
+      credentials: 'include',
+    }));
+  });
+
   it('shows the original landing hero before revealing credentials', async () => {
     const user = userEvent.setup();
     renderLogin();
@@ -93,7 +108,7 @@ describe('LoginPage', () => {
     await showFormAndEnterCredentials(user, '  admin  ', '  secret  ');
     await user.click(screen.getByRole('button', { name: '登录' }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/auth/login', expect.anything()));
     expect(fetchMock).toHaveBeenCalledWith('/api/auth/login', expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({

@@ -22,10 +22,10 @@ export type LoginPageProps = {
  */
 export default function LoginPage({ onLogin }: LoginPageProps) {
   const { locale, hydrateLocale } = useI18n();
-  const oidcEnabled = import.meta.env.VITE_OIDC_ENABLED === 'true';
   const initialQuery = new URLSearchParams(window.location.search);
   const invitationToken = initialQuery.get('invite_token') || '';
   const invitationTenantId = initialQuery.get('tenant_id') || TENANT_ID;
+  const [oidcEnabled, setOidcEnabled] = useState(false);
   const [showForm, setShowForm] = useState(Boolean(invitationToken));
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -33,6 +33,20 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [usernameError, setUsernameError] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.get<{ enabled: boolean }>('/api/auth/oidc/config')
+      .then(({ enabled }) => {
+        if (!cancelled) setOidcEnabled(enabled);
+      })
+      .catch(() => {
+        if (!cancelled) setOidcEnabled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
