@@ -125,10 +125,10 @@ const PLATFORM_CONFIGS: PlatformConfig[] = [
 const PLATFORM_BY_KIND = new Map(PLATFORM_CONFIGS.map((item) => [item.kind, item]));
 
 const PLATFORM_CREATION: Partial<Record<PlatformKind, { label: string; path: string }>> = {
-  knowledge: { label: '创建开放知识库', path: '/enterprise/knowledge/new' },
+  knowledge: { label: '创建开放知识库', path: '/enterprise/knowledge/new?scope=gallery' },
   'general-skills': { label: '创建开放 Skill', path: '/enterprise/general-skills/new?scope=gallery' },
   skills: { label: '创建开放 SOP', path: '/enterprise/skills/distill?mode=create' },
-  tools: { label: '创建开放工具', path: '/enterprise/tools/new' },
+  tools: { label: '创建开放工具', path: '/enterprise/tools/new?scope=gallery' },
 };
 
 // SD1 line glyph shown in each column header, matching the sidebar mapping.

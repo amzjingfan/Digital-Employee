@@ -11,10 +11,10 @@ import OpenPlatformPage from '@/pages/OpenPlatformPage';
 import type { AgentProfileRead } from '@/types';
 
 const CREATE_PATHS = [
-  ['knowledge', '创建开放知识库', '/enterprise/knowledge/new'],
+  ['knowledge', '创建开放知识库', '/enterprise/knowledge/new?scope=gallery'],
   ['general-skills', '创建开放 Skill', '/enterprise/general-skills/new?scope=gallery'],
   ['skills', '创建开放 SOP', '/enterprise/skills/distill?mode=create&agent_id=overall%2F1%3F'],
-  ['tools', '创建开放工具', '/enterprise/tools/new'],
+  ['tools', '创建开放工具', '/enterprise/tools/new?scope=gallery'],
 ] as const;
 
 function overallAgent(id: string): AgentProfileRead {

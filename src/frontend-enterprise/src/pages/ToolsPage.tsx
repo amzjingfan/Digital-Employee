@@ -991,6 +991,8 @@ export function McpServerEditPage(props: ToolPageProps = {}) {
  */
 function ToolTypeSwitcher({ active, onProtocolChange }: { active: 'http' | 'a2a' | 'mcp'; onProtocolChange?: (protocol: 'http' | 'a2a') => void }) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const gallerySuffix = searchParams.get('scope') === 'gallery' ? '?scope=gallery' : '';
   const options: { value: 'http' | 'a2a' | 'mcp'; label: string; hint: string; to: string }[] = [
     { value: 'http', label: 'HTTP 工具', hint: '配置单个 HTTP 接口作为工具', to: '/enterprise/tools/new' },
     { value: 'a2a', label: 'A2A Agent', hint: '通过 A2A SendMessage 调用远程智能体', to: '/enterprise/tools/new' },
@@ -1007,9 +1009,9 @@ function ToolTypeSwitcher({ active, onProtocolChange }: { active: 'http' | 'a2a'
               key={option.value}
               type="button"
               onClick={() => {
-                if (option.value === 'mcp') navigate(option.to);
+                if (option.value === 'mcp') navigate(`${option.to}${gallerySuffix}`);
                 else if (onProtocolChange) onProtocolChange(option.value);
-                else navigate(`${option.to}?type=${option.value}`);
+                else navigate(`${option.to}?type=${option.value}${gallerySuffix ? '&scope=gallery' : ''}`);
               }}
               className={cn(
                 'relative flex min-w-[200px] flex-1 items-start gap-[10px] rounded-[12px] border px-[16px] py-[12px] text-left transition-all',
@@ -1057,14 +1059,15 @@ function ToolEditorPage({ mode, currentUser, onLogout }: { mode: 'new' | 'edit' 
   const [searchParams] = useSearchParams();
   const { toolId } = useParams();
   const isEdit = mode === 'edit';
+  const forceGalleryScope = searchParams.get('scope') === 'gallery';
   const requestedToolType = searchParams.get('type') === 'a2a' ? 'a2a' : 'http';
 
   const setField = <K extends keyof ToolFormValues>(name: K, value: ToolFormValues[K]) =>
     setValues((prev) => ({ ...prev, [name]: value }));
 
   useEffect(() => {
-    void loadBucketOptions().then(setBucketOptions);
-  }, []);
+    void loadBucketOptions(forceGalleryScope ? '' : currentAgentQuery()).then(setBucketOptions);
+  }, [forceGalleryScope]);
 
   useEffect(() => {
     if (!isEdit) {
@@ -1074,7 +1077,7 @@ function ToolEditorPage({ mode, currentUser, onLogout }: { mode: 'new' | 'edit' 
     }
     if (!toolId) return;
     setLoading(true);
-    const agentQuery = currentAgentQuery();
+    const agentQuery = forceGalleryScope ? '' : currentAgentQuery();
     api
       .get<ToolRead>(`/api/enterprise/tools/${toolId}?tenant_id=${TENANT_ID}${agentQuery}`)
       .then((row) => {
@@ -1083,7 +1086,7 @@ function ToolEditorPage({ mode, currentUser, onLogout }: { mode: 'new' | 'edit' 
       })
       .catch((error) => notify.error(error instanceof Error ? error.message : '加载工具失败'))
       .finally(() => setLoading(false));
-  }, [isEdit, requestedToolType, toolId]);
+  }, [forceGalleryScope, isEdit, requestedToolType, toolId]);
 
   async function save() {
     if (!String(values.name || '').trim()) {
@@ -1098,19 +1101,19 @@ function ToolEditorPage({ mode, currentUser, onLogout }: { mode: 'new' | 'edit' 
     if (!payload) return;
     setLoading(true);
     try {
-      const agentQuery = currentAgentQuery();
+      const agentQuery = forceGalleryScope ? '' : currentAgentQuery();
       const saved = isEdit && toolId
         ? await api.put<ToolRead>(`/api/enterprise/tools/${toolId}${agentQuery ? `?${agentQuery.slice(1)}` : ''}`, payload)
         : await api.post<ToolRead>(`/api/enterprise/tools${agentQuery ? `?${agentQuery.slice(1)}` : ''}`, payload);
       notify.success('已保存');
       announceEnterpriseCapabilityCatalogChange({
         resourceType: 'tool',
-        agentId: readEmployeeScope() || undefined,
+        agentId: forceGalleryScope ? undefined : readEmployeeScope() || undefined,
       });
       setTool(saved);
       setValues(toolToFormValues(saved));
       if (!isEdit) {
-        navigate(`/enterprise/tools/${saved.id}/edit`, { replace: true });
+        navigate(`/enterprise/tools/${saved.id}/edit${forceGalleryScope ? '?scope=gallery' : ''}`, { replace: true });
       }
     } catch (error) {
       notify.error(error instanceof Error ? error.message : '保存失败');
@@ -1139,7 +1142,7 @@ function ToolEditorPage({ mode, currentUser, onLogout }: { mode: 'new' | 'edit' 
         {isEdit && tool && (
           <UIButton
             variant="outline"
-            onClick={() => navigate(`/enterprise/tools/${tool.id}/test`)}
+            onClick={() => navigate(`/enterprise/tools/${tool.id}/test${forceGalleryScope ? '?scope=gallery' : ''}`)}
             className={RETURN_BUTTON_CLASS}
           >
             <ExperimentOutlined />
@@ -1236,18 +1239,20 @@ export function ToolTestPage({ currentUser, onLogout }: ToolPageProps = {}) {
   const [tool, setTool] = useState<ToolRead | null>(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const forceGalleryScope = searchParams.get('scope') === 'gallery';
   const { toolId } = useParams();
 
   useEffect(() => {
     if (!toolId) return;
     setLoading(true);
-    const agentQuery = currentAgentQuery();
+    const agentQuery = forceGalleryScope ? '' : currentAgentQuery();
     api
       .get<ToolRead>(`/api/enterprise/tools/${toolId}?tenant_id=${TENANT_ID}${agentQuery}`)
       .then(setTool)
       .catch((error) => notify.error(error instanceof Error ? error.message : '加载工具失败'))
       .finally(() => setLoading(false));
-  }, [toolId]);
+  }, [forceGalleryScope, toolId]);
 
   return (
     <div className="min-h-full box-border px-[48px] pt-[32px] pb-[43px] max-[900px]:px-[16px]" aria-busy={loading}>
@@ -1265,7 +1270,7 @@ export function ToolTestPage({ currentUser, onLogout }: ToolPageProps = {}) {
         {tool && (
           <UIButton
             variant="outline"
-            onClick={() => navigate(`/enterprise/tools/${tool.id}/edit`)}
+            onClick={() => navigate(`/enterprise/tools/${tool.id}/edit${forceGalleryScope ? '?scope=gallery' : ''}`)}
             className={RETURN_BUTTON_CLASS}
           >
             <IconEdit className="size-3.5" />
@@ -1489,6 +1494,8 @@ function McpServerEditorPage({ mode, currentUser, onLogout }: { mode: 'new' | 'e
   const [syncing, setSyncing] = useState(false);
   const [discovered, setDiscovered] = useState<DiscoveredRow[]>([]);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const forceGalleryScope = searchParams.get('scope') === 'gallery';
   const { serverId } = useParams();
   const isEdit = mode === 'edit';
 
@@ -1592,12 +1599,12 @@ function McpServerEditorPage({ mode, currentUser, onLogout }: { mode: 'new' | 'e
       notify.success('已保存');
       announceEnterpriseCapabilityCatalogChange({
         resourceType: 'tool',
-        agentId: readEmployeeScope() || undefined,
+        agentId: forceGalleryScope ? undefined : readEmployeeScope() || undefined,
       });
       setServer(saved);
       setValues(serverToFormValues(saved));
       if (!isEdit) {
-        navigate(`/enterprise/tools/mcp/${saved.id}/edit`, { replace: true });
+        navigate(`/enterprise/tools/mcp/${saved.id}/edit${forceGalleryScope ? '?scope=gallery' : ''}`, { replace: true });
       }
     } catch (error) {
       notify.error(error instanceof Error ? error.message : '保存失败');
@@ -1611,7 +1618,7 @@ function McpServerEditorPage({ mode, currentUser, onLogout }: { mode: 'new' | 'e
     if (!built) return;
     setDiscovering(true);
     try {
-      const agentQuery = currentAgentQuery();
+      const agentQuery = forceGalleryScope ? '' : currentAgentQuery();
       const response = server
         ? await api.post<MCPDiscoverResponse>(`/api/enterprise/mcp-servers/${server.id}/discover${agentQuery ? `?${agentQuery.slice(1)}` : ''}`, {
             tenant_id: TENANT_ID,
@@ -1648,7 +1655,7 @@ function McpServerEditorPage({ mode, currentUser, onLogout }: { mode: 'new' | 'e
     }
     setSyncing(true);
     try {
-      const agentQuery = currentAgentQuery();
+      const agentQuery = forceGalleryScope ? '' : currentAgentQuery();
       const response = await api.post<MCPSyncResponse>(
         `/api/enterprise/mcp-servers/${server.id}/sync${agentQuery ? `?${agentQuery.slice(1)}` : ''}`,
         {
@@ -1663,7 +1670,7 @@ function McpServerEditorPage({ mode, currentUser, onLogout }: { mode: 'new' | 'e
       notify.success(`同步完成：新增 ${response.imported.length}，更新 ${response.updated.length}`);
       announceEnterpriseCapabilityCatalogChange({
         resourceType: 'tool',
-        agentId: readEmployeeScope() || undefined,
+        agentId: forceGalleryScope ? undefined : readEmployeeScope() || undefined,
       });
       try {
         const refreshed = await api.get<MCPServerRead>(
@@ -2425,8 +2432,8 @@ function SavedToolTestCard({ tool, standalone = false }: { tool: ToolRead; stand
   );
 }
 
-async function loadBucketOptions() {
-  const rows = await api.get<ToolRead[]>(`/api/enterprise/tools?tenant_id=${TENANT_ID}${currentAgentQuery()}`);
+async function loadBucketOptions(agentQuery = currentAgentQuery()) {
+  const rows = await api.get<ToolRead[]>(`/api/enterprise/tools?tenant_id=${TENANT_ID}${agentQuery}`);
   return Array.from(new Set(['未分桶', ...rows.map((row) => row.bucket || '未分桶')]))
     .map((value) => ({ value, label: value }));
 }

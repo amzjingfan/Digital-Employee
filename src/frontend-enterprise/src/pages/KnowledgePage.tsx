@@ -1707,10 +1707,12 @@ export default function KnowledgeManagePage({ currentUser, onLogout }: Knowledge
 
 export function KnowledgeAddPage({ currentUser }: KnowledgePageProps = {}) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const forceGalleryScope = searchParams.get('scope') === 'gallery';
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseRead[]>([]);
   const [capabilityScope, setCapabilityScope] = useState<CapabilityScope>('general');
   const [jobs, setJobs] = useState<Record<string, KnowledgeIngestJobRead>>({});
-  const [agentId, setAgentId] = useState(readEmployeeScope);
+  const [agentId, setAgentId] = useState(() => forceGalleryScope ? '' : readEmployeeScope());
   const [agentScopeLoaded, setAgentScopeLoaded] = useState(false);
   const [checkedDiscoveryJobIds, setCheckedDiscoveryJobIds] = useState<string[]>([]);
   const [pendingDiscoveries, setPendingDiscoveries] = useState<KnowledgeDiscoveryRead[]>([]);
@@ -1734,29 +1736,41 @@ export function KnowledgeAddPage({ currentUser }: KnowledgePageProps = {}) {
 
   useEffect(() => {
     let active = true;
+    const selectedAgentId = forceGalleryScope ? '' : readEmployeeScope();
+    setAgentId(selectedAgentId);
+    setAgentScopeLoaded(false);
     api
       .get<AgentProfileRead[]>(`/api/enterprise/agents?tenant_id=${TENANT_ID}`)
       .then((agentRows) => {
         if (!active) return;
-        const resolvedAgentId = resolveKnowledgeAgentScope(agentRows, currentUser, agentId);
-        if (resolvedAgentId !== agentId) {
-          if (resolvedAgentId) {
+        const resolvedAgentId = forceGalleryScope
+          ? agentRows.find((item) => item.is_overall)?.id || ''
+          : resolveKnowledgeAgentScope(agentRows, currentUser, selectedAgentId);
+        if (resolvedAgentId !== selectedAgentId) {
+          if (forceGalleryScope) {
+            setAgentId(resolvedAgentId);
+          } else if (resolvedAgentId) {
             persistSharedAgentScope(resolvedAgentId, currentUser?.id);
           } else {
             clearSharedAgentScope(currentUser?.id);
           }
-          setAgentId(resolvedAgentId);
-          emitAgentScopeChange(resolvedAgentId);
+          if (!forceGalleryScope) {
+            setAgentId(resolvedAgentId);
+            emitAgentScopeChange(resolvedAgentId);
+          }
         }
         setAgentScopeLoaded(true);
       })
       .catch(() => {
-        if (active) setAgentScopeLoaded(true);
+        if (active) {
+          if (forceGalleryScope) setAgentId('');
+          setAgentScopeLoaded(true);
+        }
       });
     return () => {
       active = false;
     };
-  }, [currentUser?.id]);
+  }, [currentUser?.id, forceGalleryScope]);
 
   useEffect(() => {
     if (!agentScopeLoaded) return;
@@ -1766,12 +1780,13 @@ export function KnowledgeAddPage({ currentUser }: KnowledgePageProps = {}) {
 
   useEffect(() => {
     const onScopeChange = (event: Event) => {
+      if (forceGalleryScope) return;
       const next = (event as CustomEvent<{ agentId?: string }>).detail?.agentId || '';
       setAgentId(next && !isTeamScope(next) ? next : readEmployeeScope());
     };
     window.addEventListener('ultrarag-enterprise-agent-scope-change', onScopeChange);
     return () => window.removeEventListener('ultrarag-enterprise-agent-scope-change', onScopeChange);
-  }, []);
+  }, [forceGalleryScope]);
 
   useEffect(() => {
     if (activeJobs.length === 0) return;
@@ -1834,6 +1849,10 @@ export function KnowledgeAddPage({ currentUser }: KnowledgePageProps = {}) {
   }
 
   async function uploadFile(file: File) {
+    if (!agentScopeLoaded || (forceGalleryScope && !agentId)) {
+      notify.warning('开放广场尚未准备好，请稍后重试');
+      return;
+    }
     if (!isEnterpriseAdmin(currentUser) && !agentId) {
       notify.warning('请先选择一个数字员工');
       return;

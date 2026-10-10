@@ -2922,6 +2922,7 @@
   "测试通过，已启用": "Test passed and model enabled",
   "测试并保存中": "Testing and saving",
   "暂时无法找到开放广场": "The public marketplace is temporarily unavailable",
+  "开放广场尚未准备好，请稍后重试": "The marketplace is not ready yet. Please try again shortly.",
   "沙盒设置已保存，九骥 Joukir 正在重启": "Sandbox settings saved. Joukir is restarting.",
   "运行设置已保存": "Runtime settings saved",
   "统一影响当前租户下所有数字员工的执行行为。": "Applies consistently to the execution behavior of every digital employee in the current tenant.",
