@@ -1,5 +1,11 @@
 # Joukir 内网部署记录（2026-10-08）
 
+## 2026-10-10 通用技能运行测试租户上下文修复
+
+- 当前应用发布目录 `/home/joukir/releases/3dbf178-skill-test-rls`，后端源码对应本地提交 `3dbf178`。通用技能运行测试的后台执行及事件轮询以前分别打开新的数据库 Session，却没有绑定已经验证的请求租户；后台看不到预先创建的测试会话，尝试再次插入 `sessions` 时触发 PostgreSQL RLS 拒绝。两处 Session 现在先绑定租户，再访问数据库。没有修改 RLS 策略、数据库角色、用户技能或前端构建。
+- 数据库异常通过流接口返回简短错误，不再向页面展示完整 SQL 和参数。回归测试覆盖正常测试流、两个新连接的租户上下文及 SQL 错误脱敏；隔离 PostgreSQL 验证无租户写入被拒、同租户写入成功、跨租户仍被拒。
+- 切换前 `joukir-backup.service` 成功；旧发布 `/home/joukir/releases/e5f8740-batch-skill-import` 和 unit 备份 `/home/joukir/runtime/joukir.service.pre-3dbf178` 保留。新后端文件哈希与本地一致，服务健康/OIDC/技能页面 200，TikTok API 404；发布前后数据库只读计数均为 1 租户、2 用户、21 通用技能、1 会话。未运行 Amazon 广告 skill；真实模型与脚本执行需用户复测。
+
 ## 2026-10-10 技能文件夹多选批量导入
 
 - 当前应用发布目录为 `/home/joukir/releases/e5f8740-batch-skill-import`，源码对应本地分支提交 `e5f8740`。多技能文件夹弹窗支持勾选一项、多项或全选；点击“导入选中”后立即启用。新增批量接口将整批保存放在同一数据库事务中，任一项失败则整批回滚。
