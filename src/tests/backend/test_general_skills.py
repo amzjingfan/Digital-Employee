@@ -20,6 +20,7 @@ from app.api.general_skills import (
     import_clawhub_skill,
     import_general_skill,
     import_general_skill_package,
+    import_general_skills_batch,
     list_general_skills,
     publish_general_skill,
     publish_general_skill_to_gallery,
@@ -45,6 +46,7 @@ from app.general_skills.runner import (
     _normalize_declared_artifacts,
 )
 from app.general_skills.schema import (
+    GeneralSkillBatchImportRequest,
     GeneralSkillClawHubImportRequest,
     GeneralSkillImportRequest,
     GeneralSkillPackageUploadRequest,
@@ -311,6 +313,48 @@ def test_import_general_skill_uses_user_supplied_metadata() -> None:
             assert exc.status_code == 400
             assert exc.detail == "General skill slug cannot be modified"
 
+
+def test_batch_import_saves_selected_skills_and_rolls_back_on_conflict() -> None:
+    with _test_session() as db:
+        _seed_minimal_tenant(db)
+        db.add(
+            AgentProfile(
+                id="agent_overall", tenant_id="tenant_demo", name="整体智能体", is_overall=True
+            )
+        )
+        db.commit()
+
+        imported = import_general_skills_batch(
+            GeneralSkillBatchImportRequest(skills=[
+                GeneralSkillImportRequest(
+                    tenant_id="tenant_demo", slug="first-skill", markdown="# First"
+                ),
+                GeneralSkillImportRequest(
+                    tenant_id="tenant_demo", slug="second-skill", markdown="# Second"
+                ),
+            ]),
+            db,
+            _admin_user(),
+        )
+        assert [skill.slug for skill in imported] == ["first-skill", "second-skill"]
+
+        with pytest.raises(HTTPException) as error:
+            import_general_skills_batch(
+                GeneralSkillBatchImportRequest(skills=[
+                    GeneralSkillImportRequest(
+                        tenant_id="tenant_demo", slug="third-skill", markdown="# Third"
+                    ),
+                    GeneralSkillImportRequest(
+                        tenant_id="tenant_demo", slug="first-skill", markdown="# Conflict"
+                    ),
+                ]),
+                db,
+                _admin_user(),
+            )
+        assert error.value.status_code == 409
+        assert sorted(row.slug for row in list_general_skills("tenant_demo", db)) == [
+            "first-skill", "second-skill"
+        ]
 
 def test_import_general_skill_without_original_slug_does_not_overwrite_existing() -> None:
     with _test_session() as db:

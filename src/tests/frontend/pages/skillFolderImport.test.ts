@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   listSkillFolderChoices,
   readSkillFolderFiles,
+  readSelectedSkillFolders,
   selectSkillFolderEntries,
 } from '@/lib/skill-folder-import';
 
@@ -73,5 +74,21 @@ describe('skill folder import', () => {
       'SKILL.md',
       'references/root.md',
     ]);
+  });
+
+  it('reads exactly one, several, or all selected child skills before saving', async () => {
+    const entries = [
+      entry('bundle/a/SKILL.md', '# A'),
+      entry('bundle/a/references/a.md', 'A'),
+      entry('bundle/b/SKILL.md', '# B'),
+      entry('bundle/c/SKILL.md', '# C'),
+    ];
+    const choices = listSkillFolderChoices(entries);
+    for (const selected of [choices.slice(0, 1), choices.slice(0, 2), choices]) {
+      const packages = await readSelectedSkillFolders(entries, selected);
+      expect(packages.map((item) => item.skillPath)).toEqual(selected);
+      expect(packages.every((item) => item.files.filter((file) => file.path === 'SKILL.md').length === 1)).toBe(true);
+    }
+    await expect(readSelectedSkillFolders(entries, [])).rejects.toThrow('至少选择');
   });
 });

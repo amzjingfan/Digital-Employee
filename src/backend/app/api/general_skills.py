@@ -60,7 +60,7 @@ from app.general_skills import (
     GeneralSkillRunResponse,
 )
 from app.general_skills.runner import GeneralSkillReader, GeneralSkillRunner
-from app.general_skills.schema import GeneralSkillFile
+from app.general_skills.schema import GeneralSkillBatchImportRequest, GeneralSkillFile
 from app.llm.model_config_resolver import resolve_model_config_for_runtime
 from app.security.auth import get_current_user
 from app.security.permissions import (
@@ -126,6 +126,39 @@ def import_general_skill(
     request: GeneralSkillImportRequest,
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
+) -> GeneralSkillRead:
+    result = _import_general_skill(request, db, current_user)
+    db.commit()
+    return result
+
+
+@router.post("/import-batch", response_model=list[GeneralSkillRead])
+def import_general_skills_batch(
+    request: GeneralSkillBatchImportRequest,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> list[GeneralSkillRead]:
+    try:
+        results = []
+        for index, skill in enumerate(request.skills, start=1):
+            try:
+                results.append(_import_general_skill(skill, db, current_user))
+            except HTTPException as exc:
+                raise HTTPException(
+                    status_code=exc.status_code,
+                    detail=f"第 {index} 项导入失败：{exc.detail}",
+                ) from exc
+        db.commit()
+        return results
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _import_general_skill(
+    request: GeneralSkillImportRequest,
+    db: Session,
+    current_user: User,
 ) -> GeneralSkillRead:
     ensure_tenant(db, request.tenant_id)
     files = _normalize_skill_files(request.files, request.markdown)
@@ -315,7 +348,6 @@ def import_general_skill(
             "active" if request.status == "published" else "inactive",
             metadata_json=metadata,
         )
-    db.commit()
     db.refresh(row)
     return general_skill_read(row)
 

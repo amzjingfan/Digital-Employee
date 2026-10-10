@@ -29,6 +29,10 @@ class GeneralSkillImportRequest(BaseModel):
     original_slug: Optional[str] = None
 
 
+class GeneralSkillBatchImportRequest(BaseModel):
+    skills: list[GeneralSkillImportRequest] = Field(min_length=1, max_length=50)
+
+
 class GeneralSkillClawHubImportRequest(BaseModel):
     tenant_id: str
     agent_id: Optional[str] = None

@@ -50,6 +50,7 @@ import { cn } from '@/lib/utils';
 import {
   listSkillFolderChoices,
   readSkillFolderFiles,
+  readSelectedSkillFolders,
   selectSkillFolderEntries,
 } from '@/lib/skill-folder-import';
 import { isTeamScope, readEmployeeScope } from '@/lib/agent-scope-storage';
@@ -63,6 +64,7 @@ import {
 } from '@/lib/enterprise-ui';
 import { StatCard } from '@/components/StatCard';
 import { ResourceImportDialog } from '@/components/ResourceImportDialog';
+import SkillFolderSelectionDialog from '@/components/SkillFolderSelectionDialog';
 import CodeBlock, { renderCodeTokens } from '../components/CodeBlock';
 import { renderMarkdownBlocks } from './chat/chatHelpers';
 import IconAdd from '../assets/icons/add.svg?react';
@@ -1483,7 +1485,9 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
     files: DroppedSkillFile[];
     choices: string[];
   } | null>(null);
+  const [selectedFolderSkillPaths, setSelectedFolderSkillPaths] = useState<string[]>([]);
   const [folderReading, setFolderReading] = useState(false);
+  const [folderImportError, setFolderImportError] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const clawhubAbortRef = useRef<AbortController | null>(null);
@@ -2384,17 +2388,19 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
     notify.success(`已读取 ${target.name}`);
   }
 
-  async function importSkillPackage(targets: DroppedSkillFile[], selectedSkillPath?: string) {
+  async function importSkillPackage(targets: DroppedSkillFile[]) {
     if (!targets.length) return;
     try {
       const choices = listSkillFolderChoices(targets);
       if (!choices.length) throw new Error('文件夹中没有找到 SKILL.md');
-      if (!selectedSkillPath && choices.length > 1) {
+      if (choices.length > 1) {
         setPendingFolderImport({ files: targets, choices });
+        setSelectedFolderSkillPaths([]);
+        setFolderImportError('');
         return;
       }
       setFolderReading(true);
-      const selected = selectSkillFolderEntries(targets, selectedSkillPath || choices[0]);
+      const selected = selectSkillFolderEntries(targets, choices[0]);
       const nextFiles: GeneralSkillFile[] = await readSkillFolderFiles(selected);
       nextFiles.sort((a, b) => a.path.localeCompare(b.path));
       const skillFile = nextFiles.find((item) => item.path.toLowerCase() === 'skill.md');
@@ -2411,6 +2417,36 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
       notify.success(`已读取 ${nextFiles.length} 个文件，请检查后保存`);
     } catch (error) {
       notify.error(error instanceof Error ? error.message : '读取技能文件夹失败');
+    } finally {
+      setFolderReading(false);
+    }
+  }
+
+  async function importSelectedFolderSkills() {
+    if (!pendingFolderImport || !selectedFolderSkillPaths.length || folderReading) return;
+    if (!canManageCurrentScope) {
+      setFolderImportError('只有管理员可以编辑技能广场内容');
+      return;
+    }
+    setFolderReading(true);
+    setFolderImportError('');
+    try {
+      const packages = await readSelectedSkillFolders(pendingFolderImport.files, selectedFolderSkillPaths);
+      const imported = await api.post<GeneralSkillRead[]>('/api/enterprise/general-skills/import-batch', {
+        skills: packages.map(({ files }) => ({
+          tenant_id: TENANT_ID,
+          agent_id: !isOverallAgent && agentId ? agentId : undefined,
+          files,
+          status: 'published',
+          capability_scope: 'general',
+        })),
+      });
+      setPendingFolderImport(null);
+      setSelectedFolderSkillPaths([]);
+      notify.success(`已导入 ${imported.length} 个技能`);
+      navigate('/enterprise/general-skills');
+    } catch (error) {
+      setFolderImportError(error instanceof Error ? error.message : '导入技能失败');
     } finally {
       setFolderReading(false);
     }
@@ -2927,32 +2963,15 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
         onClose={cancelClawHubImport}
         onSubmit={() => void importClawHubSource()}
       />
-      <Dialog open={Boolean(pendingFolderImport)} onOpenChange={(open) => { if (!open) setPendingFolderImport(null); }}>
-        <DialogContent aria-describedby={undefined} className="flex w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-[16px] p-0 sm:max-w-[520px]">
-          <DialogTitle className="border-b border-border px-[24px] py-[16px] text-[16px] font-semibold text-foreground">
-            选择要导入的技能
-          </DialogTitle>
-          <p className="px-[24px] pt-[16px] text-[13px] text-muted-foreground">
-            找到 {pendingFolderImport?.choices.length || 0} 个 SKILL.md。每次选择一个子技能，检查后再保存。
-          </p>
-          <div className="max-h-[360px] overflow-y-auto px-[24px] py-[16px]">
-            {pendingFolderImport?.choices.map((path) => (
-              <UIButton
-                key={path}
-                variant="outline"
-                disabled={folderReading}
-                className="mb-[8px] flex h-auto w-full justify-start whitespace-normal break-all py-[10px] text-left"
-                onClick={() => { void importSkillPackage(pendingFolderImport.files, path); }}
-              >
-                {path.replace(/\/?SKILL\.md$/i, '') || '根目录'}
-              </UIButton>
-            ))}
-          </div>
-          <div className="flex justify-end bg-background px-[24px] py-[12px]">
-            <UIButton variant="outline" disabled={folderReading} onClick={() => setPendingFolderImport(null)}>取消</UIButton>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <SkillFolderSelectionDialog
+        choices={pendingFolderImport?.choices || null}
+        selectedPaths={selectedFolderSkillPaths}
+        loading={folderReading}
+        error={folderImportError}
+        onSelectedChange={setSelectedFolderSkillPaths}
+        onImport={() => void importSelectedFolderSkills()}
+        onClose={() => setPendingFolderImport(null)}
+      />
       <ResourceImportDialog
         open={agentImportOpen}
         loading={agentImportLoading}

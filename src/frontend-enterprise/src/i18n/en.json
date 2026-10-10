@@ -4482,8 +4482,19 @@
   "无法读取技能文件 {1}：仅支持 UTF-8 文本文件": "Cannot read skill file {1}: only UTF-8 text files are supported",
   "已读取 {1} 个文件，请检查后保存": "Read {1} files. Review them before saving",
   "读取技能文件夹失败": "Failed to read the skill folder",
-  "选择要导入的技能": "Choose a skill to import",
+  "选择要导入的技能": "Choose skills to import",
   "找到": "Found",
-  "个 SKILL.md。每次选择一个子技能，检查后再保存。": "SKILL.md files. Choose one skill at a time, review it, then save.",
-  "根目录": "Root folder"
+  "个 SKILL.md。请选择要导入的子技能。导入后立即启用，失败时整批不保存。": "SKILL.md files. Select the child skills to import. They will be enabled immediately; the whole batch is canceled if any item fails.",
+  "根目录": "Root folder",
+  "请至少选择一个技能": "Select at least one skill",
+  "已选择": "Selected",
+  "项": "items",
+  "已导入": "Imported",
+  "个技能": "skills",
+  "已导入 {1} 个技能": "Imported {1} skills",
+  "导入技能失败": "Failed to import skills",
+  "正在导入…": "Importing…",
+  "导入选中（": "Import selected (",
+  "导入选中（{1}）": "Import selected ({1})",
+  "）": ")"
 }

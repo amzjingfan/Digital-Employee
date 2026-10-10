@@ -49,3 +49,11 @@ export async function readSkillFolderFiles(entries: SkillFolderEntry[]) {
     return { path, content, size: file.size, mime_type: file.type || undefined };
   }));
 }
+
+export async function readSelectedSkillFolders(entries: SkillFolderEntry[], selectedPaths: string[]) {
+  if (!selectedPaths.length) throw new Error('请至少选择一个技能');
+  return Promise.all(selectedPaths.map(async (skillPath) => ({
+    skillPath,
+    files: await readSkillFolderFiles(selectSkillFolderEntries(entries, skillPath)),
+  })));
+}
