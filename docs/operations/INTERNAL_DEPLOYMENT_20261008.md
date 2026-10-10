@@ -1,5 +1,11 @@
 # Joukir 内网部署记录（2026-10-08）
 
+## 2026-10-10 技能文件夹导入修复
+
+- 当前应用发布目录为 `/home/joukir/releases/6e524a1-folder-import`，源码对应本地提交 `6e524a1`。更新了技能文件夹子技能选择、原子 UTF-8 读取及服务端多 `SKILL.md` 校验；四个下载目录没有上传到服务器，也没有创建技能记录。
+- 切换前 `joukir-backup.service` 成功。旧发布 `/home/joukir/releases/b7b4048-skill-ref-20261010` 和旧 unit `/home/joukir/runtime/joukir.service.pre-6e524a1` 保留供应用回滚。前端以 `VITE_TENANT_ID=tenant_internal`、`VITE_TIKTOK_BUSINESS_UNIT_ENABLED=false` 构建，线上 JS 哈希与本地构建一致。
+- 切换后服务正常，健康及 OIDC 配置接口 200，TikTok API 404，PostgreSQL 容器 healthy；只读计数仍为 1 租户、2 用户、10 通用技能、19 知识库、17 工具。管理员浏览器侧弹窗未验收：当前浏览器控制环境不信任内网 CA，不能绕过证书警告。结构和保存前校验见[四目录检查报告](../reports/skill-folder-import-check-20261010.md)。
+
 ## 2026-10-10 TikTok 事业部不纳入内网发布
 
 - 当前应用发布目录为 `/home/joukir/releases/b7b4048-no-tiktok`，源码对应本地 `main@b7b4048`。构建前端时明确设置 `VITE_TENANT_ID=tenant_internal` 和 `VITE_TIKTOK_BUSINESS_UNIT_ENABLED=false`。侧栏不显示“TikTok 事业部”，前端不注册其页面路由；打包结果无 TikTok 页面文件或 `/api/enterprise/tiktok/` 调用代码。
