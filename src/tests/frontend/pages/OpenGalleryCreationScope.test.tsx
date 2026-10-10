@@ -8,7 +8,7 @@ import { api } from '@/api/client';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { I18nProvider } from '@/i18n';
 import { KnowledgeAddPage } from '@/pages/KnowledgePage';
-import { ToolNewPage } from '@/pages/ToolsPage';
+import { ToolNewPage, ToolTestPage } from '@/pages/ToolsPage';
 
 const admin = { id: 'admin', username: 'admin', tenant_id: 'tenant_demo', role: 'admin' } as const;
 
@@ -83,7 +83,38 @@ describe('open gallery creation scope', () => {
       '/api/enterprise/tools',
       expect.objectContaining({ name: 'gallery_tool', tenant_id: 'tenant_demo' }),
     ));
+    fireEvent.click(screen.getByRole('button', { name: /A2A Agent/ }));
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith(
+      '/api/enterprise/tools/a2a/codex-adapter?tenant_id=tenant_demo',
+    ));
     fireEvent.click(screen.getByRole('button', { name: /MCP 服务器/ }));
     expect(screen.getByTestId('location').textContent).toBe('/enterprise/tools/mcp/new?scope=gallery');
+  });
+
+  it('tests a saved gallery tool without the selected employee scope', async () => {
+    window.localStorage.setItem('ultrarag_enterprise_agent_scope', 'employee-1');
+    vi.spyOn(api, 'get').mockResolvedValue({
+      id: 'tool-1', name: 'gallery_tool', display_name: 'Gallery tool',
+      tool_type: 'http', method: 'POST', url: 'https://example.test/tool',
+      input_schema: {}, output_schema: {}, updated_at: '2026-10-10T00:00:00Z',
+    } as never);
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ success: true } as never);
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <MemoryRouter initialEntries={['/enterprise/tools/tool-1/test?scope=gallery']}>
+            <Routes>
+              <Route path="/enterprise/tools/:toolId/test" element={<ToolTestPage currentUser={admin} />} />
+            </Routes>
+          </MemoryRouter>
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: '调用' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/api/enterprise/tools/tool-1/test',
+      expect.objectContaining({ tenant_id: 'tenant_demo' }),
+    ));
   });
 });

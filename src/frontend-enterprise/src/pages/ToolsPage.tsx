@@ -1359,7 +1359,7 @@ function A2ARunsPanel({ tool }: { tool: ToolRead }) {
   const [adapter, setAdapter] = useState<CodexA2AAdapterRead | null>(null);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const agentQuery = currentAgentQuery();
+  const agentQuery = useToolAgentQuery();
 
   const load = async () => {
     setLoading(true);
@@ -1379,9 +1379,9 @@ function A2ARunsPanel({ tool }: { tool: ToolRead }) {
 
   useEffect(() => {
     void load();
-    // Tool identity is the stable boundary for this panel.
+    // Tool and scope identity are the stable boundaries for this panel.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tool.id]);
+  }, [tool.id, agentQuery]);
 
   async function cancel(run: A2ATaskRunRead) {
     try {
@@ -2199,16 +2199,17 @@ function A2AConnectionFields({
   setField: <K extends keyof ToolFormValues>(name: K, value: ToolFormValues[K]) => void;
 }) {
   const [adapter, setAdapter] = useState<CodexA2AAdapterRead | null>(null);
+  const agentQuery = useToolAgentQuery();
   const config = safeJsonObject(values.mcp_config);
   const updateConfig = (patch: Record<string, unknown>) => {
     setField('mcp_config', JSON.stringify({ ...config, ...patch }, null, 2));
   };
 
   useEffect(() => {
-    api.get<CodexA2AAdapterRead>(`/api/enterprise/tools/a2a/codex-adapter?tenant_id=${TENANT_ID}${currentAgentQuery()}`)
+    api.get<CodexA2AAdapterRead>(`/api/enterprise/tools/a2a/codex-adapter?tenant_id=${TENANT_ID}${agentQuery}`)
       .then(setAdapter)
       .catch(() => setAdapter(null));
-  }, []);
+  }, [agentQuery]);
 
   const useCodex = () => {
     if (!adapter) return;
@@ -2352,6 +2353,7 @@ function SavedToolTestCard({ tool, standalone = false }: { tool: ToolRead; stand
   const [testJson, setTestJson] = useState(() => JSON.stringify(exampleFromSchema(tool.input_schema), null, 2));
   const [testResult, setTestResult] = useState('');
   const [loading, setLoading] = useState(false);
+  const agentQuery = useToolAgentQuery();
 
   useEffect(() => {
     setTestJson(JSON.stringify(exampleFromSchema(tool.input_schema), null, 2));
@@ -2368,7 +2370,6 @@ function SavedToolTestCard({ tool, standalone = false }: { tool: ToolRead; stand
     }
     setLoading(true);
     try {
-      const agentQuery = currentAgentQuery();
       const response = await api.post(`/api/enterprise/tools/${tool.id}/test${agentQuery ? `?${agentQuery.slice(1)}` : ''}`, {
         tenant_id: TENANT_ID,
         arguments: argumentsJson,
@@ -2441,6 +2442,11 @@ async function loadBucketOptions(agentQuery = currentAgentQuery()) {
 function currentAgentQuery() {
   const agentId = readEmployeeScope();
   return agentId ? `&agent_id=${encodeURIComponent(agentId)}` : '';
+}
+
+function useToolAgentQuery() {
+  const [searchParams] = useSearchParams();
+  return searchParams.get('scope') === 'gallery' ? '' : currentAgentQuery();
 }
 
 function toolToFormValues(row: ToolRead): ToolFormValues {
