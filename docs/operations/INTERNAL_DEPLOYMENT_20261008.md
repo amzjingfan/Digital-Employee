@@ -2,9 +2,9 @@
 
 ## 2026-10-10 开放广场创建范围隔离
 
-- 当前应用发布目录为 `/home/joukir/releases/f36fa50-gallery-scope`，前端源码对应提交 `f36fa50`；后端沿用上版。开放广场创建知识库与工具时显式指定广场范围，工具 HTTP/A2A/MCP 类型切换及后续编辑、同步保持该范围。通用 Skill 与 SOP 原有广场创建路径和后端资源绑定隔离保持。已有资源未迁移、重绑或删除。
-- 前端以 `VITE_TENANT_ID=tenant_internal`、`VITE_TIKTOK_BUSINESS_UNIT_ENABLED=false` 构建。主 JS 含 `tenant_internal`，不含 `tenant_demo` 或 TikTok API 路径；线上与本地 SHA-256 均为 `ded51e02cbe36dc9c3e3c0d8abf04f338037e47c05c2f378640ae114983e4b74`。切换前 `joukir-backup.service` 成功，旧发布 `/home/joukir/releases/163be44-skill-result-markdown` 和 unit 备份 `/home/joukir/runtime/joukir.service.pre-f36fa50` 保留。
-- 切换后服务 active，健康、OIDC 配置及四个开放广场页面均为 200，TikTok API 为 404，PostgreSQL healthy。发布前后只读计数均为 1 租户、2 用户、21 通用技能、3 会话、19 知识库、17 工具、12 员工记录、25 SOP、144 资源绑定。前端聚焦 12 项、后端资源隔离 2 项、类型检查、i18n、配置检查、测试布局和生产构建通过。
+- 当前应用发布目录为 `/home/joukir/releases/c5f1d64-gallery-tool-test`，前端源码对应提交 `f36fa50`、`c5f1d64`；后端沿用上版。开放广场创建知识库与工具时显式指定广场范围，工具 HTTP/A2A/MCP 类型切换、保存、编辑、测试及同步保持该范围。通用 Skill 与 SOP 原有广场创建路径和后端资源绑定隔离保持。已有资源未迁移、重绑或删除。
+- 前端以 `VITE_TENANT_ID=tenant_internal`、`VITE_TIKTOK_BUSINESS_UNIT_ENABLED=false` 构建。主 JS 含 `tenant_internal`，不含 `tenant_demo` 或 TikTok API 路径；线上与本地 SHA-256 均为 `89bbd03b125685e695807d491c669539fff14a992cbf9d46ac7c22b548e6c1c1`。两次切换前 `joukir-backup.service` 均成功，旧发布 `/home/joukir/releases/f36fa50-gallery-scope`、`/home/joukir/releases/163be44-skill-result-markdown` 和 unit 备份 `/home/joukir/runtime/joukir.service.pre-c5f1d64`、`/home/joukir/runtime/joukir.service.pre-f36fa50` 保留。
+- 切换后服务 active，健康、OIDC 配置及四个开放广场页面均为 200，TikTok API 为 404，PostgreSQL healthy。发布前后只读计数均为 1 租户、2 用户、21 通用技能、3 会话、19 知识库、17 工具、12 员工记录、25 SOP、144 资源绑定。前端聚焦 13 项、后端资源隔离 2 项、类型检查、i18n、配置检查、测试布局和生产构建通过。
 - Chrome 桥接报 `nodeRepl.fetch request failed`，尚未在已登录管理员浏览器目视验证四种资源创建页。管理员应在信任内网 CA 的浏览器强制刷新，创建测试资源并确认只在广场出现；测试资源的清理应按各资源的正常管理流程进行。此项完成前不将分支合并到 `main`。
 
 ## 2026-10-10 技能测试结果展示改进
