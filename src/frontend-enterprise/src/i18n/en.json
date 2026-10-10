@@ -4474,5 +4474,16 @@
   "维护负责人 {1}": "Maintenance owner {1}",
   "未指定维护负责人": "No maintenance owner",
   "履约与维护责任已更新": "Fulfillment and maintenance owners updated",
-  "保存分责": "Save responsibilities"
+  "保存分责": "Save responsibilities",
+  "技能文件路径无效：{1}": "Invalid skill file path: {1}",
+  "文件夹中没有找到所选的 SKILL.md": "The selected SKILL.md was not found in the folder",
+  "同一目录存在多个 SKILL.md，请只保留一个": "Multiple SKILL.md files exist in the same directory; keep only one",
+  "技能文件夹中存在重复文件路径": "The skill folder contains duplicate file paths",
+  "无法读取技能文件 {1}：仅支持 UTF-8 文本文件": "Cannot read skill file {1}: only UTF-8 text files are supported",
+  "已读取 {1} 个文件，请检查后保存": "Read {1} files. Review them before saving",
+  "读取技能文件夹失败": "Failed to read the skill folder",
+  "选择要导入的技能": "Choose a skill to import",
+  "找到": "Found",
+  "个 SKILL.md。每次选择一个子技能，检查后再保存。": "SKILL.md files. Choose one skill at a time, review it, then save.",
+  "根目录": "Root folder"
 }

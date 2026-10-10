@@ -47,6 +47,11 @@ import {
 import { Button as UIButton } from '@/components/ui/button';
 import { notify } from '@/components/ui/app-toast';
 import { cn } from '@/lib/utils';
+import {
+  listSkillFolderChoices,
+  readSkillFolderFiles,
+  selectSkillFolderEntries,
+} from '@/lib/skill-folder-import';
 import { isTeamScope, readEmployeeScope } from '@/lib/agent-scope-storage';
 import {
   MENU_CONTENT_CLASS,
@@ -1474,6 +1479,11 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
   const [createEntryMode, setCreateEntryMode] = useState<'file' | 'folder' | null>(null);
   const [createEntryValue, setCreateEntryValue] = useState('');
   const [importPrepareOpen, setImportPrepareOpen] = useState(false);
+  const [pendingFolderImport, setPendingFolderImport] = useState<{
+    files: DroppedSkillFile[];
+    choices: string[];
+  } | null>(null);
+  const [folderReading, setFolderReading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const clawhubAbortRef = useRef<AbortController | null>(null);
@@ -1811,6 +1821,11 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
   function startImportedDraft() {
     setEditingSlug(null);
     setSelectedSlug(undefined);
+    setSkillName('');
+    setSkillSlug('');
+    setSkillDescription('');
+    setSkillHomepage('');
+    setCapabilityScope('general');
     setRunResult(null);
     setLiveResult(null);
     setResultExpanded(false);
@@ -2369,43 +2384,35 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
     notify.success(`已读取 ${target.name}`);
   }
 
-  async function importSkillPackage(targets: DroppedSkillFile[]) {
+  async function importSkillPackage(targets: DroppedSkillFile[], selectedSkillPath?: string) {
     if (!targets.length) return;
-    const nextFiles: GeneralSkillFile[] = [];
-    let failedCount = 0;
-    for (const { file, path } of targets) {
-      try {
-        const text = await file.text();
-        nextFiles.push({
-          path,
-          content: text,
-          size: file.size,
-          mime_type: file.type || undefined,
-        });
-      } catch {
-        failedCount += 1;
+    try {
+      const choices = listSkillFolderChoices(targets);
+      if (!choices.length) throw new Error('文件夹中没有找到 SKILL.md');
+      if (!selectedSkillPath && choices.length > 1) {
+        setPendingFolderImport({ files: targets, choices });
+        return;
       }
-    }
-    if (!nextFiles.length) {
-      notify.error('没有读取到可导入的技能文件');
-      return;
-    }
-    nextFiles.sort((a, b) => a.path.localeCompare(b.path));
-    startImportedDraft();
-    setSkillFiles(nextFiles);
-    setSkillDirectories([]);
-    setMarkdownPreviewOpen(false);
-    const skillFile = nextFiles.find((item) => item.path.split('/').pop()?.toLowerCase() === 'skill.md');
-    if (skillFile) {
+      setFolderReading(true);
+      const selected = selectSkillFolderEntries(targets, selectedSkillPath || choices[0]);
+      const nextFiles: GeneralSkillFile[] = await readSkillFolderFiles(selected);
+      nextFiles.sort((a, b) => a.path.localeCompare(b.path));
+      const skillFile = nextFiles.find((item) => item.path.toLowerCase() === 'skill.md');
+      if (!skillFile) throw new Error('文件夹中没有找到 SKILL.md');
+      startImportedDraft();
+      setSkillFiles(nextFiles);
+      setSkillDirectories([]);
+      setMarkdownPreviewOpen(false);
       setMarkdown(skillFile.content);
       setSelectedFilePath(skillFile.path);
       setSelectedFolderPath(null);
       applyMetadata(skillFile.content, { setSkillName, setSkillSlug, setSkillDescription, setSkillHomepage });
-      notify.success(`已读取 ${nextFiles.length} 个文件${failedCount ? `，跳过 ${failedCount} 个无法读取文件` : ''}`);
-    } else {
-      setSelectedFilePath(nextFiles[0]?.path || 'SKILL.md');
-      setSelectedFolderPath(null);
-      notify.warning('文件夹中没有找到 SKILL.md');
+      setPendingFolderImport(null);
+      notify.success(`已读取 ${nextFiles.length} 个文件，请检查后保存`);
+    } catch (error) {
+      notify.error(error instanceof Error ? error.message : '读取技能文件夹失败');
+    } finally {
+      setFolderReading(false);
     }
   }
 
@@ -2920,6 +2927,32 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
         onClose={cancelClawHubImport}
         onSubmit={() => void importClawHubSource()}
       />
+      <Dialog open={Boolean(pendingFolderImport)} onOpenChange={(open) => { if (!open) setPendingFolderImport(null); }}>
+        <DialogContent aria-describedby={undefined} className="flex w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-[16px] p-0 sm:max-w-[520px]">
+          <DialogTitle className="border-b border-border px-[24px] py-[16px] text-[16px] font-semibold text-foreground">
+            选择要导入的技能
+          </DialogTitle>
+          <p className="px-[24px] pt-[16px] text-[13px] text-muted-foreground">
+            找到 {pendingFolderImport?.choices.length || 0} 个 SKILL.md。每次选择一个子技能，检查后再保存。
+          </p>
+          <div className="max-h-[360px] overflow-y-auto px-[24px] py-[16px]">
+            {pendingFolderImport?.choices.map((path) => (
+              <UIButton
+                key={path}
+                variant="outline"
+                disabled={folderReading}
+                className="mb-[8px] flex h-auto w-full justify-start whitespace-normal break-all py-[10px] text-left"
+                onClick={() => { void importSkillPackage(pendingFolderImport.files, path); }}
+              >
+                {path.replace(/\/?SKILL\.md$/i, '') || '根目录'}
+              </UIButton>
+            ))}
+          </div>
+          <div className="flex justify-end bg-background px-[24px] py-[12px]">
+            <UIButton variant="outline" disabled={folderReading} onClick={() => setPendingFolderImport(null)}>取消</UIButton>
+          </div>
+        </DialogContent>
+      </Dialog>
       <ResourceImportDialog
         open={agentImportOpen}
         loading={agentImportLoading}

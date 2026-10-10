@@ -5,6 +5,7 @@ Start a development session with the durable memory and current handoff below. P
 ## Current reports
 
 - [Current project functional audit and handover report, 2026-09-12](reports/报告.md)
+- [技能文件夹导入检查，2026-10-10](reports/skill-folder-import-check-20261010.md)
 
 ## Current architecture
 

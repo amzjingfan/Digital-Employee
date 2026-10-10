@@ -1,4 +1,14 @@
-from app.api.general_skills import _normalize_skill_files, _validate_skill_package_references
+from io import BytesIO
+from zipfile import ZipFile
+
+import pytest
+from fastapi import HTTPException
+
+from app.api.general_skills import (
+    _files_from_zip,
+    _normalize_skill_files,
+    _validate_skill_package_references,
+)
 from app.general_skills.schema import GeneralSkillFile
 
 
@@ -30,3 +40,24 @@ def test_folder_import_accepts_markdown_references_followed_by_chinese_text() ->
         "references/decision-rules.md",
     ]
     _validate_skill_package_references(files)
+
+
+def test_folder_import_rejects_multiple_skill_definitions() -> None:
+    with pytest.raises(HTTPException, match="multiple SKILL.md"):
+        _normalize_skill_files(
+            [
+                GeneralSkillFile(path="bundle/one/SKILL.md", content="# One"),
+                GeneralSkillFile(path="bundle/two/SKILL.md", content="# Two"),
+            ],
+            None,
+        )
+
+
+def test_zip_import_rejects_multiple_skill_definitions() -> None:
+    archive = BytesIO()
+    with ZipFile(archive, "w") as zipped:
+        zipped.writestr("bundle/one/SKILL.md", "# One")
+        zipped.writestr("bundle/two/SKILL.md", "# Two")
+
+    with pytest.raises(HTTPException, match="multiple SKILL.md"):
+        _files_from_zip(archive.getvalue())

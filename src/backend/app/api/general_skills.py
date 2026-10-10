@@ -1159,6 +1159,11 @@ def _normalize_skill_files(
                 mime_type=file.mime_type,
             )
         )
+    if sum(file.path.rsplit("/", 1)[-1].lower() == "skill.md" for file in cleaned_files) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="General skill folder contains multiple SKILL.md files; select one skill directory",
+        )
     skill_file = _find_skill_file(cleaned_files)
     if not skill_file:
         raise HTTPException(status_code=400, detail="General skill folder must contain SKILL.md")
@@ -1754,6 +1759,11 @@ def _files_from_zip(data: bytes, subtree: str = "") -> list[GeneralSkillFile]:
             ]
         if not skill_candidates:
             raise HTTPException(status_code=400, detail="Package does not contain SKILL.md")
+        if len(skill_candidates) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail="General skill package contains multiple SKILL.md files; select one skill directory",
+            )
         base = skill_candidates[0].rsplit("/", 1)[0] if "/" in skill_candidates[0] else ""
         files: list[GeneralSkillFile] = []
         for name in names:
