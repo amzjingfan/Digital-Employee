@@ -1,5 +1,11 @@
 # Joukir 内网部署记录（2026-10-08）
 
+## 2026-10-10 技能测试结果展示改进
+
+- 当前应用发布目录为 `/home/joukir/releases/163be44-skill-result-markdown`，前端源码对应本地分支提交 `163be44`；后端沿用上版 `3dbf178`。测试最终回复现在复用技能文件的 Markdown 预览样式，执行流程为 Harness v2 事件显示中文步骤。未运行用户技能、数据库迁移或数据导入。
+- 前端以 `VITE_TENANT_ID=tenant_internal`、`VITE_TIKTOK_BUSINESS_UNIT_ENABLED=false` 构建；主 JS 不含 `tenant_demo` 或 TikTok API 路径。切换前 `joukir-backup.service` 成功，旧发布 `/home/joukir/releases/3dbf178-skill-test-rls` 与 unit 备份 `/home/joukir/runtime/joukir.service.pre-163be44` 保留。线上主 JS 与本地构建的 SHA-256 均为 `9266b0a22aafec9154ba445570a9396817162e2c4e8944214bcbca667cee012c`。
+- 切换后服务 active，健康、OIDC 配置和技能页面均为 200，TikTok API 为 404，PostgreSQL healthy。发布前后只读计数均为 1 租户、2 用户、21 通用技能、2 会话。聚焦前端测试 21 项、类型检查、i18n、配置检查和生产构建通过。Chrome 桥接仍报 `nodeRepl.fetch request failed`，待管理员在可信任内网 CA 的浏览器中目视确认结果区；在此之前不将分支合并到 `main`。
+
 ## 2026-10-10 通用技能运行测试租户上下文修复
 
 - 当前应用发布目录 `/home/joukir/releases/3dbf178-skill-test-rls`，后端源码对应本地提交 `3dbf178`。通用技能运行测试的后台执行及事件轮询以前分别打开新的数据库 Session，却没有绑定已经验证的请求租户；后台看不到预先创建的测试会话，尝试再次插入 `sessions` 时触发 PostgreSQL RLS 拒绝。两处 Session 现在先绑定租户，再访问数据库。没有修改 RLS 策略、数据库角色、用户技能或前端构建。
