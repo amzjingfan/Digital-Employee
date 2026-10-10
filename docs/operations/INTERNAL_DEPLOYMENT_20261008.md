@@ -1,5 +1,12 @@
 # Joukir 内网部署记录（2026-10-08）
 
+## 2026-10-10 TikTok 事业部不纳入内网发布
+
+- 当前应用发布目录为 `/home/joukir/releases/b7b4048-no-tiktok`，源码对应本地 `main@b7b4048`。构建前端时明确设置 `VITE_TENANT_ID=tenant_internal` 和 `VITE_TIKTOK_BUSINESS_UNIT_ENABLED=false`。侧栏不显示“TikTok 事业部”，前端不注册其页面路由；打包结果无 TikTok 页面文件或 `/api/enterprise/tiktok/` 调用代码。
+- 原 Nginx 阻断继续生效：`/enterprise/tiktok` 返回 302，`/api/enterprise/tiktok/overview` 返回 404。当前应用的其他页面、Casdoor 登录入口和原生广场数据保留。
+- 切换前 `joukir-backup.service` 成功；旧应用发布目录 `/home/joukir/releases/a59044e-tenant-internal` 与旧 unit `/home/joukir/runtime/joukir.service.pre-b7b4048` 保留用于回滚。切换后健康、控制台和 OIDC 配置接口均为 200，服务器提供的 JS 与已核验构建文件 SHA-256 一致。PostgreSQL 中 2 个用户、11 个非整体员工、19 个知识库、25 个 SOP、17 个工具未变。
+- 生产打包只移除了该前端页面和入口；服务器端源码仍保留兼容实现，但 TikTok 官方接入、影子同步与执行开关保持关闭，外部 API 由 Nginx 拦截。若日后启用，需要单独审查权限、生产配置和发布门禁。
+
 ## 2026-10-10 原生广场数据导入
 
 - 初次部署使用新空库，因此此前只显示 1 个测试员工，没有原生广场资源。现已在保留现有 PostgreSQL、`tenant_internal`、Casdoor 用户及测试员工的前提下，导入项目内置数据包：10 个原生员工、19 个知识库、9 个通用技能、25 个 SOP、17 个工具。库内目前有 11 个非整体员工（含原测试员工）、2 个用户、1 个租户；未导入 TikTok 资源。
