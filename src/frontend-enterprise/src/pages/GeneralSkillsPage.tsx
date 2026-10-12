@@ -102,6 +102,26 @@ import type {
 } from '../types';
 
 const GENERAL_SKILL_PAGE_SIZE = 10;
+type SkillImportResult = { imported: { resource_id: string }[]; missing: { resource_id: string; reason: string }[] };
+
+function importGroup(item: GeneralSkillRead): { groupId?: string; groupName?: string } {
+  const groupId = item.metadata?.import_group_id;
+  const groupName = item.metadata?.import_group_name;
+  return typeof groupId === 'string' && groupId && typeof groupName === 'string' && groupName
+    ? { groupId, groupName }
+    : {};
+}
+
+function showSkillImportResult(result: SkillImportResult): boolean {
+  const imported = result.imported.length;
+  const missing = result.missing.length;
+  if (missing) {
+    notify.warning(`已复制 ${imported} 个技能，${missing} 个未复制，请刷新后检查来源权限与状态`);
+  } else {
+    notify.success(`已复制 ${imported} 个技能`);
+  }
+  return imported > 0;
+}
 const GENERAL_SKILL_RUN_MODEL_STORAGE_KEY = 'general-skill-run-model';
 
 const STATUS_BADGE: Record<GeneralSkillRead['status'], { tone: BadgeTone; text: string }> = {
@@ -421,6 +441,7 @@ export default function GeneralSkillsPage({ embedded = false, currentUser, onLog
         row.slug,
         row.description,
         row.homepage,
+        importGroup(row).groupName,
         resourceCreatorName(row),
       ].filter(Boolean).join(' ').toLowerCase();
       return matchesStatus && (!keyword || haystack.includes(keyword));
@@ -552,14 +573,13 @@ export default function GeneralSkillsPage({ embedded = false, currentUser, onLog
     }
     setAgentImportLoading(true);
     try {
-      await api.post(`/api/enterprise/agents/${encodeURIComponent(agentId)}/resources/import`, {
+      const result = await api.post<SkillImportResult>(`/api/enterprise/agents/${encodeURIComponent(agentId)}/resources/import`, {
         tenant_id: TENANT_ID,
         source_agent_id: agentImportSourceAgentId,
         resource_type: 'general_skill',
         resource_ids: agentImportSelectedSkillIds,
       });
-      notify.success(`已复制 ${agentImportSelectedSkillIds.length} 个技能`);
-      setAgentImportOpen(false);
+      if (showSkillImportResult(result)) setAgentImportOpen(false);
       await load();
     } catch (error) {
       notify.error(error instanceof Error ? error.message : '复制技能失败');
@@ -679,6 +699,12 @@ export default function GeneralSkillsPage({ embedded = false, currentUser, onLog
       render: (row) => <span className="line-clamp-2 wrap-break-word">{row.description || '暂无描述'}</span>,
     },
     {
+      key: 'folder',
+      title: '所属目录',
+      width: 150,
+      render: (row) => <span className="block truncate" title={importGroup(row).groupName || ''}>{importGroup(row).groupName || '-'}</span>,
+    },
+    {
       key: 'files',
       title: '文件',
       width: 90,
@@ -732,6 +758,7 @@ export default function GeneralSkillsPage({ embedded = false, currentUser, onLog
           <div className="min-w-0">
             <strong className="block truncate text-[14px] font-semibold text-[#18181a]">{row.name}</strong>
             <span className="mt-[2px] block truncate text-[12px] text-[#858b9c]">{row.slug}</span>
+            {importGroup(row).groupName && <span className="mt-[2px] block truncate text-[12px] text-[#757f9c]">目录：{importGroup(row).groupName}</span>}
             <span className="mt-[2px] block truncate text-[12px] text-[#858b9c]">创建者：{resourceCreatorName(row) || '-'}</span>
           </div>
           {renderActions(row)}
@@ -911,6 +938,7 @@ export default function GeneralSkillsPage({ embedded = false, currentUser, onLog
         itemsLabel="选择技能"
         items={agentImportSourceSkills.map((item) => ({
           id: item.id,
+          ...importGroup(item),
           label: (
             <>
               {item.name}
@@ -922,8 +950,8 @@ export default function GeneralSkillsPage({ embedded = false, currentUser, onLog
         emptyText="没有可复制的技能"
         note={
           agentImportMode === 'plaza'
-            ? '从开放广场复制可用技能；不可复制内容不会出现在列表。'
-            : '从数字员工复制可用技能；不可见内容不会出现在列表。'
+            ? '勾选文件夹可复制其中尚未添加的可用技能；已添加或不可复制内容不显示。'
+            : '勾选文件夹可复制其中尚未添加的可用技能；已添加或不可见内容不显示。'
         }
         onSourceChange={(value) => {
           setAgentImportSourceAgentId(value);
@@ -1939,14 +1967,13 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
     }
     setAgentImportLoading(true);
     try {
-      await api.post(`/api/enterprise/agents/${encodeURIComponent(agentId)}/resources/import`, {
+      const result = await api.post<SkillImportResult>(`/api/enterprise/agents/${encodeURIComponent(agentId)}/resources/import`, {
         tenant_id: TENANT_ID,
         source_agent_id: agentImportSourceAgentId,
         resource_type: 'general_skill',
         resource_ids: agentImportSelectedSkillIds,
       });
-      notify.success(`已复制 ${agentImportSelectedSkillIds.length} 个技能`);
-      setAgentImportOpen(false);
+      if (showSkillImportResult(result)) setAgentImportOpen(false);
       await load();
     } catch (error) {
       notify.error(error instanceof Error ? error.message : '复制技能失败');
@@ -3012,6 +3039,7 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
         itemsLabel="选择技能"
         items={agentImportSourceSkills.map((item) => ({
           id: item.id,
+          ...importGroup(item),
           label: (
             <>
               {item.name}
@@ -3022,8 +3050,8 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
         selectedIds={agentImportSelectedSkillIds}
         emptyText="没有可复制的技能"
         note={agentImportMode === 'plaza'
-          ? '从开放广场复制可用技能；不会覆盖当前编辑区内容。'
-          : '从数字员工复制可用技能；不会覆盖当前编辑区内容。'}
+          ? '勾选文件夹可复制其中尚未添加的可用技能；不会覆盖当前编辑区内容。'
+          : '勾选文件夹可复制其中尚未添加的可用技能；不会覆盖当前编辑区内容。'}
         onSourceChange={(value) => {
           setAgentImportSourceAgentId(value);
           void loadAgentImportSourceSkills(value);

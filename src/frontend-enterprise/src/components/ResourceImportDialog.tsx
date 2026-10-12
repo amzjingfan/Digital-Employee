@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 
@@ -18,7 +18,28 @@ import { cn } from '@/lib/utils';
 import { SELECT_TRIGGER_CLASS } from '@/lib/enterprise-ui';
 
 export type ImportSourceOption = { value: string; label: string };
-export type ImportChoiceItem = { id: string; label: ReactNode };
+export type ImportChoiceItem = { id: string; label: ReactNode; groupId?: string; groupName?: string };
+
+type ImportChoiceGroup = { id: string; name: string; items: ImportChoiceItem[] };
+
+function groupImportChoices(items: ImportChoiceItem[]): (ImportChoiceItem | ImportChoiceGroup)[] {
+  const groups = new Map<string, ImportChoiceGroup>();
+  const entries: (ImportChoiceItem | ImportChoiceGroup)[] = [];
+  for (const item of items) {
+    if (!item.groupId || !item.groupName) {
+      entries.push(item);
+      continue;
+    }
+    let group = groups.get(item.groupId);
+    if (!group) {
+      group = { id: item.groupId, name: item.groupName, items: [] };
+      groups.set(item.groupId, group);
+      entries.push(group);
+    }
+    group.items.push(item);
+  }
+  return entries;
+}
 
 export type ResourceImportDialogProps = {
   open: boolean;
@@ -84,6 +105,8 @@ export function ResourceImportDialog({
 }: ResourceImportDialogProps) {
   const showTargetSelect = Boolean(targets && onTargetChange);
   const effectiveSourceId = sourceId || (sources.length === 1 ? sources[0].value : '');
+  const entries = useMemo(() => groupImportChoices(items), [items]);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!open || sourceId || sources.length !== 1) return;
@@ -93,6 +116,26 @@ export function ResourceImportDialog({
   const toggle = (id: string, checked: boolean) => {
     onSelectedChange(checked ? [...selectedIds, id] : selectedIds.filter((value) => value !== id));
   };
+  const toggleGroup = (group: ImportChoiceGroup, checked: boolean) => {
+    const ids = new Set(group.items.map((item) => item.id));
+    onSelectedChange(checked
+      ? [...new Set([...selectedIds, ...ids])]
+      : selectedIds.filter((id) => !ids.has(id)));
+  };
+  const renderItem = (item: ImportChoiceItem) => (
+    <label
+      key={item.id}
+      className="flex cursor-pointer items-center gap-[10px] rounded-[8px] px-[8px] py-[7px] hover:bg-[#f6f6f6]"
+    >
+      <Checkbox
+        checked={selectedIds.includes(item.id)}
+        onCheckedChange={(checked) => toggle(item.id, checked === true)}
+      />
+      <span className="min-w-0 flex-1 truncate text-[12px] text-[#18181a]">
+        {item.label}
+      </span>
+    </label>
+  );
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent
@@ -157,20 +200,34 @@ export function ResourceImportDialog({
                   {sourceId ? emptyText : emptySourceText}
                 </div>
               ) : (
-                items.map((item) => (
-                  <label
-                    key={item.id}
-                    className="flex cursor-pointer items-center gap-[10px] rounded-[8px] px-[8px] py-[7px] hover:bg-[#f6f6f6]"
-                  >
-                    <Checkbox
-                      checked={selectedIds.includes(item.id)}
-                      onCheckedChange={(checked) => toggle(item.id, checked === true)}
-                    />
-                    <span className="min-w-0 flex-1 truncate text-[12px] text-[#18181a]">
-                      {item.label}
-                    </span>
-                  </label>
-                ))
+                entries.map((entry) => {
+                  if (!('items' in entry)) return renderItem(entry);
+                  const selectedCount = entry.items.filter((item) => selectedIds.includes(item.id)).length;
+                  const expanded = Boolean(expandedGroups[entry.id]);
+                  return (
+                    <div key={entry.id} className="rounded-[8px] border border-[#e3e7f1]">
+                      <div className="flex items-center gap-[10px] px-[8px] py-[7px]">
+                        <Checkbox
+                          aria-label={`选择整个文件夹 ${entry.name}`}
+                          checked={selectedCount === entry.items.length ? true : selectedCount > 0 ? 'indeterminate' : false}
+                          onCheckedChange={(checked) => toggleGroup(entry, checked === true)}
+                        />
+                        <button
+                          type="button"
+                          aria-label={`${expanded ? '收起' : '展开'}文件夹 ${entry.name}`}
+                          aria-expanded={expanded}
+                          onClick={() => setExpandedGroups((current) => ({ ...current, [entry.id]: !expanded }))}
+                          className="flex min-w-0 flex-1 items-center gap-[8px] text-left text-[12px] text-[#18181a]"
+                        >
+                          <span className="min-w-0 flex-1 truncate font-medium">{entry.name}</span>
+                          <span className="shrink-0 text-[#858b9c]">{selectedCount}/{entry.items.length} 个技能</span>
+                          <ChevronDown className={cn('size-4 shrink-0 transition-transform', expanded && 'rotate-180')} />
+                        </button>
+                      </div>
+                      {expanded && <div className="border-t border-[#eef0f4] pl-[18px]">{entry.items.map(renderItem)}</div>}
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>

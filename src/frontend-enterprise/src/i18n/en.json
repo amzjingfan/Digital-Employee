@@ -4533,5 +4533,13 @@
   "重命名文件夹失败": "Failed to rename folder",
   "新文件夹名称": "New folder name",
   "保存名称": "Save name",
-  "文件夹名称已更新": "Folder name updated"
+  "文件夹名称已更新": "Folder name updated",
+  "选择整个文件夹 {1}": "Select entire folder {1}",
+  "{1}文件夹 {2}": "{1} folder {2}",
+  "已复制 {1} 个技能，{2} 个未复制，请刷新后检查来源权限与状态": "Copied {1} skills; {2} could not be copied. Refresh and check source permissions and status.",
+  "所属目录": "Folder",
+  "目录：": "Folder: ",
+  "勾选文件夹可复制其中尚未添加的可用技能；已添加或不可复制内容不显示。": "Select a folder to copy its available skills that have not been added yet. Existing or unavailable skills are hidden.",
+  "勾选文件夹可复制其中尚未添加的可用技能；已添加或不可见内容不显示。": "Select a folder to copy its available skills that have not been added yet. Existing or inaccessible skills are hidden.",
+  "勾选文件夹可复制其中尚未添加的可用技能；不会覆盖当前编辑区内容。": "Select a folder to copy its available skills that have not been added yet. The current editor content will not be overwritten."
 }
