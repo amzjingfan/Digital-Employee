@@ -1,5 +1,12 @@
 # Joukir 内网部署记录（2026-10-08）
 
+## 2026-10-12 员工按目录复制 Skill
+
+- 当前应用目录 `/home/joukir/releases/2cbf780-employee-skill-folders`，代码提交 `2cbf780`。从广场或其他员工复制通用 Skill 时，弹窗按现有文件夹 ID 分组；勾选文件夹可复制全部可用成员，展开后可改单项。员工列表显示所属目录，后端仍逐项校验来源权限与状态，界面按实际导入和未导入数提示。
+- 切换前 `joukir-backup.service` 为 `success`；旧发布 `/home/joukir/releases/b5df0fb-folder-skill-test` 和 unit 备份 `/home/joukir/runtime/joukir.service.pre-2cbf780` 保留。主 JS 在本地、发布目录与 HTTPS 响应的 SHA-256 均为 `4f4550507bcdd402d9cd8dfc7727fea04acf013c8de9fac2966e177f325bd9c3`。构建使用 `tenant_internal`，不含 `tenant_demo` 与 TikTok API。未运行数据库迁移或资源导入；PostgreSQL/Casdoor 配置不变。
+- 切换后 `joukir.service` active/Result=success，HTTPS `/api/health`、OIDC 配置、技能页面及主 JS 为 200，TikTok API 404，PostgreSQL healthy；通用 Skill 只读计数为 29，与上一发布记录一致。前端 80 文件/358 测试、类型检查、i18n 4536 项、配置检查、生产构建、测试布局和差异检查通过。
+- Chrome 桥接仍返回 `nodeRepl.fetch request failed`，已登录管理员的真实页面视觉验收及真实复制未完成。请在信任内网 CA 的浏览器刷新员工技能页，勾选一个目录并核对实际复制的子技能与所属目录。
+
 ## 2026-10-12 Skill 文件夹联合测试
 
 - 当前应用目录 `/home/joukir/releases/b5df0fb-folder-skill-test`，代码提交 `b5df0fb`。在 Skill 编辑页打开文件夹成员时，测试范围默认是整个文件夹，仍可改选单个 Skill。后端按分组 ID 和现有租户/可见权限实时取得成员，在一次 Harness v2 调试会话中只开放这些子技能，由模型按问题选用并在结果中列出已加载技能；没有加载任何成员则标为失败。没有合并 Skill 记录或重发资源。
