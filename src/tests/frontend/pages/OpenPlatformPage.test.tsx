@@ -255,3 +255,67 @@ describe('OpenPlatformPage skill folders', () => {
     ));
   });
 });
+
+function stubPlazaResource(kind: string, row: Record<string, unknown>) {
+  const pathByKind: Record<string, string> = {
+    knowledge: '/api/enterprise/knowledge-bases?',
+    'general-skills': '/api/enterprise/general-skills?',
+    skills: '/api/enterprise/agents/overall-1/skills?',
+    tools: '/api/enterprise/tools?',
+  };
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => ({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    text: async () => JSON.stringify(String(input).includes('/api/enterprise/agents?')
+      ? [overallAgent('overall-1')]
+      : String(input).includes(pathByKind[kind]) ? [row] : []),
+  } as Response));
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+
+describe('OpenPlatformPage resource editing', () => {
+  const cases = [
+    ['general-skills', {
+      id: 'skill-id', slug: 'ads-skill', name: 'Ads Skill', description: 'Ads description',
+      status: 'published', metadata: {},
+    }, '/enterprise/general-skills/ads-skill/edit?scope=gallery'],
+    ['skills', {
+      id: 'sop-id', skill_id: 'sop/alpha', name: 'Review SOP', description: 'SOP description',
+      status: 'published', version: '1.0.0',
+    }, '/enterprise/skills/distill?skill_id=sop%2Falpha&agent_id=overall-1'],
+    ['knowledge', {
+      id: 'kb-id', name: 'Policy KB', description: 'Knowledge description', status: 'active',
+      document_count: 1, bucket_count: 1, chunk_count: 1,
+    }, '/enterprise/knowledge?scope=gallery&edit=kb-id'],
+    ['tools', {
+      id: 'tool-id', name: 'price-tool', display_name: 'Price Tool',
+      description: 'Tool description', enabled: true, tool_type: 'http', method: 'POST',
+    }, '/enterprise/tools/tool-id/edit?scope=gallery'],
+    ['tools', {
+      id: 'mcp-tool-id', name: 'mcp-tool', display_name: 'MCP Tool',
+      description: 'MCP description', enabled: true, tool_type: 'mcp', method: 'POST',
+      mcp_server_id: 'server/one',
+    }, '/enterprise/tools/mcp/server%2Fone/edit?scope=gallery'],
+  ] as const;
+
+  it.each(cases)('opens the gallery editor for %s resource %s', async (kind, row, destination) => {
+    const fetchMock = stubPlazaResource(kind, row);
+    renderPage(kind, true);
+    await waitForCatalogLoad(fetchMock);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: new RegExp(`${row.description}`) }));
+    await user.click(screen.getByRole('button', { name: '编辑' }));
+    expect(screen.getByTestId('location').textContent).toBe(destination);
+    expect(window.localStorage.getItem('ultrarag_enterprise_agent_scope')).toBe('overall-1');
+  });
+
+  it('does not offer editing to a member', async () => {
+    const fetchMock = stubPlazaResource('general-skills', cases[0][1]);
+    renderPage('general-skills', false);
+    await waitForCatalogLoad(fetchMock);
+    await userEvent.setup().click(screen.getByRole('button', { name: /Ads description/ }));
+    expect(screen.queryByRole('button', { name: '编辑' })).toBeNull();
+  });
+});

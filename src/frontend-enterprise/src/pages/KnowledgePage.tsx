@@ -178,7 +178,9 @@ export default function KnowledgeManagePage({ currentUser, onLogout }: Knowledge
   const [selectedDocument, setSelectedDocument] = useState<KnowledgeDocumentRead | null>(null);
   const [buckets, setBuckets] = useState<KnowledgeBucketRead[]>([]);
   const [loading, setLoading] = useState(false);
-  const [agentId, setAgentId] = useState(readEmployeeScope);
+  const [agentId, setAgentId] = useState(() =>
+    searchParams.get('scope') === 'gallery' && isEnterpriseAdmin(currentUser)
+      ? '' : readEmployeeScope());
   const [agentScopeLoaded, setAgentScopeLoaded] = useState(false);
   const [agents, setAgents] = useState<AgentProfileRead[]>([]);
   const [importOpen, setImportOpen] = useState(false);
@@ -341,6 +343,18 @@ export default function KnowledgeManagePage({ currentUser, onLogout }: Knowledge
     next.delete('resourceId');
     setSearchParams(next, { replace: true });
   }, [agents.length, isOverallAgent, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (!editId || !agentScopeLoaded || loading || !canManageCurrentScope) return;
+    const row = knowledgeBases.find((item) => item.id === editId);
+    if (!row) return;
+    openEditKnowledgeBase(row);
+    const next = new URLSearchParams(searchParams);
+    next.delete('edit');
+    next.delete('scope');
+    setSearchParams(next, { replace: true });
+  }, [agentScopeLoaded, canManageCurrentScope, knowledgeBases, loading, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (knowledgeBaseFilter !== '__all__' && !visibleKnowledgeBases.some((item) => item.id === knowledgeBaseFilter)) {

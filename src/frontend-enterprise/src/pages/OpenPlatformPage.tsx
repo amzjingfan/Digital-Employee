@@ -435,6 +435,32 @@ export default function OpenPlatformPage({
     setDetailItem({ kind: detailItem.kind, item: nextItem });
   }
 
+  function editPlatformItem(platformKind: PlatformKind, item: PlatformItem) {
+    if (!canManagePlatform || !overallAgent) return;
+    const resourceKey = encodeURIComponent(item.deleteKey || item.id);
+    let destination: string;
+    if (platformKind === 'general-skills') {
+      destination = `/enterprise/general-skills/${resourceKey}/edit?scope=gallery`;
+    } else if (platformKind === 'skills') {
+      destination = `/enterprise/skills/distill?skill_id=${resourceKey}&agent_id=${encodeURIComponent(overallAgent.id)}`;
+    } else if (platformKind === 'knowledge') {
+      destination = `/enterprise/knowledge?scope=gallery&edit=${encodeURIComponent(item.id)}`;
+    } else if (platformKind === 'tools') {
+      const tool = tools.find((row) => row.id === item.id);
+      destination = tool?.mcp_server_id
+        ? `/enterprise/tools/mcp/${encodeURIComponent(tool.mcp_server_id)}/edit?scope=gallery`
+        : `/enterprise/tools/${encodeURIComponent(item.id)}/edit?scope=gallery`;
+    } else {
+      return;
+    }
+    window.localStorage.setItem(ENTERPRISE_AGENT_STORAGE_KEY, overallAgent.id);
+    window.dispatchEvent(new CustomEvent('ultrarag-enterprise-agent-scope-change', {
+      detail: { agentId: overallAgent.id },
+    }));
+    setDetailItem(null);
+    navigate(destination);
+  }
+
   function renderItemDrawer() {
     if (!detailItem) return null;
     const config = PLATFORM_BY_KIND.get(detailItem.kind) || PLATFORM_CONFIGS[0];
@@ -498,6 +524,7 @@ export default function OpenPlatformPage({
         onPrev={() => navigateDetailItem(-1)}
         onNext={() => navigateDetailItem(1)}
         onDelete={() => setConfirmTarget({ kind: detailItem.kind, item })}
+        onEdit={overallAgent ? () => editPlatformItem(detailItem.kind, item) : undefined}
         onUse={() => {
           setDetailItem(null);
           void usePlatformItem(detailItem.kind, item.id);

@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { XIcon } from 'lucide-react';
 
 import IconChevronDown from '../../assets/icons/chevron-down.svg?react';
+import IconEdit from '../../assets/icons/edit.svg?react';
 import IconTrash from '../../assets/icons/trash.svg?react';
 
 import { platformResourceAccentStyles, type PlatformResourceAccent } from './PlatformResourceCard';
@@ -28,6 +29,7 @@ export type PlatformResourceDrawerProps = {
   onPrev?: () => void;
   onNext?: () => void;
   onDelete?: () => void;
+  onEdit?: () => void;
   onUse: () => void;
 };
 
@@ -89,6 +91,7 @@ export default function PlatformResourceDrawer({
   onPrev,
   onNext,
   onDelete,
+  onEdit,
   onUse,
 }: PlatformResourceDrawerProps) {
   const accentStyles = platformResourceAccentStyles[accent];
@@ -174,6 +177,16 @@ export default function PlatformResourceDrawer({
             >
               <IconTrash className="size-[14px]" />
               删除
+            </button>
+          )}
+          {canManage && onEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              className="inline-flex h-[34px] items-center justify-center gap-[4px] rounded-[10px] border-[0.5px] border-[#e3e7f1] bg-white px-[16px] text-[12px] text-[#464c5e] transition-colors hover:bg-[#f3f5f8]"
+            >
+              <IconEdit className="size-[14px]" />
+              编辑
             </button>
           )}
           <button
