@@ -1418,6 +1418,7 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
   const [selectedFolderPath, setSelectedFolderPath] = useState<string | null>(null);
   const [selectedSlug, setSelectedSlug] = useState<string>();
+  const [runTargetOverride, setRunTargetOverride] = useState<string>();
   const [editingSlug, setEditingSlug] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [runResult, setRunResult] = useState<GeneralSkillRunResponse | null>(null);
@@ -1472,6 +1473,24 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
     () => rows.find((row) => row.slug === selectedSlug),
     [rows, selectedSlug],
   );
+  const testGroups = useMemo(() => {
+    const groups = new Map<string, { name: string; count: number }>();
+    rows.forEach((row) => {
+      const id = row.metadata?.import_group_id;
+      if (typeof id !== 'string' || !id) return;
+      const group = groups.get(id);
+      groups.set(id, {
+        name: typeof row.metadata.import_group_name === 'string' ? row.metadata.import_group_name : id,
+        count: (group?.count || 0) + 1,
+      });
+    });
+    return groups;
+  }, [rows]);
+  const currentGroupId = selectedSkill?.metadata?.import_group_id;
+  const runTarget = runTargetOverride
+    || (typeof currentGroupId === 'string' && currentGroupId
+      ? `group:${currentGroupId}`
+      : selectedSkill ? `skill:${selectedSkill.slug}` : '');
   const activeResult = runResult || liveResult;
   const selectedFile = useMemo(
     () => skillFiles.find((file) => file.path === selectedFilePath) || skillFiles[0],
@@ -1710,6 +1729,7 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
     setSelectedFolderPath(null);
     setEditingSlug(null);
     setSelectedSlug(undefined);
+    setRunTargetOverride(undefined);
     setQuery('');
     setRunResult(null);
     setLiveResult(null);
@@ -1729,6 +1749,7 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
     setSelectedFilePath((row.skill_files?.length ? row.skill_files : [{ path: 'SKILL.md' }])[0].path);
     setSelectedFolderPath(null);
     setSelectedSlug(row.slug);
+    setRunTargetOverride(undefined);
     setEditingSlug(row.slug);
     setRunResult(null);
     setLiveResult(null);
@@ -1954,6 +1975,7 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
       notify.success(`已新增 ${row.name}`);
       setRows((current) => [row, ...current.filter((item) => item.id !== row.id && item.slug !== row.slug)]);
       setSelectedSlug(row.slug);
+      setRunTargetOverride(undefined);
       editSkill(row);
       setClawhubModalOpen(false);
       void load();
@@ -2219,8 +2241,9 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
   }
 
   async function runSkill() {
-    const slug = selectedSkill?.slug;
-    if (!slug) {
+    const isGroup = runTarget.startsWith('group:');
+    const slug = runTarget.slice(isGroup ? 'group:'.length : 'skill:'.length);
+    if (!slug || (!isGroup && !runTarget.startsWith('skill:'))) {
       notify.warning('请先导入技能');
       return;
     }
@@ -2263,7 +2286,9 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
     try {
       let completed = false;
       await streamPost(
-        `/api/enterprise/general-skills/${slug}/run/stream`,
+        isGroup
+          ? `/api/enterprise/general-skills/groups/${encodeURIComponent(slug)}/run/stream`
+          : `/api/enterprise/general-skills/${encodeURIComponent(slug)}/run/stream`,
         {
           tenant_id: TENANT_ID,
           agent_id: agentId || undefined,
@@ -2626,7 +2651,7 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
                     window.localStorage.setItem(`${GENERAL_SKILL_RUN_MODEL_STORAGE_KEY}:${TENANT_ID}`, modelId);
                   }}
                 />
-                <UIButton disabled={loading || !selectedSkill?.slug} className={PRIMARY_BUTTON_CLASS} onClick={() => void runSkill()}>
+                <UIButton disabled={loading || !runTarget} className={PRIMARY_BUTTON_CLASS} onClick={() => void runSkill()}>
                   <ExperimentOutlined />
                   运行
                 </UIButton>
@@ -2634,14 +2659,19 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
             )}
           >
             <div className="flex flex-col gap-[12px]">
-              <Field label="选择技能">
-                <UISelect value={selectedSkill?.slug} onValueChange={setSelectedSlug}>
+              <Field label="测试范围">
+                <UISelect value={runTarget} onValueChange={setRunTargetOverride}>
                   <SelectTrigger className={cn(SELECT_TRIGGER_CLASS, 'w-full')}>
                     <SelectValue placeholder={isNew && !selectedSkill ? '保存后可选择并测试' : '选择技能'} />
                   </SelectTrigger>
                   <SelectContent>
+                    {Array.from(testGroups, ([id, group]) => (
+                      <SelectItem key={`group:${id}`} value={`group:${id}`}>
+                        {`整个文件夹：${group.name}（${group.count} 个技能）`}
+                      </SelectItem>
+                    ))}
                     {rows.map((row) => (
-                      <SelectItem key={row.slug} value={row.slug}>{`${row.name} / ${row.slug}`}</SelectItem>
+                      <SelectItem key={row.slug} value={`skill:${row.slug}`}>{`${row.name} / ${row.slug}`}</SelectItem>
                     ))}
                   </SelectContent>
                 </UISelect>
@@ -2866,6 +2896,15 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
                     className={SKILL_REPLY_TEXT_CLASS}
                     content={activeResult.reply || (loading ? '正在运行技能...' : '暂无回复')}
                   />
+                  {Array.isArray(activeResult.structured_result?.loaded_skill_slugs)
+                    && activeResult.structured_result.loaded_skill_slugs.length > 0 && (
+                      <div className="mt-[12px] text-[12px] text-[#667085]">
+                        使用的子技能：{activeResult.structured_result.loaded_skill_slugs
+                          .filter((slug): slug is string => typeof slug === 'string')
+                          .map((slug) => rows.find((row) => row.slug === slug)?.name || slug)
+                          .join('、')}
+                      </div>
+                    )}
                 </section>
 
                 <section>

@@ -244,6 +244,8 @@ class ChatTurnRequest(BaseModel):
     forced_persona_prompt: Optional[str] = Field(default=None, exclude=True)
     forced_harness_max_actions: Optional[int] = Field(default=None, exclude=True)
     forced_capability_snapshot: Optional[dict[str, Any]] = Field(default=None, exclude=True)
+    # A folder test may expose only its member Skills to this one Harness turn.
+    allowed_general_skill_ids: Optional[list[str]] = Field(default=None, exclude=True)
     client_timezone: Optional[str] = None
     debug: bool = False
 

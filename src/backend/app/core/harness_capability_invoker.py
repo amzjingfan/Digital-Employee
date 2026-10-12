@@ -91,6 +91,7 @@ class HarnessCapabilityInvoker:
         active_skill: Skill | None,
         active_step_id: str | None,
         agent_id: str | None,
+        allowed_general_skill_ids: list[str] | None = None,
         run_id: str | None = None,
         initially_activated_names: set[str] | None = None,
         is_cancelled: Any | None = None,
@@ -110,6 +111,7 @@ class HarnessCapabilityInvoker:
         )
         self.active_step_id = active_step_id
         self.agent_id = agent_id
+        self.allowed_general_skill_ids = allowed_general_skill_ids
         self.is_cancelled = is_cancelled
         self.ensure_execution_lease = ensure_execution_lease
         self.trace_sink = trace_sink
@@ -390,6 +392,7 @@ class HarnessCapabilityInvoker:
                 self.agent_id,
                 self.active_skill,
                 self.active_step_id,
+                self.allowed_general_skill_ids,
             )
         except CapabilityAuthorizationError:
             return None

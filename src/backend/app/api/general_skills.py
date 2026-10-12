@@ -910,18 +910,95 @@ def run_general_skill_stream(
 
         return StreamingResponse(read_stream_events(), media_type="text/event-stream")
 
+    return _stream_harness_skill_test(
+        request,
+        current_user.id,
+        skill.slug,
+        skill.name,
+        f"/skill {skill.slug} {request.query.strip()}",
+    )
+
+
+@router.post("/groups/{group_id}/run/stream")
+def run_general_skill_group_stream(
+    group_id: str,
+    request: GeneralSkillRunRequest,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    if request.operation != "execute":
+        raise HTTPException(status_code=400, detail="文件夹测试仅支持运行")
+    require_agent_scope_viewer(request.tenant_id, request.agent_id, current_user, db)
+    ensure_tenant(db, request.tenant_id)
+    members = [
+        row
+        for row in db.exec(
+            select(GeneralSkill).where(
+                GeneralSkill.tenant_id == request.tenant_id,
+                GeneralSkill.status == "published",
+            )
+        ).all()
+        if (row.metadata_json or {}).get("import_group_id") == group_id
+    ]
+    if not members:
+        raise HTTPException(status_code=404, detail="技能文件夹不存在或没有已发布技能")
+    visible_members = []
+    for member in members:
+        try:
+            _ensure_general_skill_visible(db, request.tenant_id, member, request.agent_id)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+        else:
+            visible_members.append(member)
+    if not visible_members:
+        raise HTTPException(status_code=404, detail="技能文件夹中没有可见技能")
+    _get_request_model(db, request.tenant_id, request.model_config_id)
+    group_name = str((visible_members[0].metadata_json or {}).get("import_group_name") or group_id)
+    descriptions = "\n".join(
+        f"- {row.slug}: {row.description or row.name}" for row in visible_members
+    )
+    return _stream_harness_skill_test(
+        request,
+        current_user.id,
+        group_id,
+        group_name,
+        request.query.strip(),
+        allowed_general_skill_ids=[row.id for row in visible_members],
+        allowed_general_skill_slugs=[row.slug for row in visible_members],
+        context_injection=(
+            f"本次是技能文件夹「{group_name}」的测试。请根据问题调用至少一个相关的"
+            " general_skill；如需多个子技能可依次调用，并综合回答。"
+            f"当前文件夹包含：\n{descriptions}"
+        ),
+    )
+
+
+def _stream_harness_skill_test(
+    request: GeneralSkillRunRequest,
+    user_id: str,
+    result_slug: str,
+    title: str,
+    message: str,
+    *,
+    allowed_general_skill_ids: list[str] | None = None,
+    allowed_general_skill_slugs: list[str] | None = None,
+    context_injection: str | None = None,
+) -> StreamingResponse:
     session_id = new_id("session")
     client_turn_id = f"skill-test-{uuid.uuid4().hex}"
     debug_session = ChatSession(
         id=session_id,
         tenant_id=request.tenant_id,
-        user_id=current_user.id,
+        user_id=user_id,
         agent_id=request.agent_id,
-        title=f"技能测试 · {skill.name}",
+        title=f"技能测试 · {title}",
         channel=GENERAL_SKILL_DEBUG_CHANNEL,
     )
-    db.add(debug_session)
-    db.commit()
+    with Session(engine) as write_db:
+        set_tenant_context(write_db, request.tenant_id)
+        write_db.add(debug_session)
+        write_db.commit()
 
     harness_request = ChatTurnRequest(
         tenant_id=request.tenant_id,
@@ -929,10 +1006,12 @@ def run_general_skill_stream(
         agent_id=request.agent_id,
         model_config_id=request.model_config_id,
         client_turn_id=client_turn_id,
-        user_id=current_user.id,
-        message=f"/skill {skill.slug} {request.query.strip()}",
+        user_id=user_id,
+        message=message,
         channel=GENERAL_SKILL_DEBUG_CHANNEL,
         message_visibility="internal",
+        context_injection=context_injection,
+        allowed_general_skill_ids=allowed_general_skill_ids,
         debug=True,
     )
 
@@ -953,14 +1032,44 @@ def run_general_skill_stream(
                         )
                         .order_by(Message.created_at.desc())
                     ).first()
+                    loaded_slugs = list(dict.fromkeys(
+                        str(event.payload_json.get("skill_slug"))
+                        for event in worker_db.exec(
+                            select(AgentEvent).where(
+                                AgentEvent.tenant_id == request.tenant_id,
+                                AgentEvent.session_id == session_id,
+                                AgentEvent.event_type == "general_skill_trace",
+                            ).order_by(AgentEvent.created_at, AgentEvent.id)
+                        ).all()
+                        if isinstance(event.payload_json, dict)
+                        and event.payload_json.get("phase") == "instructions_loaded"
+                        and event.payload_json.get("skill_slug")
+                        and (
+                            allowed_general_skill_slugs is None
+                            or event.payload_json.get("skill_slug")
+                            in allowed_general_skill_slugs
+                        )
+                    ))
+                    result = _harness_skill_run_response(
+                        result_slug,
+                        response,
+                        dict(assistant.metadata_json or {}) if assistant else {},
+                    )
+                    if allowed_general_skill_ids is not None:
+                        structured = dict(result.structured_result)
+                        structured["loaded_skill_slugs"] = loaded_slugs
+                        if not loaded_slugs and structured.get("success"):
+                            structured["success"] = False
+                            structured["runtime_error_code"] = "NO_FOLDER_SKILL_USED"
+                            result = result.model_copy(update={
+                                "reply": "本次没有加载文件夹内的技能，请换一个更具体的问题重试。",
+                                "stderr": "未加载文件夹内的技能",
+                            })
+                        result = result.model_copy(update={"structured_result": structured})
                     terminal.put(
                         (
                             "complete",
-                            _harness_skill_run_response(
-                                skill.slug,
-                                response,
-                                dict(assistant.metadata_json or {}) if assistant else {},
-                            ),
+                            result,
                         )
                     )
             except Exception as exc:  # pragma: no cover - defensive stream boundary
@@ -975,7 +1084,7 @@ def run_general_skill_stream(
         yield _sse(
             "stream_started",
             {
-                "skill_slug": skill_snapshot.slug,
+                "skill_slug": result_slug,
                 "operation": request.operation,
                 "execution_engine": "harness_v2",
                 "session_id": session_id,

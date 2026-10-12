@@ -60,6 +60,7 @@ class CapabilityManifestBuilder:
         agent_id: str | None,
         skill: Skill | None,
         step_id: str | None,
+        allowed_general_skill_ids: list[str] | None = None,
     ) -> CapabilityManifest:
         if agent_id and get_agent(self.db, tenant_id, agent_id) is None:
             raise CapabilityAuthorizationError("当前员工不存在、已归档或不属于该租户。")
@@ -104,6 +105,9 @@ class CapabilityManifestBuilder:
             )
 
         visible_general = _visible_general_skills(self.db, tenant_id, agent_id)
+        if allowed_general_skill_ids is not None:
+            allowed_ids = set(allowed_general_skill_ids)
+            visible_general = [row for row in visible_general if row.id in allowed_ids]
         general_by_ref = {ref: row for row in visible_general for ref in (row.id, row.slug)}
         for row in visible_general:
             scope = _scope(row)
@@ -121,7 +125,11 @@ class CapabilityManifestBuilder:
             explicitly_allowed = any(
                 general_by_ref.get(ref) is row for ref in refs["general_skill_ids"]
             )
-            if scope == "sop_specific" and not explicitly_allowed:
+            if (
+                scope == "sop_specific"
+                and not explicitly_allowed
+                and allowed_general_skill_ids is None
+            ):
                 continue
             available.append(
                 CapabilityDescriptor(

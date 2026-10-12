@@ -15,6 +15,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.agents.branching import ensure_open_gallery_binding, hide_open_gallery_binding
 from app.api import general_skills as general_skill_api
+from app.core.capability_manifest import CapabilityManifestBuilder
 from app.api.general_skills import (
     archive_general_skill,
     delete_general_skill,
@@ -27,6 +28,7 @@ from app.api.general_skills import (
     publish_general_skill,
     publish_general_skill_to_gallery,
     run_general_skill,
+    run_general_skill_group_stream,
     run_general_skill_stream,
 )
 from app.db.database import set_tenant_context
@@ -465,6 +467,64 @@ def test_batch_import_keeps_folder_group_and_edit_keeps_it() -> None:
             )
         assert mixed_scope.value.status_code == 400
         assert all(row.slug != "third" for row in list_general_skills("tenant_demo", db))
+
+
+def test_folder_test_uses_only_currently_visible_group_members(monkeypatch) -> None:
+    with _test_session() as db:
+        _seed_minimal_tenant(db)
+        db.add(AgentProfile(
+            id="agent_overall", tenant_id="tenant_demo", name="开放广场", is_overall=True
+        ))
+        db.commit()
+        imported = import_general_skills_batch(
+            GeneralSkillBatchImportRequest(
+                group_name="Design kit",
+                skills=[
+                    GeneralSkillImportRequest(
+                        tenant_id="tenant_demo", slug=slug, markdown=f"# {slug}"
+                    )
+                    for slug in ("design-layout", "design-style")
+                ],
+            ),
+            db,
+            _admin_user(),
+        )
+        outsider = import_general_skill(
+            GeneralSkillImportRequest(
+                tenant_id="tenant_demo", slug="unrelated", markdown="# unrelated"
+            ),
+            db,
+            _admin_user(),
+        )
+        hide_open_gallery_binding(db, "tenant_demo", "general_skill", imported[1].id)
+        db.get(GeneralSkill, imported[0].id).capability_scope = "sop_specific"
+        db.commit()
+        manifest = CapabilityManifestBuilder(db).build(
+            "tenant_demo", "agent_overall", None, None, [imported[0].id]
+        )
+        skill_ids = {
+            item.capability_id for item in manifest.available if item.kind == "general_skill"
+        }
+        assert skill_ids == {imported[0].id}
+        captured = {}
+
+        def capture_stream(*args, **kwargs):  # noqa: ANN002, ANN003
+            captured["args"] = args
+            captured["kwargs"] = kwargs
+            return object()
+
+        monkeypatch.setattr(general_skill_api, "_stream_harness_skill_test", capture_stream)
+        request = GeneralSkillRunRequest(
+            tenant_id="tenant_demo", agent_id="agent_overall", query="设计布局"
+        )
+        group_id = imported[0].metadata["import_group_id"]
+        run_general_skill_group_stream(group_id, request, db, _admin_user())
+        assert captured["args"][4] == "设计布局"
+        assert captured["kwargs"]["allowed_general_skill_ids"] == [imported[0].id]
+        assert outsider.id not in captured["kwargs"]["allowed_general_skill_ids"]
+        with pytest.raises(HTTPException) as missing:
+            run_general_skill_group_stream("missing", request, db, _admin_user())
+        assert missing.value.status_code == 404
 
 
 def test_admin_can_group_existing_gallery_skills_without_changing_private_skills() -> None:
@@ -1578,6 +1638,76 @@ async def test_general_skill_stream_executes_through_forced_harness_v2(
     assert "已加载技能说明" in body
     assert "北京天气晴朗" in body
     assert '"path": "weather.txt"' in body
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("loads_skill", [True, False])
+async def test_folder_stream_requires_a_member_skill(monkeypatch, loads_skill: bool) -> None:
+    test_engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    SQLModel.metadata.create_all(test_engine)
+    captured_requests = []
+
+    def fake_handle_turn(self, request):  # noqa: ANN001
+        captured_requests.append(request)
+        if loads_skill:
+            self.db.add(AgentEvent(
+                tenant_id=request.tenant_id,
+                session_id=request.session_id,
+                event_type="general_skill_trace",
+                payload_json={
+                    "phase": "instructions_loaded",
+                    "skill_slug": "design-layout",
+                    "message": "已加载技能说明",
+                },
+            ))
+        self.db.commit()
+        return ChatTurnResponse(
+            reply="布局建议", session_id=request.session_id,
+            session_state={
+                "session_id": request.session_id,
+                "tenant_id": request.tenant_id,
+                "status": "active",
+            },
+        )
+
+    monkeypatch.setattr(general_skill_api, "engine", test_engine)
+    monkeypatch.setattr(general_skill_api.AgentLoop, "handle_turn", fake_handle_turn)
+    with Session(test_engine) as db:
+        set_tenant_context(db, "tenant_demo")
+        _seed_minimal_tenant(db)
+        db.add(AgentProfile(
+            id="agent_overall", tenant_id="tenant_demo", name="开放广场", is_overall=True
+        ))
+        db.commit()
+        imported = import_general_skills_batch(
+            GeneralSkillBatchImportRequest(
+                group_name="Design kit",
+                skills=[GeneralSkillImportRequest(
+                    tenant_id="tenant_demo", slug="design-layout", markdown="# Layout"
+                )],
+            ), db, _admin_user(),
+        )
+        response = run_general_skill_group_stream(
+            imported[0].metadata["import_group_id"],
+            GeneralSkillRunRequest(
+                tenant_id="tenant_demo", agent_id="agent_overall", query="如何排版"
+            ), db, _admin_user(),
+        )
+        chunks = [chunk async for chunk in response.body_iterator]
+    body = "".join(
+        chunk.decode("utf-8") if isinstance(chunk, bytes) else chunk for chunk in chunks
+    )
+    assert captured_requests[0].message == "如何排版"
+    assert captured_requests[0].allowed_general_skill_ids == [imported[0].id]
+    assert "Design kit" in captured_requests[0].context_injection
+    if loads_skill:
+        assert '"loaded_skill_slugs": ["design-layout"]' in body
+        assert '"success": true' in body
+    else:
+        assert '"runtime_error_code": "NO_FOLDER_SKILL_USED"' in body
+        assert '"success": false' in body
 
 
 def test_harness_skill_result_never_marks_an_empty_or_failed_reply_successful() -> None:

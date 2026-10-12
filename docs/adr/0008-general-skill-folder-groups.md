@@ -16,6 +16,8 @@ The open plaza groups published skills into an expandable folder card on its ove
 
 An administrator may select one or more existing published gallery skills and assign a folder name. This operation validates every selected ID in the same tenant and gallery before writing any group metadata. An administrator may rename an existing folder: the API checks its gallery members, changes their shared display name, and preserves the group ID and membership. It does not infer historical membership from similar names or timestamps. Ordinary edits preserve group metadata; a later grouped batch import moves matching skills into that batch's new group. Untrusted Skill frontmatter cannot set group IDs.
 
+The Skill editor also offers the folder as a test target. The server resolves published, currently visible members by group ID at test start and starts one debug Harness v2 turn. That turn exposes only those members as general Skill capabilities; the model selects the relevant member or members for the test question, and the result records which instructions were loaded. A turn that loads no member is reported as failed. Individual Skill tests remain available. Folder testing does not create a merged Skill or publish resources.
+
 ## Alternatives and consequences
 
 Grouping by folder name alone could merge unrelated imports. Merging all child Skills into one database row would change their execution and permission identity. Inferring historical folders from slugs would misclassify content. The chosen metadata approach needs no schema migration and keeps original Skill records intact, but older imports need an administrator to group them explicitly. Removing the metadata keys from affected skills restores the former card layout without deleting Skill content.

@@ -365,6 +365,8 @@ class HarnessV2Engine:
         source_skills = self.owner._list_published_skills(
             request.tenant_id, session.agent_id
         )
+        if request.allowed_general_skill_ids is not None:
+            source_skills = []
         source_skills = _apply_forced_sop_snapshots(
             source_skills,
             request.forced_sop_snapshots,
@@ -428,6 +430,7 @@ class HarnessV2Engine:
                     session.agent_id,
                     None,
                     None,
+                    request.allowed_general_skill_ids,
                 )
                 direct_manifest = _apply_forced_capability_snapshot(
                     direct_manifest,
@@ -932,6 +935,7 @@ class HarnessV2Engine:
                 session.agent_id,
                 active_skill,
                 frame.target_step_id,
+                request.allowed_general_skill_ids,
             )
             manifest = _apply_forced_capability_snapshot(
                 manifest,
@@ -1029,6 +1033,7 @@ class HarnessV2Engine:
                 active_skill=active_skill,
                 active_step_id=frame.target_step_id,
                 agent_id=session.agent_id,
+                allowed_general_skill_ids=request.allowed_general_skill_ids,
                 run_id=run.id,
                 initially_activated_names=(
                     requirement.capability_manifest.allowed_names()
