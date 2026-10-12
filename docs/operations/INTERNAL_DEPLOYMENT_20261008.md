@@ -1,5 +1,12 @@
 # Joukir 内网部署记录（2026-10-08）
 
+## 2026-10-12 单个 Skill 文件夹及分类重命名
+
+- 当前应用目录为 `/home/joukir/releases/dda215b-single-skill-folders`，代码提交 `dda215b`。管理员可将单个或多个已发布的广场 Skill 整理进文件夹，并修改文件夹名称；修改只更新显示名，保留分组 ID 与成员。单个 Skill 从文件夹导入后也保留文件夹分类；广场首页及完整列表均显示单成员文件夹。
+- 切换前 `joukir-backup.service` 返回 `success`。旧发布 `/home/joukir/releases/e810c5d-skill-upsert-delete` 和 unit 备份 `/home/joukir/runtime/joukir.service.pre-dda215b` 保留。前端以 `tenant_internal` 和 TikTok 事业部关闭构建。主 JS 本地、发布目录和 HTTPS 响应 SHA-256 均为 `e825e958b0ced0f8feae6d0fd18fd054d718713a06a3091ff39215e1c1807542`；后端两文件本地与发布目录哈希一致。
+- 切换后服务 active，HTTPS 健康、OIDC 配置、Skill 页面、主 JS 均为 200；未授权的新重命名接口为 401，TikTok API 为 404，PostgreSQL 容器 healthy。数据库只读查询当前有 1 租户、2 用户、29 条通用 Skill；本次发布未运行导入或数据迁移。此数量较上次记录的 20 条已有变化，本轮未取得切换前基线，不能将差额归因于发布。
+- 验证：前端 76 文件/347 测试、通用 Skill 后端 39 测试（排除 2 项既有 Runner 环境用例）、类型检查、i18n、配置检查、生产构建、测试布局、聚焦 Ruff 和差异检查均通过。Chrome 桥接仍报 `nodeRepl.fetch request failed`，已登录管理员的视觉验收未完成；需在信任内网 CA 的浏览器核对单成员文件夹与重命名交互。
+
 ## 2026-10-12 Skill 真删除与同名导入更新
 
 - 当前应用目录为 `/home/joukir/releases/e810c5d-skill-upsert-delete`，代码提交 `e810c5d`。广场删除现物理删除通用 Skill 记录及其所有资源绑定；若仍有非删除状态的员工绑定，返回 409 并保留记录。员工侧移除仍只隐藏该员工绑定。同租户同 slug 的广场导入会更新现有 ID、重新发布并恢复已删除的广场绑定；批量导入反馈新增和更新数量，并保持事务回滚。
