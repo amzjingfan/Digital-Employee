@@ -1,5 +1,12 @@
 # Joukir 内网部署记录（2026-10-08）
 
+## 2026-10-12 Skill 真删除与同名导入更新
+
+- 当前应用目录为 `/home/joukir/releases/e810c5d-skill-upsert-delete`，代码提交 `e810c5d`。广场删除现物理删除通用 Skill 记录及其所有资源绑定；若仍有非删除状态的员工绑定，返回 409 并保留记录。员工侧移除仍只隐藏该员工绑定。同租户同 slug 的广场导入会更新现有 ID、重新发布并恢复已删除的广场绑定；批量导入反馈新增和更新数量，并保持事务回滚。
+- 切换前 `joukir-backup.service` 返回 `success`。旧发布 `/home/joukir/releases/4d3d365-skill-folder-groups` 与 unit 备份 `/home/joukir/runtime/joukir.service.pre-e810c5d` 保留。新后端两文件和主 JS 的生产/本地哈希一致；主 JS SHA-256 为 `e7c91325f6cec8cfe4fbdc4093795421a52a751b031dab9e0a84a4b2b0ca24e8`，含 `tenant_internal`，不含 `tenant_demo` 或 TikTok API 路径。
+- 用户随后明确要求物理删除先前仅隐藏的 8 条 HR Skill。生产应用角色和租户上下文内的守卫脚本先试跑确认精确命中 8 条记录、9 条绑定且绑定全部为 `deleted`，再一次事务删除；提交后这 8 个 slug 剩余 0 条，通用 Skill 孤儿绑定 0 条，总通用 Skill 20 条。一次性脚本已从服务器和本机运行目录移除。今后导入这些已删除 slug 将新建记录；对仍存在的同名广场 Skill 才会更新并重新发布。
+- 服务 active，HTTPS 健康、OIDC 配置与 Skill 页面 200，TikTok API 404。验证：前端 76 文件/344 测试、后端变更路径 38 测试、类型检查、i18n 4519 项、配置检查、生产构建、测试布局与聚焦 Ruff 通过。完整通用 Skill 模块还有 2 项既有脚本运行环境测试失败。Chrome 桥接仍报 `nodeRepl.fetch request failed`，未完成管理员浏览器中的真实导入和页面验收。
+
 ## 2026-10-12 Skill 文件夹分组发布
 
 - 当前应用发布目录为 `/home/joukir/releases/4d3d365-skill-folder-groups`，对应本地 `codex/harden-folder-skill-import@4d3d365`。同一文件夹批量导入的多个通用 Skill 保存共同分组 ID；开放广场首页与 Skill 完整列表显示可展开的文件夹卡片。管理员可将已发布的广场 Skill 显式选择归组。未修改数据库结构、权限策略、现有技能内容或 TikTok 开关。
