@@ -1,5 +1,12 @@
 # Joukir 内网部署记录（2026-10-08）
 
+## 2026-10-12 通用 Skill 测试结果与 Harness 异常修复
+
+- 当前应用目录 `/home/joukir/releases/7823d79-skill-test-runtime`，代码提交 `7823d79`。从数据库加载的 SOP 展开不再深拷贝 SQLAlchemy 实例状态，避免 `Skill.content_json` 的父对象回收异常。Harness 的模型、配置、通用异常与取消状态会向测试结果传递失败码；空答案也标为失败。前端仅在明确成功且有非空答案时显示“成功”，失败完成事件显示错误通知。
+- 发布前 `joukir-backup.service` 返回 `success`。旧目录 `/home/joukir/releases/f52f34b-plaza-edit` 和 unit 备份 `/home/joukir/runtime/joukir.service.pre-7823d79` 保留。未运行数据库迁移、用户技能导入或生产数据写入；PostgreSQL、Casdoor 配置与 TikTok 禁用保持。前端用 `tenant_internal` 与 TikTok 关闭配置构建，主 JS 本地、发布目录及 HTTPS 响应 SHA-256 均为 `eb54f8bbbe6a8caa3573a2f92c2449f8a94d3d9f3611d724fa117730aa23a6d9`，不含 `tenant_demo` 或 TikTok API 路径。三份后端源码的本地/发布哈希一致。
+- Linux 新发布目录中，内存 SQLite 的已持久化 SOP 展开、正常答案、空答案和 Harness 失败分类自检通过。聚焦后端回归 8 passed；扩大相关后端集 132 passed/13 failed，失败均在 Windows 沙箱附件或历史 Runner 文件物化路径，未据此宣称完整后端通过。前端 77 文件/355 测试、类型检查、i18n、配置、生产构建、测试布局、后端语法检查与聚焦 Ruff F 规则通过。
+- 切换后 `joukir.service` active 且 Result=success；HTTPS 健康、OIDC 配置、Skill 编辑页和主 JS 均为 200；TikTok API 404，PostgreSQL 容器 healthy。Chrome 桥接仍报 `nodeRepl.fetch request failed`，真实管理员浏览器中的模型问答和答案相关性未验收。需在信任内网 CA 的浏览器刷新后，以实际 Skill 和问题复测，确认回答内容与执行记录；模型或外部依赖本身的故障仍应明确显示失败。
+
 ## 2026-10-12 开放广场资源详情编辑入口
 
 - 当前应用目录为 `/home/joukir/releases/f52f34b-plaza-edit`，代码提交 `f52f34b`。管理员可在广场资源详情抽屉点击“编辑”，进入通用 Skill、SOP、知识库或工具的现有编辑界面；MCP 子工具进入所属服务器编辑页。编辑链接携带广场范围或整体员工 ID，普通成员无编辑入口。
