@@ -1,5 +1,12 @@
 # Joukir 内网部署记录（2026-10-08）
 
+## 2026-10-12 开放广场资源详情编辑入口
+
+- 当前应用目录为 `/home/joukir/releases/f52f34b-plaza-edit`，代码提交 `f52f34b`。管理员可在广场资源详情抽屉点击“编辑”，进入通用 Skill、SOP、知识库或工具的现有编辑界面；MCP 子工具进入所属服务器编辑页。编辑链接携带广场范围或整体员工 ID，普通成员无编辑入口。
+- 切换前 `joukir-backup.service` 返回 `success`。旧发布 `/home/joukir/releases/dda215b-single-skill-folders` 与 unit 备份 `/home/joukir/runtime/joukir.service.pre-f52f34b` 保留。仅发布前端源码和以 `tenant_internal`、TikTok 事业部关闭配置构建的前端包；未迁移或写入数据库，也未改 Casdoor。主 JS 本地、发布目录及 HTTPS 响应 SHA-256 均为 `7c778bf88e53c6f0cb0f28962e820a6874137d63796b3a2bf5e0399d5e4aa9b8`，不含 `tenant_demo` 或 TikTok API 路径。
+- 切换后服务 active；HTTPS 健康、OIDC 配置、广场 Skill 页面与主 JS 均为 200；TikTok API 为 404，PostgreSQL 容器 healthy。前端 77 文件/354 测试、类型检查、i18n、配置检查、生产构建、测试布局与差异检查通过。
+- Chrome 桥接仍报 `nodeRepl.fetch request failed`，已登录管理员和普通成员的真实页面视觉验收未完成。需在信任内网 CA 的浏览器刷新广场页面，核对四类资源的编辑入口、正确编辑对象及权限。
+
 ## 2026-10-12 单个 Skill 文件夹及分类重命名
 
 - 当前应用目录为 `/home/joukir/releases/dda215b-single-skill-folders`，代码提交 `dda215b`。管理员可将单个或多个已发布的广场 Skill 整理进文件夹，并修改文件夹名称；修改只更新显示名，保留分组 ID 与成员。单个 Skill 从文件夹导入后也保留文件夹分类；广场首页及完整列表均显示单成员文件夹。
