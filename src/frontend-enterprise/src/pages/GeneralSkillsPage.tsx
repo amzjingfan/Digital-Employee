@@ -941,7 +941,7 @@ export default function GeneralSkillsPage({ embedded = false, currentUser, onLog
         title={deleteTarget ? `${isOverallAgent ? '删除' : '移除'}技能「${deleteTarget.name}」？` : ''}
         description={
           isOverallAgent
-            ? '删除后该技能不会再出现在技能广场中，此操作不可撤销。'
+            ? '将永久删除技能记录和文件；若仍绑定数字员工，需先移除绑定。'
             : '这只会在当前数字员工中隐藏该技能；开放广场和其他数字员工仍然保留。'
         }
         confirmText={isOverallAgent ? '删除' : '移除'}
@@ -1671,7 +1671,11 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
         status: 'published',
         original_slug: editingSlug || undefined,
       });
-      notify.success(editingSlug ? `已保存 ${row.name}` : `已新增 ${row.name}`);
+      notify.success(editingSlug
+        ? `已保存 ${row.name}`
+        : row.import_action === 'updated'
+          ? `已更新并重新发布 ${row.name}`
+          : `已新增 ${row.name}`);
       setSelectedSlug(row.slug);
       setEditingSlug(row.slug);
       setMarkdown(row.skill_markdown);
@@ -2424,7 +2428,8 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
       });
       setPendingFolderImport(null);
       setSelectedFolderSkillPaths([]);
-      notify.success(`已导入 ${imported.length} 个技能`);
+      const updatedCount = imported.filter((skill) => skill.import_action === 'updated').length;
+      notify.success(`导入完成：新增 ${imported.length - updatedCount} 个，更新并重新发布 ${updatedCount} 个技能`);
       navigate('/enterprise/general-skills');
     } catch (error) {
       setFolderImportError(error instanceof Error ? error.message : '导入技能失败');
@@ -2995,7 +3000,7 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
         onOpenChange={(open) => !open && setDeleteSkillTarget(null)}
         title={deleteSkillTarget ? `${isOverallAgent ? '删除' : '移除'}技能「${deleteSkillTarget.name}」？` : ''}
         description={isOverallAgent
-          ? '删除后该技能不会再出现在组织技能库中，此操作不可撤销。'
+          ? '将永久删除技能记录和文件；若仍绑定数字员工，需先移除绑定。'
           : '这只会在当前数字员工中隐藏该技能；开放广场和其他数字员工仍然保留。'}
         confirmText={isOverallAgent ? '删除' : '移除'}
         onConfirm={() => void runDeleteSkill()}

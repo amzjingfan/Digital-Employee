@@ -25,6 +25,7 @@ Start a development session with the durable memory and current handoff below. P
 - [ADR 0006: TikTok unapproved commission proposals](adr/0006-tiktok-unapproved-commission-proposals.md)
 - [ADR 0007: TikTok commission order-reference index under forced RLS](adr/0007-tiktok-commission-order-reference-index.md)
 - [ADR 0008: General Skill folder groups in the open plaza](adr/0008-general-skill-folder-groups.md)
+- [ADR 0009: General Skill deletion and matching imports](adr/0009-general-skill-delete-and-reimport.md)
 - [TikTok P3-B2 internal creator claim design](superpowers/specs/2026-09-23-tiktok-p3b2-creator-claim-design.md)
 - [TikTok P3-B2 internal creator claim implementation plan](superpowers/plans/2026-09-23-tiktok-p3b2-creator-claim.md)
 - [TikTok E03 role separation and commission preflight design](superpowers/specs/2026-09-24-tiktok-e03-role-and-commission-preflight.md)

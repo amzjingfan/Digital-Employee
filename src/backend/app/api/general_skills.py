@@ -25,7 +25,7 @@ from app.agents.branching import (
     ensure_open_gallery_binding,
     ensure_private_resource_binding,
     get_agent,
-    hide_open_gallery_binding,
+    get_overall_agent,
     is_bound_resource_visible_for_agent,
     is_open_gallery_resource,
     mark_resource_open_gallery,
@@ -151,9 +151,14 @@ def import_general_skills_batch(
     import_group = (uuid.uuid4().hex, group_name) if group_name and len(request.skills) > 1 else None
     try:
         results = []
+        imported_slugs: set[str] = set()
         for index, skill in enumerate(request.skills, start=1):
             try:
-                results.append(_import_general_skill(skill, db, current_user, import_group))
+                result = _import_general_skill(skill, db, current_user, import_group)
+                if result.slug in imported_slugs:
+                    raise HTTPException(status_code=400, detail="本次选择中有重复的 Skill slug")
+                imported_slugs.add(result.slug)
+                results.append(result)
             except HTTPException as exc:
                 raise HTTPException(
                     status_code=exc.status_code,
@@ -286,6 +291,12 @@ def _import_general_skill(
                 # A private skill removed from this agent keeps its entity so
                 # other references remain stable; re-import should restore it.
                 row = conflict
+            elif not is_private_agent_scope and (
+                is_open_gallery_resource(db, request.tenant_id, "general_skill", conflict)
+                or (conflict.metadata_json or {}).get("scope") == "open_gallery"
+            ):
+                row = conflict
+                inherited_capability_scope = normalize_capability_scope(row.capability_scope)
             else:
                 raise HTTPException(status_code=409, detail="General skill slug already exists")
     package_source = row or package_source_row
@@ -301,9 +312,12 @@ def _import_general_skill(
     now = utc_now()
     if row:
         metadata = metadata_preserving_creator(row.metadata_json, parsed_metadata)
-        for key in ("import_group_id", "import_group_name"):
-            if key in (row.metadata_json or {}):
-                metadata[key] = row.metadata_json[key]
+        if import_group:
+            metadata["import_group_id"], metadata["import_group_name"] = import_group
+        else:
+            for key in ("import_group_id", "import_group_name"):
+                if key in (row.metadata_json or {}):
+                    metadata[key] = row.metadata_json[key]
         directories = (
             requested_directories
             if requested_directories is not None
@@ -403,9 +417,12 @@ def _import_general_skill(
             row.id,
             "active" if request.status == "published" else "inactive",
             metadata_json=metadata,
+            revive=bool(row and not is_private_agent_scope),
         )
     db.refresh(row)
-    return general_skill_read(row)
+    return general_skill_read(row).model_copy(
+        update={"import_action": "updated" if package_source is row and row is not None else "created"}
+    )
 
 
 @router.post("/import-skillhub", response_model=GeneralSkillRead)
@@ -780,15 +797,29 @@ def delete_general_skill(
         db.commit()
         return {"status": "hidden", "slug": slug}
     if agent and agent.is_overall:
-        if not is_open_gallery_resource(db, tenant_id, "general_skill", row):
+        if not is_open_gallery_resource(db, tenant_id, "general_skill", row) and (
+            row.metadata_json or {}
+        ).get("scope") != "open_gallery":
             raise HTTPException(status_code=404, detail="General skill not visible in open gallery")
         ensure_open_gallery_admin(tenant_id, current_user)
-        hide_open_gallery_binding(db, tenant_id, "general_skill", row.id)
-        db.commit()
-        return {"status": "hidden", "slug": slug}
-
-    require_overall_agent(db, tenant_id, agent_id)
-    ensure_open_gallery_admin(tenant_id, current_user)
+    else:
+        require_overall_agent(db, tenant_id, agent_id)
+        ensure_open_gallery_admin(tenant_id, current_user)
+    bindings = db.exec(
+        select(AgentResourceBinding).where(
+            AgentResourceBinding.tenant_id == tenant_id,
+            AgentResourceBinding.resource_type == "general_skill",
+            AgentResourceBinding.resource_id == row.id,
+        )
+    ).all()
+    overall = get_overall_agent(db, tenant_id)
+    if any(
+        binding.status != "deleted" and binding.agent_id != (overall.id if overall else None)
+        for binding in bindings
+    ):
+        raise HTTPException(status_code=409, detail="技能仍绑定数字员工，请先移除员工绑定")
+    for binding in bindings:
+        db.delete(binding)
     db.delete(row)
     db.commit()
     return {"status": "deleted", "slug": slug}

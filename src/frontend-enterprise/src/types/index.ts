@@ -336,6 +336,7 @@ export type GeneralSkillRead = {
   runtime_config: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  import_action?: 'created' | 'updated';
 };
 
 export type GeneralSkillRunResponse = {

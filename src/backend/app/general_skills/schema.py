@@ -82,6 +82,7 @@ class GeneralSkillRead(BaseModel):
     runtime_config: dict[str, Any] = Field(default_factory=dict)
     created_at: str
     updated_at: str
+    import_action: Optional[Literal["created", "updated"]] = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -13,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.agents.branching import ensure_open_gallery_binding
+from app.agents.branching import ensure_open_gallery_binding, hide_open_gallery_binding
 from app.api import general_skills as general_skill_api
 from app.api.general_skills import (
     archive_general_skill,
@@ -317,7 +317,7 @@ def test_import_general_skill_uses_user_supplied_metadata() -> None:
             assert exc.detail == "General skill slug cannot be modified"
 
 
-def test_batch_import_saves_selected_skills_and_rolls_back_on_conflict() -> None:
+def test_batch_import_updates_existing_skills_and_rolls_back_on_invalid_item() -> None:
     with _test_session() as db:
         _seed_minimal_tenant(db)
         db.add(
@@ -341,6 +341,8 @@ def test_batch_import_saves_selected_skills_and_rolls_back_on_conflict() -> None
         )
         assert [skill.slug for skill in imported] == ["first-skill", "second-skill"]
 
+        assert [skill.import_action for skill in imported] == ["created", "created"]
+
         with pytest.raises(HTTPException) as error:
             import_general_skills_batch(
                 GeneralSkillBatchImportRequest(skills=[
@@ -348,16 +350,55 @@ def test_batch_import_saves_selected_skills_and_rolls_back_on_conflict() -> None
                         tenant_id="tenant_demo", slug="third-skill", markdown="# Third"
                     ),
                     GeneralSkillImportRequest(
-                        tenant_id="tenant_demo", slug="first-skill", markdown="# Conflict"
+                        tenant_id="tenant_demo", slug="first-skill", markdown="# Updated"
+                    ),
+                    GeneralSkillImportRequest(
+                        tenant_id="tenant_demo", slug="bad slug", markdown="# Invalid"
                     ),
                 ]),
                 db,
                 _admin_user(),
             )
-        assert error.value.status_code == 409
+        assert error.value.status_code == 400
         assert sorted(row.slug for row in list_general_skills("tenant_demo", db)) == [
             "first-skill", "second-skill"
         ]
+        assert db.get(GeneralSkill, imported[0].id).skill_markdown == "# First"
+
+        updated = import_general_skills_batch(
+            GeneralSkillBatchImportRequest(
+                group_name="新文件夹",
+                skills=[
+                    GeneralSkillImportRequest(
+                        tenant_id="tenant_demo", slug="first-skill", markdown="# Updated"
+                    ),
+                    GeneralSkillImportRequest(
+                        tenant_id="tenant_demo", slug="third-skill", markdown="# Third"
+                    ),
+                ],
+            ),
+            db,
+            _admin_user(),
+        )
+        assert [skill.import_action for skill in updated] == ["updated", "created"]
+        assert updated[0].id == imported[0].id
+        assert updated[0].metadata["import_group_id"] == updated[1].metadata["import_group_id"]
+
+        with pytest.raises(HTTPException) as duplicate:
+            import_general_skills_batch(
+                GeneralSkillBatchImportRequest(skills=[
+                    GeneralSkillImportRequest(
+                        tenant_id="tenant_demo", slug="same-slug", markdown="# One"
+                    ),
+                    GeneralSkillImportRequest(
+                        tenant_id="tenant_demo", slug="same-slug", markdown="# Two"
+                    ),
+                ]),
+                db,
+                _admin_user(),
+            )
+        assert duplicate.value.status_code == 400
+        assert db.exec(select(GeneralSkill).where(GeneralSkill.slug == "same-slug")).all() == []
 
 
 def test_batch_import_keeps_folder_group_and_edit_keeps_it() -> None:
@@ -475,7 +516,7 @@ def test_admin_can_group_existing_gallery_skills_without_changing_private_skills
         assert hidden.value.status_code == 404
         assert list_general_skills("tenant_demo", db)[0].metadata["import_group_name"] == "HR toolkit"
 
-def test_import_general_skill_without_original_slug_does_not_overwrite_existing() -> None:
+def test_import_general_skill_with_same_slug_updates_and_republishes() -> None:
     with _test_session() as db:
         _seed_minimal_tenant(db)
         db.add(
@@ -496,27 +537,25 @@ def test_import_general_skill_without_original_slug_does_not_overwrite_existing(
             _admin_user(),
         )
 
-        try:
-            import_general_skill(
-                GeneralSkillImportRequest(
-                    tenant_id="tenant_demo",
-                    name="新导入天气技能",
-                    slug="weather-zh",
-                    markdown="# 新内容",
-                ),
-                db,
-                _admin_user(),
-            )
-        except HTTPException as error:
-            assert error.status_code == 409
-        else:
-            raise AssertionError("expected slug conflict")
+        archive_general_skill("weather-zh", "tenant_demo", db, current_user=_admin_user())
+        updated = import_general_skill(
+            GeneralSkillImportRequest(
+                tenant_id="tenant_demo",
+                name="新导入天气技能",
+                slug="weather-zh",
+                markdown="# 新内容",
+            ),
+            db,
+            _admin_user(),
+        )
 
         rows = list_general_skills("tenant_demo", db)
         assert len(rows) == 1
         assert rows[0].id == first.id
-        assert rows[0].name == "已有天气技能"
-        assert rows[0].skill_markdown == WEATHER_SKILL_MD.strip()
+        assert rows[0].name == "新导入天气技能"
+        assert rows[0].skill_markdown == "# 新内容"
+        assert rows[0].status == "published"
+        assert updated.import_action == "updated"
 
 
 def test_deleted_open_gallery_general_skill_binding_is_not_restored_by_ensure() -> None:
@@ -540,14 +579,8 @@ def test_deleted_open_gallery_general_skill_binding_is_not_restored_by_ensure() 
             _admin_user(),
         )
 
-        deleted = delete_general_skill(
-            imported.slug,
-            "tenant_demo",
-            db,
-            agent_id="agent_overall",
-            current_user=_admin_user(),
-        )
-        assert deleted == {"status": "hidden", "slug": "weather-zh"}
+        hide_open_gallery_binding(db, "tenant_demo", "general_skill", imported.id)
+        db.commit()
 
         ensure_open_gallery_binding(db, "tenant_demo", "general_skill", imported.id, "active")
         db.commit()
@@ -562,6 +595,77 @@ def test_deleted_open_gallery_general_skill_binding_is_not_restored_by_ensure() 
         ).one()
         assert binding.status == "deleted"
         assert list_general_skills("tenant_demo", db) == []
+
+        restored = import_general_skill(
+            GeneralSkillImportRequest(
+                tenant_id="tenant_demo", slug="weather-zh", markdown="# 更新后的天气技能"
+            ),
+            db,
+            _admin_user(),
+        )
+        db.refresh(binding)
+        assert restored.id == imported.id
+        assert restored.import_action == "updated"
+        assert binding.status == "active"
+        assert [skill.id for skill in list_general_skills("tenant_demo", db)] == [imported.id]
+
+
+def test_open_gallery_delete_removes_skill_and_bindings_but_rejects_active_employee_use() -> None:
+    with _test_session() as db:
+        _seed_minimal_tenant(db)
+        db.add(AgentProfile(
+            id="agent_overall", tenant_id="tenant_demo", name="整体智能体", is_overall=True
+        ))
+        db.add(AgentProfile(
+            id="agent_branch", tenant_id="tenant_demo", name="员工", is_overall=False
+        ))
+        db.commit()
+
+        imported = import_general_skill(
+            GeneralSkillImportRequest(
+                tenant_id="tenant_demo", slug="weather-zh", markdown=WEATHER_SKILL_MD
+            ),
+            db,
+            _admin_user(),
+        )
+        employee_binding = AgentResourceBinding(
+            tenant_id="tenant_demo", agent_id="agent_branch",
+            resource_type="general_skill", resource_id=imported.id, status="active",
+        )
+        db.add(employee_binding)
+        db.commit()
+
+        with pytest.raises(HTTPException) as in_use:
+            delete_general_skill(
+                imported.slug, "tenant_demo", db,
+                agent_id="agent_overall", current_user=_admin_user(),
+            )
+        assert in_use.value.status_code == 409
+        assert db.get(GeneralSkill, imported.id) is not None
+
+        employee_binding.status = "deleted"
+        db.add(employee_binding)
+        db.commit()
+        deleted = delete_general_skill(
+            imported.slug, "tenant_demo", db,
+            agent_id="agent_overall", current_user=_admin_user(),
+        )
+        assert deleted == {"status": "deleted", "slug": "weather-zh"}
+        assert db.get(GeneralSkill, imported.id) is None
+        assert db.exec(select(AgentResourceBinding).where(
+            AgentResourceBinding.resource_type == "general_skill",
+            AgentResourceBinding.resource_id == imported.id,
+        )).all() == []
+
+        reimported = import_general_skill(
+            GeneralSkillImportRequest(
+                tenant_id="tenant_demo", slug="weather-zh", markdown="# 新技能"
+            ),
+            db,
+            _admin_user(),
+        )
+        assert reimported.id != imported.id
+        assert reimported.import_action == "created"
 
 
 def test_reimport_restores_deleted_private_skill_binding() -> None:
@@ -616,6 +720,38 @@ def test_reimport_restores_deleted_private_skill_binding() -> None:
         assert [
             row.id for row in list_general_skills("tenant_demo", db, agent_id="agent_branch")
         ] == [imported.id]
+
+
+def test_gallery_import_does_not_overwrite_private_skill_with_same_slug() -> None:
+    with _test_session() as db:
+        _seed_minimal_tenant(db)
+        db.add(AgentProfile(
+            id="agent_overall", tenant_id="tenant_demo", name="整体智能体", is_overall=True
+        ))
+        db.add(AgentProfile(
+            id="agent_branch", tenant_id="tenant_demo", name="研发员工", is_overall=False
+        ))
+        db.commit()
+        private = import_general_skill(
+            GeneralSkillImportRequest(
+                tenant_id="tenant_demo", agent_id="agent_branch",
+                slug="weather-zh", markdown=WEATHER_SKILL_MD,
+            ),
+            db,
+            _admin_user(),
+        )
+
+        with pytest.raises(HTTPException) as conflict:
+            import_general_skill(
+                GeneralSkillImportRequest(
+                    tenant_id="tenant_demo", slug="weather-zh", markdown="# 广场内容"
+                ),
+                db,
+                _admin_user(),
+            )
+        assert conflict.value.status_code == 409
+        db.refresh(db.get(GeneralSkill, private.id))
+        assert db.get(GeneralSkill, private.id).skill_markdown == WEATHER_SKILL_MD.strip()
 
 
 def test_private_skill_can_be_published_to_open_gallery() -> None:
@@ -1238,7 +1374,7 @@ def test_general_skill_archive_publish_and_delete_api(monkeypatch) -> None:
             agent_id="agent_overall",
             current_user=_admin_user(),
         )
-        assert deleted == {"status": "hidden", "slug": "weather-zh"}
+        assert deleted == {"status": "deleted", "slug": "weather-zh"}
         assert list_general_skills("tenant_demo", db) == []
         try:
             get_general_skill(imported.slug, "tenant_demo", db)
