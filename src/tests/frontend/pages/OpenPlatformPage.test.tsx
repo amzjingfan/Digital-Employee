@@ -50,8 +50,12 @@ function LocationEcho() {
 function renderPage(kind: string, isAdmin: boolean) {
   return render(
     <I18nProvider>
-      <MemoryRouter initialEntries={[`/enterprise/platform/${kind}`]}>
+      <MemoryRouter initialEntries={[kind === 'root' ? '/enterprise/platform' : `/enterprise/platform/${kind}`]}>
         <Routes>
+          <Route
+            path="/enterprise/platform"
+            element={<OpenPlatformPage isAdmin={isAdmin} />}
+          />
           <Route
             path="/enterprise/platform/:kind"
             element={
@@ -136,5 +140,67 @@ describe('OpenPlatformPage creation actions', () => {
     await waitForCatalogLoad(fetchMock);
 
     expect(screen.queryByRole('button', { name: /^创建开放/ })).toBeNull();
+  });
+});
+
+function stubGroupedSkills(grouped: boolean) {
+  const rows = ['hr-one', 'hr-two'].map((slug) => ({
+    id: slug,
+    tenant_id: 'tenant_demo',
+    slug,
+    name: slug,
+    description: `${slug} description`,
+    status: 'published',
+    metadata: grouped ? { import_group_id: 'group-1', import_group_name: 'HR toolkit' } : {},
+  }));
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => ({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    text: async () => JSON.stringify(init?.method === 'POST'
+      ? rows.map((row) => ({ ...row, metadata: { import_group_id: 'group-2', import_group_name: 'HR toolkit' } }))
+      : String(input).includes('/api/enterprise/agents?') ? [overallAgent('overall-1')]
+        : String(input).includes('/api/enterprise/general-skills?') ? rows : []),
+  } as Response));
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+
+describe('OpenPlatformPage skill folders', () => {
+  it('keeps folder skills together on the plaza overview', async () => {
+    const fetchMock = stubGroupedSkills(true);
+    renderPage('root', false);
+    await waitForCatalogLoad(fetchMock);
+
+    expect(screen.getByRole('button', { name: /HR toolkit.*2/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /hr-one.*description/ })).toBeNull();
+  });
+
+  it('shows a folder card and expands its individual skills', async () => {
+    const fetchMock = stubGroupedSkills(true);
+    renderPage('general-skills', false);
+    await waitForCatalogLoad(fetchMock);
+
+    expect(screen.getByRole('button', { name: /HR toolkit.*2/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /hr-one.*description/ })).toBeNull();
+    await userEvent.setup().click(screen.getByRole('button', { name: /HR toolkit.*2/ }));
+    expect(screen.getByRole('button', { name: /hr-one.*description/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /hr-two.*description/ })).toBeTruthy();
+  });
+
+  it('lets an administrator group selected existing skills', async () => {
+    const fetchMock = stubGroupedSkills(false);
+    renderPage('general-skills', true);
+    await waitForCatalogLoad(fetchMock);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: '整理已有 Skill' }));
+    await user.click(screen.getByRole('checkbox', { name: '选择 hr-one' }));
+    await user.click(screen.getByRole('checkbox', { name: '选择 hr-two' }));
+    await user.type(screen.getByRole('textbox', { name: '文件夹名称' }), 'HR toolkit');
+    await user.click(screen.getByRole('button', { name: '保存分组' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/enterprise/general-skills/group'),
+      expect.objectContaining({ method: 'POST' }),
+    ));
   });
 });

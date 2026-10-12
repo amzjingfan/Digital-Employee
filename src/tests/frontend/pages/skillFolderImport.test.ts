@@ -4,6 +4,7 @@ import {
   listSkillFolderChoices,
   readSkillFolderFiles,
   readSelectedSkillFolders,
+  skillFolderGroupName,
   selectSkillFolderEntries,
 } from '@/lib/skill-folder-import';
 
@@ -21,6 +22,15 @@ function entry(path: string, content = '') {
 }
 
 describe('skill folder import', () => {
+  it('names a batch only when selected skills share the selected outer folder', () => {
+    expect(skillFolderGroupName([
+      'bundle/skills/one/SKILL.md', 'bundle/skills/two/SKILL.md',
+    ])).toBe('bundle');
+    expect(skillFolderGroupName(['first/one/SKILL.md', 'second/two/SKILL.md'])).toBeUndefined();
+    expect(skillFolderGroupName(['SKILL.md', 'extras/one/SKILL.md'])).toBeUndefined();
+    expect(skillFolderGroupName(['bundle/one/SKILL.md'])).toBeUndefined();
+  });
+
   it('lists every child skill and scopes the chosen package to its own files', () => {
     const entries = [
       entry('bundle/skills/hr-one/SKILL.md', '# One'),

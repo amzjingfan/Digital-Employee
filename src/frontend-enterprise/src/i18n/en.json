@@ -4514,5 +4514,12 @@
   "阅读技能内容": "Reading skill content",
   "完成技能阅读": "Finished reading skill",
   "读取技能失败": "Failed to read skill",
-  "执行步骤": "Execution step"
+  "执行步骤": "Execution step",
+  "整理已有 Skill": "Organize existing Skills",
+  "取消整理": "Cancel organizing",
+  "文件夹名称": "Folder name",
+  "已选": "Selected",
+  "保存分组": "Save group",
+  "保存分组失败": "Failed to save group",
+  "技能已归入文件夹": "Skills grouped into a folder"
 }

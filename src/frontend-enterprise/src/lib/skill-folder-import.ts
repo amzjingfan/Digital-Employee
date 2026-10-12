@@ -15,6 +15,14 @@ export function listSkillFolderChoices(entries: SkillFolderEntry[]): string[] {
     .sort((left, right) => left.localeCompare(right));
 }
 
+export function skillFolderGroupName(selectedPaths: string[]): string | undefined {
+  if (selectedPaths.length < 2) return undefined;
+  const roots = selectedPaths.map((path) => path.split('/')[0]);
+  return selectedPaths.every((path) => path.includes('/')) && roots.every((root) => root === roots[0])
+    ? roots[0]
+    : undefined;
+}
+
 export function selectSkillFolderEntries(entries: SkillFolderEntry[], skillPath: string): SkillFolderEntry[] {
   const choices = listSkillFolderChoices(entries);
   if (!choices.includes(skillPath)) throw new Error('文件夹中没有找到所选的 SKILL.md');

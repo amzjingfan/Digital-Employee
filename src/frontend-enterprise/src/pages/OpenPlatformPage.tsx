@@ -38,6 +38,8 @@ import {
   PlatformEmployeeDrawer,
   PlatformKindDetailView,
   PlatformResourceCard,
+  PlatformSkillFolder,
+  groupSkillItems,
   PlatformResourceDrawer,
   type PlatformResourceAccent,
   type PlatformStat,
@@ -66,6 +68,8 @@ type PlatformItem = {
   description: string;
   meta: string;
   tags: string[];
+  groupId?: string;
+  groupName?: string;
   agent?: AgentProfileRead;
 };
 
@@ -287,6 +291,8 @@ export default function OpenPlatformPage({
         description: item.description || '可复制到当前数字员工的技能。',
         meta: item.slug,
         tags: [item.homepage ? '外部能力' : '内置能力', '已启用'],
+        groupId: typeof item.metadata?.import_group_id === 'string' ? item.metadata.import_group_id : undefined,
+        groupName: typeof item.metadata?.import_group_name === 'string' ? item.metadata.import_group_name : undefined,
       })),
     skills: skills
       .filter((item) => item.status === 'published')
@@ -562,6 +568,15 @@ export default function OpenPlatformPage({
           createLabel={creation?.label}
           onCreate={creation ? () => createOpenResource(selectedKind) : undefined}
           onOpenItem={(item) => setDetailItem({ kind: selectedKind, item })}
+          onGroupSkills={selectedKind === 'general-skills' && canManagePlatform ? async (ids, name) => {
+            await api.post('/api/enterprise/general-skills/group', {
+              tenant_id: TENANT_ID,
+              name,
+              skill_ids: ids,
+            });
+            notify.success('技能已归入文件夹');
+            await loadPlatformData();
+          } : undefined}
           canManage={canManagePlatform && selectedKind === 'agents'}
           unpublishingItemId={deletingItemKey.startsWith('agents:')
             ? deletingItemKey.slice('agents:'.length)
@@ -588,6 +603,7 @@ export default function OpenPlatformPage({
         {platformStats.map((platform) => {
           const items = platformItems[platform.kind];
           const previews = items;
+          const skillGroups = platform.kind === 'general-skills' ? groupSkillItems(items) : [];
           const PlatformIcon = PLATFORM_ICON[platform.kind];
           return (
             <PlatformColumn
@@ -601,7 +617,33 @@ export default function OpenPlatformPage({
               isEmpty={previews.length === 0}
               onViewAll={() => navigate(`/enterprise/platform/${platform.kind}`)}
             >
-              {previews.map((item) => (
+              {platform.kind === 'general-skills' ? skillGroups.map((group) => group.name && group.items.length > 1 ? (
+                <PlatformSkillFolder key={group.key} name={group.name} count={group.items.length} compact>
+                  {group.items.map((item) => (
+                    <PlatformResourceCard
+                      key={item.id}
+                      icon={<img src={plazaSkillIcon} alt="" className="size-[32px] shrink-0 object-contain" />}
+                      accent="indigo"
+                      title={item.title}
+                      meta={item.meta}
+                      description={item.description}
+                      tags={item.tags.slice(0, 2)}
+                      onClick={() => setDetailItem({ kind: platform.kind, item })}
+                    />
+                  ))}
+                </PlatformSkillFolder>
+              ) : group.items.map((item) => (
+                <PlatformResourceCard
+                  key={item.id}
+                  icon={<img src={plazaSkillIcon} alt="" className="size-[32px] shrink-0 object-contain" />}
+                  accent="indigo"
+                  title={item.title}
+                  meta={item.meta}
+                  description={item.description}
+                  tags={item.tags.slice(0, 2)}
+                  onClick={() => setDetailItem({ kind: platform.kind, item })}
+                />
+              ))) : previews.map((item) => (
                 platform.kind === 'agents' && item.agent ? (
                   <PlatformEmployeeCard
                     key={item.id}

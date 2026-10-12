@@ -14,6 +14,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.agents.branching import ensure_open_gallery_binding
+from app.api import general_skills as general_skill_api
 from app.api.general_skills import (
     archive_general_skill,
     delete_general_skill,
@@ -357,6 +358,122 @@ def test_batch_import_saves_selected_skills_and_rolls_back_on_conflict() -> None
         assert sorted(row.slug for row in list_general_skills("tenant_demo", db)) == [
             "first-skill", "second-skill"
         ]
+
+
+def test_batch_import_keeps_folder_group_and_edit_keeps_it() -> None:
+    with _test_session() as db:
+        _seed_minimal_tenant(db)
+        db.add(AgentProfile(
+            id="agent_overall", tenant_id="tenant_demo", name="整体智能体", is_overall=True
+        ))
+        db.commit()
+
+        imported = import_general_skills_batch(
+            GeneralSkillBatchImportRequest(
+                group_name="HR toolkit",
+                skills=[
+                    GeneralSkillImportRequest(
+                        tenant_id="tenant_demo", slug=slug, markdown=f"# {slug}"
+                    )
+                    for slug in ("hr-one", "hr-two")
+                ],
+            ),
+            db,
+            _admin_user(),
+        )
+        group_ids = {skill.metadata.get("import_group_id") for skill in imported}
+        assert len(group_ids) == 1
+        assert None not in group_ids
+        assert {skill.metadata.get("import_group_name") for skill in imported} == {"HR toolkit"}
+
+        edited = import_general_skill(
+            GeneralSkillImportRequest(
+                tenant_id="tenant_demo", original_slug="hr-one", slug="hr-one", markdown="# Edited"
+            ),
+            db,
+            _admin_user(),
+        )
+        assert edited.metadata["import_group_id"] == imported[0].metadata["import_group_id"]
+
+        with pytest.raises(HTTPException) as mixed_scope:
+            import_general_skills_batch(
+                GeneralSkillBatchImportRequest(
+                    group_name="Mixed",
+                    skills=[
+                        GeneralSkillImportRequest(
+                            tenant_id="tenant_demo", slug="third", markdown="# Third"
+                        ),
+                        GeneralSkillImportRequest(
+                            tenant_id="other_tenant", slug="fourth", markdown="# Fourth"
+                        ),
+                    ],
+                ),
+                db,
+                _admin_user(),
+            )
+        assert mixed_scope.value.status_code == 400
+        assert all(row.slug != "third" for row in list_general_skills("tenant_demo", db))
+
+
+def test_admin_can_group_existing_gallery_skills_without_changing_private_skills() -> None:
+    with _test_session() as db:
+        _seed_minimal_tenant(db)
+        db.add(AgentProfile(
+            id="agent_overall", tenant_id="tenant_demo", name="整体智能体", is_overall=True
+        ))
+        db.commit()
+        imported = [
+            import_general_skill(
+                GeneralSkillImportRequest(
+                    tenant_id="tenant_demo", slug=slug, markdown=f"# {slug}"
+                ),
+                db,
+                _admin_user(),
+            )
+            for slug in ("old-hr-one", "old-hr-two")
+        ]
+        request = SimpleNamespace(
+            tenant_id="tenant_demo", name="HR toolkit", skill_ids=[skill.id for skill in imported]
+        )
+        grouped = general_skill_api.group_general_skills(request, db, _admin_user())
+        assert {row.metadata["import_group_name"] for row in grouped} == {"HR toolkit"}
+        assert len({row.metadata["import_group_id"] for row in grouped}) == 1
+        assert sorted(row.slug for row in list_general_skills("tenant_demo", db)) == [
+            "old-hr-one", "old-hr-two"
+        ]
+
+        with pytest.raises(HTTPException) as forbidden:
+            general_skill_api.group_general_skills(
+                request,
+                db,
+                User(
+                    id="member", tenant_id="tenant_demo", username="member",
+                    role="member", password_hash="test",
+                ),
+            )
+        assert forbidden.value.status_code == 403
+
+        db.add(AgentProfile(id="agent_private", tenant_id="tenant_demo", name="Private"))
+        db.commit()
+        private = import_general_skill(
+            GeneralSkillImportRequest(
+                tenant_id="tenant_demo", agent_id="agent_private",
+                slug="private-skill", markdown="# Private",
+            ),
+            db,
+            _admin_user(),
+        )
+        with pytest.raises(HTTPException) as hidden:
+            general_skill_api.group_general_skills(
+                SimpleNamespace(
+                    tenant_id="tenant_demo", name="Invalid",
+                    skill_ids=[imported[0].id, private.id],
+                ),
+                db,
+                _admin_user(),
+            )
+        assert hidden.value.status_code == 404
+        assert list_general_skills("tenant_demo", db)[0].metadata["import_group_name"] == "HR toolkit"
 
 def test_import_general_skill_without_original_slug_does_not_overwrite_existing() -> None:
     with _test_session() as db:

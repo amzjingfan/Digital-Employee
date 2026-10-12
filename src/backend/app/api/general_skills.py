@@ -61,7 +61,11 @@ from app.general_skills import (
     GeneralSkillRunResponse,
 )
 from app.general_skills.runner import GeneralSkillReader, GeneralSkillRunner
-from app.general_skills.schema import GeneralSkillBatchImportRequest, GeneralSkillFile
+from app.general_skills.schema import (
+    GeneralSkillBatchImportRequest,
+    GeneralSkillFile,
+    GeneralSkillGroupRequest,
+)
 from app.llm.model_config_resolver import resolve_model_config_for_runtime
 from app.security.auth import get_current_user
 from app.security.permissions import (
@@ -139,11 +143,17 @@ def import_general_skills_batch(
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> list[GeneralSkillRead]:
+    group_name = (request.group_name or "").strip()
+    if request.group_name is not None and not group_name:
+        raise HTTPException(status_code=400, detail="Skill folder name cannot be empty")
+    if group_name and len({(skill.tenant_id, skill.agent_id) for skill in request.skills}) != 1:
+        raise HTTPException(status_code=400, detail="Grouped skills must share a tenant and agent")
+    import_group = (uuid.uuid4().hex, group_name) if group_name and len(request.skills) > 1 else None
     try:
         results = []
         for index, skill in enumerate(request.skills, start=1):
             try:
-                results.append(_import_general_skill(skill, db, current_user))
+                results.append(_import_general_skill(skill, db, current_user, import_group))
             except HTTPException as exc:
                 raise HTTPException(
                     status_code=exc.status_code,
@@ -156,15 +166,55 @@ def import_general_skills_batch(
         raise
 
 
+@router.post("/group", response_model=list[GeneralSkillRead])
+def group_general_skills(
+    request: GeneralSkillGroupRequest,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> list[GeneralSkillRead]:
+    ensure_tenant(db, request.tenant_id)
+    ensure_open_gallery_admin(request.tenant_id, current_user)
+    name = request.name.strip()
+    if not name or len(request.skill_ids) != len(set(request.skill_ids)):
+        raise HTTPException(status_code=400, detail="Invalid skill group")
+    rows = db.exec(
+        select(GeneralSkill).where(
+            GeneralSkill.tenant_id == request.tenant_id,
+            GeneralSkill.id.in_(request.skill_ids),
+        )
+    ).all()
+    if len(rows) != len(request.skill_ids) or any(
+        row.status != "published"
+        or not is_open_gallery_resource(db, request.tenant_id, "general_skill", row)
+        for row in rows
+    ):
+        raise HTTPException(status_code=404, detail="Gallery skill not found")
+    group_id = uuid.uuid4().hex
+    now = utc_now()
+    for row in rows:
+        row.metadata_json = {
+            **(row.metadata_json or {}),
+            "import_group_id": group_id,
+            "import_group_name": name,
+        }
+        row.updated_at = now
+        db.add(row)
+    db.commit()
+    return [general_skill_read(row) for row in rows]
+
+
 def _import_general_skill(
     request: GeneralSkillImportRequest,
     db: Session,
     current_user: User,
+    import_group: tuple[str, str] | None = None,
 ) -> GeneralSkillRead:
     ensure_tenant(db, request.tenant_id)
     files = _normalize_skill_files(request.files, request.markdown)
     markdown = _skill_markdown_from_files(files)
     parsed_metadata = _parse_skill_metadata(markdown)
+    parsed_metadata.pop("import_group_id", None)
+    parsed_metadata.pop("import_group_name", None)
     metadata = user_creator_metadata(current_user, parsed_metadata)
     name = (
         _optional_text(request.name)
@@ -251,6 +301,9 @@ def _import_general_skill(
     now = utc_now()
     if row:
         metadata = metadata_preserving_creator(row.metadata_json, parsed_metadata)
+        for key in ("import_group_id", "import_group_name"):
+            if key in (row.metadata_json or {}):
+                metadata[key] = row.metadata_json[key]
         directories = (
             requested_directories
             if requested_directories is not None
@@ -289,6 +342,8 @@ def _import_general_skill(
             row.capability_scope = request.capability_scope
         row.updated_at = now
     else:
+        if import_group:
+            metadata["import_group_id"], metadata["import_group_name"] = import_group
         if requested_directories:
             metadata["skill_directories"] = requested_directories
         row = GeneralSkill(

@@ -26,3 +26,4 @@ Use the next four-digit number and a short lowercase filename. Include:
 - [0003 — TikTok recorded validation and historical facts](0003-tiktok-recorded-validation-and-history-facts.md) — Accepted, 2026-09-23.
 - [0004 — TikTok creator pool ownership](0004-tiktok-creator-pool-ownership.md) — Accepted, 2026-09-23.
 - [0005 — TikTok responsibilities and commission preflight](0005-tiktok-responsibilities-and-commission-preflight.md) — Accepted, 2026-09-24.
+- [0008 — General Skill folder groups in the open plaza](0008-general-skill-folder-groups.md) — Accepted, 2026-10-12.

@@ -22,6 +22,8 @@ import type { AgentProfileRead } from '../../types';
 
 import PlatformEmployeeCard, { type PlatformStat } from './PlatformEmployeeCard';
 import PlatformResourceCard, { type PlatformResourceAccent } from './PlatformResourceCard';
+import PlatformSkillFolder from './PlatformSkillFolder';
+import { groupSkillItems } from './skillGroups';
 
 export type PlatformDetailKind = 'agents' | 'knowledge' | 'general-skills' | 'skills' | 'tools';
 
@@ -31,6 +33,8 @@ export type PlatformDetailItem = {
   description: string;
   meta: string;
   tags: string[];
+  groupId?: string;
+  groupName?: string;
   agent?: AgentProfileRead;
 };
 
@@ -63,6 +67,7 @@ export type PlatformKindDetailViewProps = {
   createLabel?: string;
   onCreate?: () => void;
   onOpenItem: (item: PlatformDetailItem) => void;
+  onGroupSkills?: (ids: string[], name: string) => Promise<void>;
   canManage?: boolean;
   unpublishingItemId?: string;
   onUnpublishItem?: (item: PlatformDetailItem) => void;
@@ -106,6 +111,7 @@ export default function PlatformKindDetailView({
   createLabel = '创建开放 Skill',
   onCreate,
   onOpenItem,
+  onGroupSkills,
   canManage = false,
   unpublishingItemId,
   onUnpublishItem,
@@ -113,6 +119,11 @@ export default function PlatformKindDetailView({
   userName,
 }: PlatformKindDetailViewProps) {
   const [searchText, setSearchText] = useState('');
+  const [grouping, setGrouping] = useState(false);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
+  const [folderName, setFolderName] = useState('');
+  const [savingGroup, setSavingGroup] = useState(false);
+  const [groupError, setGroupError] = useState('');
 
   const filteredItems = useMemo(() => {
     const keyword = searchText.trim().toLowerCase();
@@ -121,9 +132,60 @@ export default function PlatformKindDetailView({
       item.title,
       item.description,
       item.meta,
+      item.groupName || '',
       item.tags.join(' '),
     ].some((value) => value.toLowerCase().includes(keyword)));
   }, [items, searchText]);
+
+  const groupedSkills = useMemo(
+    () => kind === 'general-skills' ? groupSkillItems(filteredItems) : [],
+    [filteredItems, kind],
+  );
+
+  async function saveGroup() {
+    if (!onGroupSkills || selectedSkillIds.length < 2 || !folderName.trim()) return;
+    setSavingGroup(true);
+    setGroupError('');
+    try {
+      await onGroupSkills(selectedSkillIds, folderName.trim());
+      setGrouping(false);
+      setSelectedSkillIds([]);
+      setFolderName('');
+    } catch (error) {
+      setGroupError(error instanceof Error ? error.message : '保存分组失败');
+    } finally {
+      setSavingGroup(false);
+    }
+  }
+
+  function renderSkill(item: PlatformDetailItem) {
+    return (
+      <div key={item.id} className="relative min-w-0">
+        <PlatformResourceCard
+          icon={<img src={plazaSkillIcon} alt="" className="size-[32px] shrink-0 object-contain" />}
+          accent="indigo"
+          title={item.title}
+          meta={item.meta}
+          description={item.description}
+          tags={item.tags.slice(0, 2)}
+          onClick={() => onOpenItem(item)}
+        />
+        {grouping && (
+          <label className="absolute right-[8px] top-[8px] flex items-center gap-[4px] rounded-[8px] bg-white px-[6px] py-[4px] text-[11px] shadow-sm">
+            <input
+              type="checkbox"
+              aria-label={`选择 ${item.title}`}
+              checked={selectedSkillIds.includes(item.id)}
+              onChange={(event) => setSelectedSkillIds((current) => event.target.checked
+                ? [...current, item.id]
+                : current.filter((id) => id !== item.id))}
+            />
+            选择
+          </label>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-full box-border px-[48px] pt-[32px] pb-[43px] max-[900px]:px-[16px]" aria-busy={loading}>
@@ -194,6 +256,36 @@ export default function PlatformKindDetailView({
             />
           </label>
 
+          {kind === 'general-skills' && onGroupSkills && (
+            <div className="flex flex-wrap items-center gap-[8px] px-[12px]">
+              <UIButton variant="outline" onClick={() => {
+                setGrouping((current) => !current);
+                setSelectedSkillIds([]);
+                setGroupError('');
+              }}>
+                {grouping ? '取消整理' : '整理已有 Skill'}
+              </UIButton>
+              {grouping && (
+                <>
+                  <label className="text-[12px] text-[#464c5e]">
+                    文件夹名称
+                    <input
+                      className="ml-[8px] h-[34px] rounded-[8px] border border-[#dfe4ec] px-[8px]"
+                      value={folderName}
+                      maxLength={100}
+                      onChange={(event) => setFolderName(event.target.value)}
+                    />
+                  </label>
+                  <span className="text-[12px] text-[#757f9c]">已选 {selectedSkillIds.length} 个</span>
+                  <UIButton disabled={savingGroup || selectedSkillIds.length < 2 || !folderName.trim()} onClick={() => void saveGroup()}>
+                    保存分组
+                  </UIButton>
+                </>
+              )}
+              {groupError && <span role="alert" className="text-[12px] text-red-600">{groupError}</span>}
+            </div>
+          )}
+
           {loading ? (
             <DetailSkeleton kind={kind} />
           ) : filteredItems.length === 0 ? (
@@ -226,6 +318,16 @@ export default function PlatformKindDetailView({
                   unpublishing={unpublishingItemId === item.id}
                 />
               ))}
+            </div>
+          ) : kind === 'general-skills' ? (
+            <div className="grid grid-cols-1 gap-[16px] sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+              {groupedSkills.map((group) => group.name && group.items.length > 1 ? (
+                <div key={group.key} className="col-span-full">
+                  <PlatformSkillFolder name={group.name} count={group.items.length} forceOpen={Boolean(searchText.trim()) || grouping}>
+                    {group.items.map(renderSkill)}
+                  </PlatformSkillFolder>
+                </div>
+              ) : group.items.map(renderSkill))}
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-[16px] sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">

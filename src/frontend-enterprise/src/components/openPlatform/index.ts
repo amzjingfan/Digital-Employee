@@ -7,6 +7,8 @@ export type { PlatformEmployeeDrawerProps } from './PlatformEmployeeDrawer';
 export { default as PlatformKindDetailView } from './PlatformKindDetailView';
 export type { PlatformDetailItem, PlatformDetailKind, PlatformKindDetailViewProps } from './PlatformKindDetailView';
 export { default as PlatformResourceCard } from './PlatformResourceCard';
+export { default as PlatformSkillFolder } from './PlatformSkillFolder';
+export { groupSkillItems } from './skillGroups';
 export type { PlatformResourceCardProps, PlatformResourceAccent } from './PlatformResourceCard';
 export { platformResourceAccentStyles } from './PlatformResourceCard';
 export { default as PlatformResourceDrawer } from './PlatformResourceDrawer';

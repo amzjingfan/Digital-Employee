@@ -51,6 +51,7 @@ import {
   listSkillFolderChoices,
   readSkillFolderFiles,
   readSelectedSkillFolders,
+  skillFolderGroupName,
   selectSkillFolderEntries,
 } from '@/lib/skill-folder-import';
 import { isTeamScope, readEmployeeScope } from '@/lib/agent-scope-storage';
@@ -2412,6 +2413,7 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
     try {
       const packages = await readSelectedSkillFolders(pendingFolderImport.files, selectedFolderSkillPaths);
       const imported = await api.post<GeneralSkillRead[]>('/api/enterprise/general-skills/import-batch', {
+        group_name: skillFolderGroupName(packages.map(({ skillPath }) => skillPath)),
         skills: packages.map(({ files }) => ({
           tenant_id: TENANT_ID,
           agent_id: !isOverallAgent && agentId ? agentId : undefined,
