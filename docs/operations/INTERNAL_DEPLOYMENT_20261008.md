@@ -1,5 +1,12 @@
 # Joukir 内网部署记录（2026-10-08）
 
+## 2026-10-12 Skill 文件夹联合测试
+
+- 当前应用目录 `/home/joukir/releases/b5df0fb-folder-skill-test`，代码提交 `b5df0fb`。在 Skill 编辑页打开文件夹成员时，测试范围默认是整个文件夹，仍可改选单个 Skill。后端按分组 ID 和现有租户/可见权限实时取得成员，在一次 Harness v2 调试会话中只开放这些子技能，由模型按问题选用并在结果中列出已加载技能；没有加载任何成员则标为失败。没有合并 Skill 记录或重发资源。
+- 发布前 `joukir-backup.service` 成功；旧目录 `/home/joukir/releases/7823d79-skill-test-runtime` 及 unit 备份 `/home/joukir/runtime/joukir.service.pre-b5df0fb` 保留。新发布目录的 5 个后端源码及主 JS SHA-256 与本地一致，主 JS 为 `807c9f4e6dcca49d89fb14e37d207b00a705dd3bb6c3e7c4550d9e91f3121e7f`，含 `tenant_internal`，不含 `tenant_demo` 和 TikTok API。未执行数据库迁移、生产 Skill 导入或数据写入；PostgreSQL/Casdoor 配置不变。
+- 切换后服务 active/Result=success；HTTPS 健康、OIDC 配置、Skill 编辑页均为 200，新接口未登录返回 401，TikTok API 返回 404，PostgreSQL healthy。通用 Skill 只读计数切换前后均为 29，`general_skills` 的 RLS 与 FORCE RLS 均为 true。后端聚焦 6 passed，完整通用 Skill 模块 44 passed/2 个既有 Windows 旧 Runner 环境用例失败；前端完整 78 文件/356 passed，类型检查、i18n、配置、生产构建、测试布局、Python 编译、Ruff F 和 diff 检查通过。
+- Chrome 桥接仍报 `nodeRepl.fetch request failed`，未完成已登录管理员页面与真实模型答案验收。管理员需在信任内网 CA 的浏览器进入广场文件夹中的 Skill 编辑页，确认默认“整个文件夹”、可切换单个 Skill，并用具体问题检查回答及“使用的子技能”。
+
 ## 2026-10-12 通用 Skill 测试结果与 Harness 异常修复
 
 - 当前应用目录 `/home/joukir/releases/7823d79-skill-test-runtime`，代码提交 `7823d79`。从数据库加载的 SOP 展开不再深拷贝 SQLAlchemy 实例状态，避免 `Skill.content_json` 的父对象回收异常。Harness 的模型、配置、通用异常与取消状态会向测试结果传递失败码；空答案也标为失败。前端仅在明确成功且有非空答案时显示“成功”，失败完成事件显示错误通知。
