@@ -1,5 +1,12 @@
 # Joukir 内网部署记录（2026-10-08）
 
+## 2026-10-12 Skill 文件夹分组发布
+
+- 当前应用发布目录为 `/home/joukir/releases/4d3d365-skill-folder-groups`，对应本地 `codex/harden-folder-skill-import@4d3d365`。同一文件夹批量导入的多个通用 Skill 保存共同分组 ID；开放广场首页与 Skill 完整列表显示可展开的文件夹卡片。管理员可将已发布的广场 Skill 显式选择归组。未修改数据库结构、权限策略、现有技能内容或 TikTok 开关。
+- 发布前 `joukir-backup.service` 返回 `success`。旧发布 `/home/joukir/releases/c5f1d64-gallery-tool-test` 与 unit 备份 `/home/joukir/runtime/joukir.service.pre-4d3d365` 保留。新后端两文件、前端 HTML 与主 JS 的线上哈希和本地一致；主 JS SHA-256 为 `f49b495446dabbd51c37f4f97c4880fc202412a023f7a9e3567dee8ab596debf`。前端以 `tenant_internal` 和 TikTok 关闭构建，主 JS 无 `tenant_demo` 或 TikTok API 路径。
+- 服务 active，健康、OIDC 配置及 Skill 广场页面均为 200，TikTok API 为 404。发布验证：前端 76 文件/344 测试通过（`--maxWorkers=4`）、后端相关 10 测试通过、类型检查、i18n 4516 项、配置检查、构建、测试布局和聚焦 Ruff 通过。Chrome 桥接仍报 `nodeRepl.fetch request failed`，已登录管理员浏览器目视验收未完成。
+- 只读核对发现历史截图中的 8 个 HR Skill 均为 `published` 记录，但其整体员工广场绑定均为 `deleted`。用户明确选择保持隐藏；未对它们执行归组或重新发布。本次自动分组只作用于今后从同一文件夹批量导入的 Skill。
+
 ## 2026-10-10 开放广场创建范围隔离
 
 - 当前应用发布目录为 `/home/joukir/releases/c5f1d64-gallery-tool-test`，前端源码对应提交 `f36fa50`、`c5f1d64`；后端沿用上版。开放广场创建知识库与工具时显式指定广场范围，工具 HTTP/A2A/MCP 类型切换、保存、编辑、测试及同步保持该范围。通用 Skill 与 SOP 原有广场创建路径和后端资源绑定隔离保持。已有资源未迁移、重绑或删除。
