@@ -16,7 +16,7 @@ export function listSkillFolderChoices(entries: SkillFolderEntry[]): string[] {
 }
 
 export function skillFolderGroupName(selectedPaths: string[]): string | undefined {
-  if (selectedPaths.length < 2) return undefined;
+  if (selectedPaths.length === 0) return undefined;
   const roots = selectedPaths.map((path) => path.split('/')[0]);
   return selectedPaths.every((path) => path.includes('/')) && roots.every((root) => root === roots[0])
     ? roots[0]

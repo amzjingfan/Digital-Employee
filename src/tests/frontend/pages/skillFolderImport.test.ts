@@ -28,7 +28,8 @@ describe('skill folder import', () => {
     ])).toBe('bundle');
     expect(skillFolderGroupName(['first/one/SKILL.md', 'second/two/SKILL.md'])).toBeUndefined();
     expect(skillFolderGroupName(['SKILL.md', 'extras/one/SKILL.md'])).toBeUndefined();
-    expect(skillFolderGroupName(['bundle/one/SKILL.md'])).toBeUndefined();
+    expect(skillFolderGroupName(['bundle/one/SKILL.md'])).toBe('bundle');
+    expect(skillFolderGroupName(['bundle/SKILL.md'])).toBe('bundle');
   });
 
   it('lists every child skill and scopes the chosen package to its own files', () => {

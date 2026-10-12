@@ -7,29 +7,39 @@ export default function PlatformSkillFolder({
   count,
   compact = false,
   forceOpen = false,
+  onRename,
   children,
 }: {
   name: string;
   count: number;
   compact?: boolean;
   forceOpen?: boolean;
+  onRename?: () => void;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const expanded = forceOpen || open;
   return (
     <section className="rounded-[14px] border border-[#dfe6f5] bg-[#f8faff] p-[10px]">
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center gap-[8px] rounded-[10px] bg-white px-[10px] py-[12px] text-left text-[12px] text-[#464c5e]"
-      >
-        <IconFolder className="size-[18px] shrink-0 text-[#1a71ff]" />
-        <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
-        <span className="shrink-0 text-[#757f9c]">{count} 个技能</span>
-        <span aria-hidden="true" className="text-[#757f9c]">{expanded ? '⌃' : '⌄'}</span>
-      </button>
+      <div className="flex items-center gap-[8px] rounded-[10px] bg-white">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setOpen((value) => !value)}
+          className="flex min-w-0 flex-1 items-center gap-[8px] rounded-[10px] px-[10px] py-[12px] text-left text-[12px] text-[#464c5e]"
+        >
+          <IconFolder className="size-[18px] shrink-0 text-[#1a71ff]" />
+          <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
+          <span className="shrink-0 text-[#757f9c]">{count} 个技能</span>
+          <span aria-hidden="true" className="text-[#757f9c]">{expanded ? '⌃' : '⌄'}</span>
+        </button>
+        {onRename && (
+          <button type="button" onClick={onRename} aria-label={`重命名文件夹 ${name}`}
+            className="shrink-0 rounded-[8px] px-[8px] py-[6px] text-[12px] text-[#4169a6] hover:bg-[#edf3ff]">
+            重命名
+          </button>
+        )}
+      </div>
       {expanded && (
         <div className={compact
           ? 'mt-[10px] flex flex-col gap-[10px]'

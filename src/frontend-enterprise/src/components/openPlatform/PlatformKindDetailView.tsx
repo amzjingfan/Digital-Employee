@@ -68,6 +68,7 @@ export type PlatformKindDetailViewProps = {
   onCreate?: () => void;
   onOpenItem: (item: PlatformDetailItem) => void;
   onGroupSkills?: (ids: string[], name: string) => Promise<void>;
+  onRenameSkillGroup?: (groupId: string, name: string) => Promise<void>;
   canManage?: boolean;
   unpublishingItemId?: string;
   onUnpublishItem?: (item: PlatformDetailItem) => void;
@@ -112,6 +113,7 @@ export default function PlatformKindDetailView({
   onCreate,
   onOpenItem,
   onGroupSkills,
+  onRenameSkillGroup,
   canManage = false,
   unpublishingItemId,
   onUnpublishItem,
@@ -124,6 +126,8 @@ export default function PlatformKindDetailView({
   const [folderName, setFolderName] = useState('');
   const [savingGroup, setSavingGroup] = useState(false);
   const [groupError, setGroupError] = useState('');
+  const [renamingGroupId, setRenamingGroupId] = useState('');
+  const [renameName, setRenameName] = useState('');
 
   const filteredItems = useMemo(() => {
     const keyword = searchText.trim().toLowerCase();
@@ -143,7 +147,7 @@ export default function PlatformKindDetailView({
   );
 
   async function saveGroup() {
-    if (!onGroupSkills || selectedSkillIds.length < 2 || !folderName.trim()) return;
+    if (!onGroupSkills || selectedSkillIds.length < 1 || !folderName.trim()) return;
     setSavingGroup(true);
     setGroupError('');
     try {
@@ -153,6 +157,21 @@ export default function PlatformKindDetailView({
       setFolderName('');
     } catch (error) {
       setGroupError(error instanceof Error ? error.message : '保存分组失败');
+    } finally {
+      setSavingGroup(false);
+    }
+  }
+
+  async function saveRename() {
+    if (!onRenameSkillGroup || !renamingGroupId || !renameName.trim()) return;
+    setSavingGroup(true);
+    setGroupError('');
+    try {
+      await onRenameSkillGroup(renamingGroupId, renameName.trim());
+      setRenamingGroupId('');
+      setRenameName('');
+    } catch (error) {
+      setGroupError(error instanceof Error ? error.message : '重命名文件夹失败');
     } finally {
       setSavingGroup(false);
     }
@@ -277,12 +296,25 @@ export default function PlatformKindDetailView({
                     />
                   </label>
                   <span className="text-[12px] text-[#757f9c]">已选 {selectedSkillIds.length} 个</span>
-                  <UIButton disabled={savingGroup || selectedSkillIds.length < 2 || !folderName.trim()} onClick={() => void saveGroup()}>
+                  <UIButton disabled={savingGroup || selectedSkillIds.length < 1 || !folderName.trim()} onClick={() => void saveGroup()}>
                     保存分组
                   </UIButton>
                 </>
               )}
               {groupError && <span role="alert" className="text-[12px] text-red-600">{groupError}</span>}
+            </div>
+          )}
+
+          {kind === 'general-skills' && renamingGroupId && (
+            <div className="flex flex-wrap items-center gap-[8px] px-[12px]">
+              <label className="text-[12px] text-[#464c5e]">
+                新文件夹名称
+                <input className="ml-[8px] h-[34px] rounded-[8px] border border-[#dfe4ec] px-[8px]"
+                  value={renameName} maxLength={100}
+                  onChange={(event) => setRenameName(event.target.value)} />
+              </label>
+              <UIButton disabled={savingGroup || !renameName.trim()} onClick={() => void saveRename()}>保存名称</UIButton>
+              <UIButton variant="outline" onClick={() => { setRenamingGroupId(''); setGroupError(''); }}>取消</UIButton>
             </div>
           )}
 
@@ -321,9 +353,14 @@ export default function PlatformKindDetailView({
             </div>
           ) : kind === 'general-skills' ? (
             <div className="grid grid-cols-1 gap-[16px] sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-              {groupedSkills.map((group) => group.name && group.items.length > 1 ? (
+              {groupedSkills.map((group) => group.name ? (
                 <div key={group.key} className="col-span-full">
-                  <PlatformSkillFolder name={group.name} count={group.items.length} forceOpen={Boolean(searchText.trim()) || grouping}>
+                  <PlatformSkillFolder name={group.name} count={group.items.length} forceOpen={Boolean(searchText.trim()) || grouping}
+                    onRename={onRenameSkillGroup && group.items[0].groupId ? () => {
+                      setRenamingGroupId(group.items[0].groupId || '');
+                      setRenameName(group.name || '');
+                      setGroupError('');
+                    } : undefined}>
                     {group.items.map(renderSkill)}
                   </PlatformSkillFolder>
                 </div>

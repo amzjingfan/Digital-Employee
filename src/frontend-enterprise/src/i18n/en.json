@@ -4524,5 +4524,10 @@
   "已选": "Selected",
   "保存分组": "Save group",
   "保存分组失败": "Failed to save group",
-  "技能已归入文件夹": "Skills grouped into a folder"
+  "技能已归入文件夹": "Skills grouped into a folder",
+  "重命名文件夹 {1}": "Rename folder {1}",
+  "重命名文件夹失败": "Failed to rename folder",
+  "新文件夹名称": "New folder name",
+  "保存名称": "Save name",
+  "文件夹名称已更新": "Folder name updated"
 }

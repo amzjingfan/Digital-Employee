@@ -577,6 +577,15 @@ export default function OpenPlatformPage({
             notify.success('技能已归入文件夹');
             await loadPlatformData();
           } : undefined}
+          onRenameSkillGroup={selectedKind === 'general-skills' && canManagePlatform ? async (groupId, name) => {
+            await api.post('/api/enterprise/general-skills/group/rename', {
+              tenant_id: TENANT_ID,
+              group_id: groupId,
+              name,
+            });
+            notify.success('文件夹名称已更新');
+            await loadPlatformData();
+          } : undefined}
           canManage={canManagePlatform && selectedKind === 'agents'}
           unpublishingItemId={deletingItemKey.startsWith('agents:')
             ? deletingItemKey.slice('agents:'.length)
@@ -617,7 +626,7 @@ export default function OpenPlatformPage({
               isEmpty={previews.length === 0}
               onViewAll={() => navigate(`/enterprise/platform/${platform.kind}`)}
             >
-              {platform.kind === 'general-skills' ? skillGroups.map((group) => group.name && group.items.length > 1 ? (
+              {platform.kind === 'general-skills' ? skillGroups.map((group) => group.name ? (
                 <PlatformSkillFolder key={group.key} name={group.name} count={group.items.length} compact>
                   {group.items.map((item) => (
                     <PlatformResourceCard

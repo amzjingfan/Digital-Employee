@@ -37,7 +37,13 @@ class GeneralSkillBatchImportRequest(BaseModel):
 class GeneralSkillGroupRequest(BaseModel):
     tenant_id: str
     name: str = Field(min_length=1, max_length=100)
-    skill_ids: list[str] = Field(min_length=2, max_length=50)
+    skill_ids: list[str] = Field(min_length=1, max_length=50)
+
+
+class GeneralSkillRenameGroupRequest(BaseModel):
+    tenant_id: str
+    group_id: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=100)
 
 
 class GeneralSkillClawHubImportRequest(BaseModel):

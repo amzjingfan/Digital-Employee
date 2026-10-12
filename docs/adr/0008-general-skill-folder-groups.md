@@ -10,11 +10,11 @@ A selected folder can contain several `SKILL.md` packages. Batch import stores e
 
 ## Decision
 
-When a folder batch contains multiple selected skills, the API assigns one server-generated group ID and the submitted folder display name to each imported skill's `metadata_json`. Groups are scoped by the existing tenant and gallery access rules. The ID, rather than the display name, determines membership; two imports with the same folder name stay separate. The API rejects a grouped batch that mixes tenants or agent scopes. A single imported skill remains an ordinary card.
+When a folder batch has a folder display name, the API assigns one server-generated group ID and that name to every selected skill's `metadata_json`, including a batch of one. Groups are scoped by the existing tenant and gallery access rules. The ID, rather than the display name, determines membership; two imports with the same folder name stay separate. The API rejects a grouped batch that mixes tenants or agent scopes.
 
-The open plaza groups published skills into an expandable folder card on its overview and full Skill list. Each member remains an independent skill with its original slug, permissions, use and removal behavior. Counts remain skill counts. Search matches member content and folder name. If only one visible member remains, it appears as an ordinary card.
+The open plaza groups published skills into an expandable folder card on its overview and full Skill list, even when only one member is visible. Each member remains an independent skill with its original slug, permissions, use and removal behavior. Counts remain skill counts. Search matches member content and folder name.
 
-An administrator may select existing published gallery skills and assign a folder name. This operation validates every selected ID in the same tenant and gallery before writing any group metadata. It does not infer historical membership from similar names or timestamps. Ordinary edits preserve group metadata; a later grouped batch import moves matching skills into that batch's new group. Untrusted Skill frontmatter cannot set group IDs.
+An administrator may select one or more existing published gallery skills and assign a folder name. This operation validates every selected ID in the same tenant and gallery before writing any group metadata. An administrator may rename an existing folder: the API checks its gallery members, changes their shared display name, and preserves the group ID and membership. It does not infer historical membership from similar names or timestamps. Ordinary edits preserve group metadata; a later grouped batch import moves matching skills into that batch's new group. Untrusted Skill frontmatter cannot set group IDs.
 
 ## Alternatives and consequences
 

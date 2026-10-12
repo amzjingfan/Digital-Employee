@@ -65,6 +65,7 @@ from app.general_skills.schema import (
     GeneralSkillBatchImportRequest,
     GeneralSkillFile,
     GeneralSkillGroupRequest,
+    GeneralSkillRenameGroupRequest,
 )
 from app.llm.model_config_resolver import resolve_model_config_for_runtime
 from app.security.auth import get_current_user
@@ -148,7 +149,7 @@ def import_general_skills_batch(
         raise HTTPException(status_code=400, detail="Skill folder name cannot be empty")
     if group_name and len({(skill.tenant_id, skill.agent_id) for skill in request.skills}) != 1:
         raise HTTPException(status_code=400, detail="Grouped skills must share a tenant and agent")
-    import_group = (uuid.uuid4().hex, group_name) if group_name and len(request.skills) > 1 else None
+    import_group = (uuid.uuid4().hex, group_name) if group_name else None
     try:
         results = []
         imported_slugs: set[str] = set()
@@ -202,6 +203,38 @@ def group_general_skills(
             "import_group_id": group_id,
             "import_group_name": name,
         }
+        row.updated_at = now
+        db.add(row)
+    db.commit()
+    return [general_skill_read(row) for row in rows]
+
+
+@router.post("/group/rename", response_model=list[GeneralSkillRead])
+def rename_general_skill_group(
+    request: GeneralSkillRenameGroupRequest,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> list[GeneralSkillRead]:
+    ensure_tenant(db, request.tenant_id)
+    ensure_open_gallery_admin(request.tenant_id, current_user)
+    name = request.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Skill folder name cannot be empty")
+    rows = [
+        row for row in db.exec(select(GeneralSkill).where(
+            GeneralSkill.tenant_id == request.tenant_id,
+        )).all()
+        if (row.metadata_json or {}).get("import_group_id") == request.group_id
+    ]
+    if not rows or any(
+        row.status != "published"
+        or not is_open_gallery_resource(db, request.tenant_id, "general_skill", row)
+        for row in rows
+    ):
+        raise HTTPException(status_code=404, detail="Gallery skill folder not found")
+    now = utc_now()
+    for row in rows:
+        row.metadata_json = {**(row.metadata_json or {}), "import_group_name": name}
         row.updated_at = now
         db.add(row)
     db.commit()

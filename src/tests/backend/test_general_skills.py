@@ -427,6 +427,17 @@ def test_batch_import_keeps_folder_group_and_edit_keeps_it() -> None:
         assert None not in group_ids
         assert {skill.metadata.get("import_group_name") for skill in imported} == {"HR toolkit"}
 
+        single = import_general_skills_batch(
+            GeneralSkillBatchImportRequest(
+                group_name="Solo folder",
+                skills=[GeneralSkillImportRequest(
+                    tenant_id="tenant_demo", slug="solo", markdown="# Solo"
+                )],
+            ), db, _admin_user(),
+        )
+        assert single[0].metadata["import_group_name"] == "Solo folder"
+        assert single[0].metadata["import_group_id"] not in group_ids
+
         edited = import_general_skill(
             GeneralSkillImportRequest(
                 tenant_id="tenant_demo", original_slug="hr-one", slug="hr-one", markdown="# Edited"
@@ -515,6 +526,66 @@ def test_admin_can_group_existing_gallery_skills_without_changing_private_skills
             )
         assert hidden.value.status_code == 404
         assert list_general_skills("tenant_demo", db)[0].metadata["import_group_name"] == "HR toolkit"
+
+
+def test_admin_can_group_one_skill_and_rename_folder_without_changing_members() -> None:
+    with _test_session() as db:
+        _seed_minimal_tenant(db)
+        db.add(AgentProfile(
+            id="agent_overall", tenant_id="tenant_demo", name="整体智能体", is_overall=True
+        ))
+        db.commit()
+        imported = [
+            import_general_skill(
+                GeneralSkillImportRequest(
+                    tenant_id="tenant_demo", slug=slug, markdown=f"# {slug}"
+                ), db, _admin_user(),
+            )
+            for slug in ("one", "two", "unrelated")
+        ]
+        first = general_skill_api.group_general_skills(
+            SimpleNamespace(tenant_id="tenant_demo", name="Old", skill_ids=[imported[0].id]),
+            db, _admin_user(),
+        )
+        group_id = first[0].metadata["import_group_id"]
+        renamed_single = general_skill_api.rename_general_skill_group(
+            SimpleNamespace(tenant_id="tenant_demo", name="Solo", group_id=group_id),
+            db, _admin_user(),
+        )
+        assert len(renamed_single) == 1
+        assert renamed_single[0].metadata["import_group_name"] == "Solo"
+        assert renamed_single[0].metadata["import_group_id"] == group_id
+        general_skill_api.group_general_skills(
+            SimpleNamespace(
+                tenant_id="tenant_demo", name="Old", skill_ids=[imported[0].id, imported[1].id]
+            ), db, _admin_user(),
+        )
+        current_group_id = db.get(GeneralSkill, imported[0].id).metadata_json["import_group_id"]
+        assert current_group_id != group_id
+        renamed = general_skill_api.rename_general_skill_group(
+            SimpleNamespace(tenant_id="tenant_demo", name="New", group_id=current_group_id),
+            db, _admin_user(),
+        )
+        assert {row.id for row in renamed} == {imported[0].id, imported[1].id}
+        assert {row.metadata["import_group_id"] for row in renamed} == {current_group_id}
+        assert {row.metadata["import_group_name"] for row in renamed} == {"New"}
+        assert db.get(GeneralSkill, imported[2].id).metadata_json.get("import_group_id") is None
+
+        with pytest.raises(HTTPException) as forbidden:
+            general_skill_api.rename_general_skill_group(
+                SimpleNamespace(tenant_id="tenant_demo", name="Denied", group_id=current_group_id),
+                db,
+                User(id="member", tenant_id="tenant_demo", username="member", role="member",
+                     password_hash="test"),
+            )
+        assert forbidden.value.status_code == 403
+
+        with pytest.raises(HTTPException) as missing:
+            general_skill_api.rename_general_skill_group(
+                SimpleNamespace(tenant_id="tenant_demo", name="Missing", group_id="unknown"),
+                db, _admin_user(),
+            )
+        assert missing.value.status_code == 404
 
 def test_import_general_skill_with_same_slug_updates_and_republishes() -> None:
     with _test_session() as db:

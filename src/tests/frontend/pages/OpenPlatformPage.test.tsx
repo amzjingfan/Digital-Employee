@@ -143,25 +143,33 @@ describe('OpenPlatformPage creation actions', () => {
   });
 });
 
-function stubGroupedSkills(grouped: boolean) {
-  const rows = ['hr-one', 'hr-two'].map((slug) => ({
+function stubGroupedSkills(grouped: boolean, slugs = ['hr-one', 'hr-two']) {
+  let folderName = 'HR toolkit';
+  const rows = slugs.map((slug) => ({
     id: slug,
     tenant_id: 'tenant_demo',
     slug,
     name: slug,
     description: `${slug} description`,
     status: 'published',
-    metadata: grouped ? { import_group_id: 'group-1', import_group_name: 'HR toolkit' } : {},
+    metadata: grouped ? { import_group_id: 'group-1', import_group_name: folderName } : {},
   }));
-  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => ({
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes('/group/rename') && init?.method === 'POST') {
+      folderName = JSON.parse(String(init.body)).name;
+    }
+    return ({
     ok: true,
     status: 200,
     statusText: 'OK',
     text: async () => JSON.stringify(init?.method === 'POST'
       ? rows.map((row) => ({ ...row, metadata: { import_group_id: 'group-2', import_group_name: 'HR toolkit' } }))
       : String(input).includes('/api/enterprise/agents?') ? [overallAgent('overall-1')]
-        : String(input).includes('/api/enterprise/general-skills?') ? rows : []),
-  } as Response));
+      : String(input).includes('/api/enterprise/general-skills?')
+        ? rows.map((row) => ({ ...row, metadata: grouped
+          ? { import_group_id: 'group-1', import_group_name: folderName } : {} })) : []),
+    } as Response);
+  });
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
@@ -174,6 +182,7 @@ describe('OpenPlatformPage skill folders', () => {
 
     expect(screen.getByRole('button', { name: /HR toolkit.*2/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /hr-one.*description/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /重命名文件夹/ })).toBeNull();
   });
 
   it('shows a folder card and expands its individual skills', async () => {
@@ -186,6 +195,48 @@ describe('OpenPlatformPage skill folders', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: /HR toolkit.*2/ }));
     expect(screen.getByRole('button', { name: /hr-one.*description/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /hr-two.*description/ })).toBeTruthy();
+  });
+
+  it('keeps a single grouped skill inside a folder', async () => {
+    const fetchMock = stubGroupedSkills(true, ['hr-one']);
+    renderPage('general-skills', false);
+    await waitForCatalogLoad(fetchMock);
+    expect(screen.getByRole('button', { name: /HR toolkit.*1/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /hr-one.*description/ })).toBeNull();
+    await userEvent.setup().click(screen.getByRole('button', { name: /HR toolkit.*1/ }));
+    expect(screen.getByRole('button', { name: /hr-one.*description/ })).toBeTruthy();
+  });
+
+  it('lets an administrator group just one skill', async () => {
+    const fetchMock = stubGroupedSkills(false, ['hr-one']);
+    renderPage('general-skills', true);
+    await waitForCatalogLoad(fetchMock);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: '整理已有 Skill' }));
+    await user.click(screen.getByRole('checkbox', { name: '选择 hr-one' }));
+    await user.type(screen.getByRole('textbox', { name: '文件夹名称' }), 'Solo');
+    await user.click(screen.getByRole('button', { name: '保存分组' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/enterprise/general-skills/group'),
+      expect.objectContaining({ method: 'POST', body: expect.stringContaining('"skill_ids":["hr-one"]') }),
+    ));
+  });
+
+  it('lets an administrator rename a folder in place', async () => {
+    const fetchMock = stubGroupedSkills(true, ['hr-one']);
+    renderPage('general-skills', true);
+    await waitForCatalogLoad(fetchMock);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: '重命名文件夹 HR toolkit' }));
+    const input = screen.getByRole('textbox', { name: '新文件夹名称' });
+    await user.clear(input);
+    await user.type(input, 'Updated');
+    await user.click(screen.getByRole('button', { name: '保存名称' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/enterprise/general-skills/group/rename'),
+      expect.objectContaining({ method: 'POST', body: expect.stringContaining('"group_id":"group-1"') }),
+    ));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Updated.*1/ })).toBeTruthy());
   });
 
   it('lets an administrator group selected existing skills', async () => {
