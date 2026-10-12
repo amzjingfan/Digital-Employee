@@ -1,4 +1,5 @@
 import pytest
+from sqlmodel import Session, create_engine, select
 
 from app.db.models import Skill
 from app.skills.nesting import (
@@ -252,3 +253,17 @@ def test_broken_nested_sop_does_not_disable_unrelated_sops() -> None:
     healthy = _skill("healthy", nodes=[{"node_id": "done", "name": "Done"}])
 
     assert [row.skill_id for row in expand_visible_sops([broken, healthy])] == ["healthy"]
+
+
+def test_expand_persisted_sop_keeps_a_live_orm_parent() -> None:
+    database = create_engine("sqlite://")
+    Skill.__table__.create(database)
+    with Session(database) as db:
+        db.add(_skill("persisted", nodes=[{"node_id": "done", "name": "Done"}]))
+        db.commit()
+        source = db.exec(select(Skill)).one()
+
+        expanded = expand_sop_for_execution(source, [source])
+
+        assert expanded.content_json["runtime_expanded"] is True
+        assert source.content_json.get("runtime_expanded") is None

@@ -1,4 +1,14 @@
 import { renderMarkdownBlocks } from './chat/chatHelpers';
+import type { GeneralSkillRunResponse } from '@/types';
+
+export function resultSucceeded(result: Partial<GeneralSkillRunResponse> | null): boolean {
+  return Boolean(
+    result?.structured_result?.success === true
+    && !result.structured_result.runtime_error_code
+    && !result.stderr
+    && result.reply?.trim(),
+  );
+}
 
 export const SKILL_MARKDOWN_PREVIEW_BODY_CLASS =
   'min-w-0 max-w-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>h1]:mb-4 [&>h1]:text-[22px] [&>h1]:font-semibold [&>h1]:leading-[1.35] [&>h2]:mb-3 [&>h2]:mt-6 [&>h2]:text-[18px] [&>h2]:font-semibold [&>h2]:leading-[1.4] [&>h3]:mb-2 [&>h3]:mt-5 [&>h3]:text-[16px] [&>h3]:font-semibold [&_p]:mb-3 [&_p]:wrap-anywhere [&>ul]:mb-3 [&>ol]:mb-3 [&>ul]:list-disc [&>ol]:list-decimal [&>ul]:pl-6 [&>ol]:pl-6 [&_li]:mb-1 [&>blockquote]:mb-3 [&>blockquote]:border-l-2 [&>blockquote]:border-[#e3e7f1] [&>blockquote]:pl-4 [&>blockquote]:text-[#757f9c] [&_a]:text-[#0b6cf5] [&_a]:underline [&_p_code]:rounded-[4px] [&_p_code]:bg-[#f6f7fb] [&_p_code]:px-1 [&_p_code]:py-[1px] [&_p_code]:font-mono [&_li_code]:rounded-[4px] [&_li_code]:bg-[#f6f7fb] [&_li_code]:px-1 [&_li_code]:py-[1px] [&_li_code]:font-mono [&_.code-block-vscode]:mb-3 [&_table]:mb-3 [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-[#e3e7f1] [&_th]:bg-[#f6f7fb] [&_th]:px-3 [&_th]:py-2 [&_td]:border [&_td]:border-[#e3e7f1] [&_td]:px-3 [&_td]:py-2';

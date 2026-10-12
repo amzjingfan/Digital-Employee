@@ -164,6 +164,7 @@ class AgentLoop:
         engine = HarnessV2Engine(self)
         chat_session: ChatSession | None = None
         user_message_id: str | None = None
+        runtime_error_code: str | None = None
         step_result = StepAgentResult(action="reply")
         try:
             return engine.run(request)
@@ -218,6 +219,7 @@ class AgentLoop:
             return ChatTurnResponse(
                 reply=CANCELLED_ASSISTANT_REPLY,
                 session_id=chat_session.id,
+                runtime_error_code="CANCELLED",
                 step_result=step_result,
                 session_state=public_session(chat_session),
             )
@@ -227,6 +229,7 @@ class AgentLoop:
             chat_session = chat_session or self._get_or_create_session(request)
             return self._finish_with_error(chat_session, exc.code, exc.message)
         except LLMError as exc:
+            runtime_error_code = "LLM_ERROR"
             chat_session = engine.session
             user_message_id = engine.user_message_id
             engine.mark_interrupted("LLM_ERROR", str(exc))
@@ -241,6 +244,7 @@ class AgentLoop:
                 "模型调用失败", exc, "LLM_ERROR", model_failure_suggestion(exc)
             )
         except Exception as exc:
+            runtime_error_code = "HARNESS_V2_ERROR"
             chat_session = engine.session
             user_message_id = engine.user_message_id
             engine.mark_interrupted("HARNESS_V2_ERROR", str(exc))
@@ -288,6 +292,7 @@ class AgentLoop:
         return ChatTurnResponse(
             reply=reply,
             session_id=chat_session.id,
+            runtime_error_code=runtime_error_code,
             step_result=step_result,
             session_state=public_session(chat_session),
         )
@@ -1621,6 +1626,7 @@ class AgentLoop:
         return ChatTurnResponse(
             reply=reply,
             session_id=chat_session.id,
+            runtime_error_code=code,
             session_state=public_session(chat_session),
         )
 

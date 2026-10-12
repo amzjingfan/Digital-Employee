@@ -1084,15 +1084,18 @@ def _harness_skill_run_response(
 ) -> GeneralSkillRunResponse:
     citations = assistant_metadata.get("knowledge_citations")
     artifacts = assistant_metadata.get("harness_artifacts")
-    success = not bool(response.runtime_error_code)
+    error_code = response.runtime_error_code or (
+        "EMPTY_SKILL_REPLY" if not response.reply.strip() else None
+    )
+    reply = response.reply or "技能测试未生成答案，请查看执行记录并重试。"
     return GeneralSkillRunResponse(
         skill_slug=slug,
         operation="execute",
         structured_result={
-            "success": success,
+            "success": error_code is None,
             "execution_engine": "harness_v2",
             "session_id": response.session_id,
-            "runtime_error_code": response.runtime_error_code,
+            "runtime_error_code": error_code,
             "step_result": (
                 response.step_result.model_dump(mode="json")
                 if response.step_result is not None
@@ -1101,8 +1104,8 @@ def _harness_skill_run_response(
             "citations": citations if isinstance(citations, list) else [],
         },
         artifacts=artifacts if isinstance(artifacts, list) else [],
-        stderr=response.reply if response.runtime_error_code else "",
-        reply=response.reply,
+        stderr=reply if error_code else "",
+        reply=reply,
     )
 
 

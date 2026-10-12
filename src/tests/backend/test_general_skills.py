@@ -1456,9 +1456,9 @@ def test_general_skill_archive_publish_and_delete_api(monkeypatch) -> None:
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("database_failure", [False, True])
+@pytest.mark.parametrize("failure_mode", ["success", "database", "harness"])
 async def test_general_skill_stream_executes_through_forced_harness_v2(
-    monkeypatch, database_failure: bool
+    monkeypatch, failure_mode: str
 ) -> None:
     test_engine = create_engine(
         "sqlite://",
@@ -1474,7 +1474,7 @@ async def test_general_skill_stream_executes_through_forced_harness_v2(
     def fake_handle_turn(self, request):  # noqa: ANN001
         assert self.db.info.get("staffdeck_tenant_id") == request.tenant_id
         captured_requests.append(request)
-        if database_failure:
+        if failure_mode == "database":
             raise SQLAlchemyError("INSERT secret SQL")
         self.db.add(
             AgentEvent(
@@ -1492,14 +1492,15 @@ async def test_general_skill_stream_executes_through_forced_harness_v2(
                 tenant_id=request.tenant_id,
                 session_id=request.session_id,
                 role="assistant",
-                content="北京天气晴朗",
+                content="运行失败" if failure_mode == "harness" else "北京天气晴朗",
                 metadata_json={"harness_artifacts": [{"path": "weather.txt"}]},
             )
         )
         self.db.commit()
         return ChatTurnResponse(
-            reply="北京天气晴朗",
+            reply="运行失败" if failure_mode == "harness" else "北京天气晴朗",
             session_id=request.session_id,
+            runtime_error_code="HARNESS_V2_ERROR" if failure_mode == "harness" else None,
             session_state={
                 "session_id": request.session_id,
                 "tenant_id": request.tenant_id,
@@ -1566,13 +1567,45 @@ async def test_general_skill_stream_executes_through_forced_harness_v2(
     assert captured_requests[0].message_visibility == "internal"
     assert debug_session.id == captured_requests[0].session_id
     assert '"execution_engine": "harness_v2"' in body
-    if database_failure:
+    if failure_mode == "database":
         assert "技能测试数据库操作失败" in body
         assert "INSERT secret SQL" not in body
+        return
+    if failure_mode == "harness":
+        assert '"success": false' in body
+        assert '"runtime_error_code": "HARNESS_V2_ERROR"' in body
         return
     assert "已加载技能说明" in body
     assert "北京天气晴朗" in body
     assert '"path": "weather.txt"' in body
+
+
+def test_harness_skill_result_never_marks_an_empty_or_failed_reply_successful() -> None:
+    empty = general_skill_api._harness_skill_run_response(
+        "weather",
+        ChatTurnResponse(
+            reply="",
+            session_id="session-empty",
+            session_state={"session_id": "session-empty", "tenant_id": "tenant_demo"},
+        ),
+        {},
+    )
+    assert empty.structured_result["success"] is False
+    assert empty.structured_result["runtime_error_code"] == "EMPTY_SKILL_REPLY"
+    assert empty.stderr
+
+    failed = general_skill_api._harness_skill_run_response(
+        "weather",
+        ChatTurnResponse(
+            reply="模型调用失败",
+            session_id="session-failed",
+            runtime_error_code="LLM_ERROR",
+            session_state={"session_id": "session-failed", "tenant_id": "tenant_demo"},
+        ),
+        {},
+    )
+    assert failed.structured_result["success"] is False
+    assert failed.structured_result["runtime_error_code"] == "LLM_ERROR"
 
 
 def test_non_overall_agent_delete_hides_general_skill_only_in_branch() -> None:

@@ -91,7 +91,11 @@ def expand_sop_for_execution(skill: Skill, available: Iterable[Skill]) -> Skill:
     by_id = {row.skill_id: row for row in available if row.status == "published"}
     by_id.setdefault(skill.skill_id, skill)
     validate_sop_nesting(skill.skill_id, skill.content_json or {}, by_id.values())
-    expanded = deepcopy(skill)
+    # A deepcopy of a loaded SQLModel also copies SQLAlchemy's parent state;
+    # assigning content_json on that copy can dereference a collected owner.
+    expanded = Skill.model_validate(skill.model_dump())
+    if hasattr(skill, "agent_branch_meta"):
+        object.__setattr__(expanded, "agent_branch_meta", skill.agent_branch_meta)
     expanded.content_json = _expand_content(
         skill.skill_id,
         deepcopy(skill.content_json or {}),

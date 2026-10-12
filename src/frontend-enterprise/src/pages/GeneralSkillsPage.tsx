@@ -68,7 +68,7 @@ import { ResourceImportDialog } from '@/components/ResourceImportDialog';
 import SkillFolderSelectionDialog from '@/components/SkillFolderSelectionDialog';
 import CodeBlock, { renderCodeTokens } from '../components/CodeBlock';
 import { renderMarkdownBlocks } from './chat/chatHelpers';
-import { SkillRunReply, SKILL_MARKDOWN_PREVIEW_BODY_CLASS, presentSkillTrace } from './skillRunPresentation';
+import { SkillRunReply, SKILL_MARKDOWN_PREVIEW_BODY_CLASS, presentSkillTrace, resultSucceeded } from './skillRunPresentation';
 import IconAdd from '../assets/icons/add.svg?react';
 import IconArrowRight from '../assets/icons/arrow-right.svg?react';
 import IconFolder from '../assets/icons/cap-folder.svg?react';
@@ -1033,12 +1033,6 @@ function traceDetail(item: Record<string, unknown>): string {
 
 function traceItemCode(item: Record<string, unknown>): string {
   return typeof item.code === 'string' && item.code.trim() ? item.code : '';
-}
-
-function resultSucceeded(result: Partial<GeneralSkillRunResponse> | null): boolean {
-  if (!result) return false;
-  const success = result.structured_result?.success;
-  return success !== false && !result.stderr;
 }
 
 function isAbortError(error: unknown): boolean {
@@ -2315,14 +2309,19 @@ function GeneralSkillEditorPage({ mode, currentUser, onLogout }: { mode: 'new' |
           if (item.event === 'complete') {
             const result = item.data as unknown as GeneralSkillRunResponse;
             completed = true;
-            setRunResult({
+            const completedResult = {
               ...result,
               execution_trace: result.execution_trace?.length
                 ? result.execution_trace
                 : receivedTrace,
-            });
+            };
+            setRunResult(completedResult);
             setLiveResult(null);
-            notify.success('运行完成');
+            if (resultSucceeded(completedResult)) {
+              notify.success('运行完成');
+            } else {
+              notify.error('运行失败，请查看最终回复和执行记录');
+            }
           }
           if (item.event === 'error') {
             const text = typeof item.data.message === 'string' ? item.data.message : '运行失败';

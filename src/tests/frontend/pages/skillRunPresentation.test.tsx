@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { SkillRunReply, presentSkillTrace } from '@/pages/skillRunPresentation';
+import { SkillRunReply, presentSkillTrace, resultSucceeded } from '@/pages/skillRunPresentation';
 
 describe('skill run result presentation', () => {
   it('renders a skill test reply as readable Markdown', () => {
@@ -27,5 +27,13 @@ describe('skill run result presentation', () => {
       .toEqual({ title: '校验通过', message: '第 1 次运行结果可用' });
     expect(presentSkillTrace({ phase: 'future_event', message: 'future_event' }))
       .toEqual({ title: '执行步骤', message: '' });
+  });
+
+  it('requires a real answer and an explicit successful result', () => {
+    const answer = { reply: '北京今天晴朗', structured_result: { success: true }, stderr: '' };
+    expect(resultSucceeded(answer)).toBe(true);
+    expect(resultSucceeded({ ...answer, reply: '' })).toBe(false);
+    expect(resultSucceeded({ ...answer, structured_result: { success: true, runtime_error_code: 'HARNESS_V2_ERROR' } })).toBe(false);
+    expect(resultSucceeded({ ...answer, structured_result: {} })).toBe(false);
   });
 });

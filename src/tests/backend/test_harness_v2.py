@@ -16,7 +16,7 @@ from app.agents.branching import ensure_open_gallery_binding
 from app.core import harness_agent as harness_agent_module
 from app.core import harness_v2_engine as harness_v2_engine_module
 from app.core import turn_planner as turn_planner_module
-from app.core.agent_loop import AgentLoop
+from app.core.agent_loop import AgentLoop, AgentLoopPreconditionError
 from app.core.capability_manifest import (
     CapabilityManifestBuilder,
     _available_invocation_name,
@@ -83,6 +83,7 @@ from app.db.models import (
 from app.general_skills.schema import GeneralSkillRunResponse
 from app.harness.errors import HarnessExecutionError
 from app.knowledge.schema import KnowledgeSearchResponse
+from app.llm import LLMError
 from app.observability.event_log import EventLog
 from app.scheduled_tasks.service import (
     _finish_task_schedule,
@@ -220,6 +221,47 @@ def test_agent_loop_has_no_legacy_runtime_switch(monkeypatch) -> None:
         )
 
     assert calls == [("web", "normal"), ("scheduled_task", "scheduled_task")]
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_code"),
+    [
+        (RuntimeError("execution crashed"), "HARNESS_V2_ERROR"),
+        (LLMError("model unavailable"), "LLM_ERROR"),
+        (
+            AgentLoopPreconditionError("MODEL_CONFIG_MISSING", "configuration missing"),
+            "MODEL_CONFIG_MISSING",
+        ),
+    ],
+)
+def test_harness_failure_is_reported_as_failed_turn(
+    monkeypatch, failure: Exception, expected_code: str
+) -> None:
+    database = _test_engine()
+    with Session(database) as db:
+        session = ChatSession(id="failed-turn", tenant_id="tenant-demo")
+        db.add(session)
+        db.commit()
+        loop = AgentLoop(db)
+
+        def fail_run(engine: HarnessV2Engine, _request: ChatTurnRequest) -> ChatTurnResponse:
+            engine.session = session
+            raise failure
+
+        monkeypatch.setattr(HarnessV2Engine, "run", fail_run)
+        monkeypatch.setattr(HarnessV2Engine, "mark_interrupted", lambda *_: None)
+        monkeypatch.setattr(HarnessV2Engine, "close", lambda *_: None)
+        monkeypatch.setattr(loop.events, "record", lambda *_: None)
+        monkeypatch.setattr(
+            loop, "_finalize_turn", lambda _session, _tenant, reply, *_, **__: reply
+        )
+
+        response = loop.handle_turn(
+            ChatTurnRequest(tenant_id="tenant-demo", session_id=session.id, message="test skill")
+        )
+
+        assert response.runtime_error_code == expected_code
+        assert expected_code in response.reply
 
 
 def test_first_harness_turn_recovers_from_a_concurrent_session_insert(

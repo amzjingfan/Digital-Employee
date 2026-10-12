@@ -1667,6 +1667,7 @@
   "运行结果": "Run Result",
   "运行流已结束，但未收到最终结果": "The run stream ended without a final result.",
   "运行失败": "Run Failed",
+  "运行失败，请查看最终回复和执行记录": "Run failed. Review the final reply and execution log.",
   "运行输出": "Run Output",
   "运行完成": "Run complete",
   "运行中": "Running",
